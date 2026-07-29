@@ -207,6 +207,13 @@ chebax.bake.xsf_header(jv, "cyl_bessel_j_2p5.h")
 **Performance claims remain gated on bessel B3** (real-GPU measurement). chebax's
 accuracy and gradient claims stand alone; its speed claims do not exist until B3.
 
+**Queued benchmark (2026-07-29, Andres):** when GPU measurements start (B3), also race
+the three-region select `besselj` against a single-region fit on a user-declared narrow
+domain (zero selects, one short polynomial — a third the arithmetic). If the narrow form
+is noticeably faster, offer both: the unlimited `besselj(v)` and a domain-limited
+`besselj(v, domain=(a, b))` that trims to one region. The natural first customer is the
+M5 Matérn demo, where kernel inputs live in a known window.
+
 ---
 
 ## 5. Risks

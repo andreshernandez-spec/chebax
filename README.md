@@ -12,4 +12,6 @@ segmentation) and the first recipe are in — `besselj(v)` for any real order in
 `besselj_dnu(v)`, no mpmath at use time. Tails (x > 8), more recipes, and bake
 emitters are not yet. Read
 `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to work here. Grown out
-of `../bessel/` Track B. BSD-3-Clause.
+of a private research project (the `../bessel/` references in `PROJECT.md` point
+there); the two load-bearing measurements are reproduced here in `experiments/`.
+BSD-3-Clause.

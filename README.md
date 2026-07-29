@@ -6,5 +6,7 @@ kernels with exact derivative series, including gradients with respect to functi
 parameters (e.g. the Bessel order). Prebuilt recipes give out-of-the-box special
 functions; a bake step emits self-contained pure-JAX modules and xsf-style C++ headers.
 
-Planning stage. Read `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to
-work here. Grown out of `../bessel/` Track B. BSD-3-Clause.
+Early development: the generic core is in (fit, jax evaluation, exact derivative
+series, segmentation); special-function recipes and baked tables are not yet. Read
+`PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to work here. Grown out
+of `../bessel/` Track B. BSD-3-Clause.

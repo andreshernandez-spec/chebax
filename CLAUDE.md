@@ -41,6 +41,16 @@ python experiments/01_derivative_accuracy.py      # ~5 s
 python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 ```
 
+## Library
+
+```bash
+python -m pip install -e . --no-build-isolation   # once, into the open-source env
+python -m pytest -q                               # ~10 s; conftest enables x64
+```
+
+Tests run on whatever backend jax picks (the laptop GPU when present); the
+accuracy contract is device-independent, so that is fine.
+
 ## Layout
 
 ```
@@ -50,5 +60,7 @@ README.md       short orientation
 experiments/    reproducible measurements
 results/        captured output, checked in
 drafts/         prose for upstream (PR text, issues) — Andres rewrites and sends
-src/chebax/     the library, once M1 starts (does not exist yet)
+src/chebax/     the library: _src/algorithms.py (numpy references),
+                _src/series.py (jax runtime), _src/generate.py (fitting)
+tests/          M1 acceptance tests and convention locks
 ```

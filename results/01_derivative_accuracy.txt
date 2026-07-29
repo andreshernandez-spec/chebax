@@ -1,0 +1,10 @@
+Derivative of the Chebyshev approximant vs mpmath, x in [0.05, 8], 160 pts
+deg=20 fit of g_v(z)=0F1(;v+1;-z/4) on z in [0,64]; errors sup-normalized.
+Prefactor (x/2)^v/Gamma(v+1) computed in f64 in all rows.
+
+  v=0.5  deg=20  [f64]   J err: 6.54e-16   J' err: 2.49e-16
+  v=0.5  deg=20  [f32]   J err: 3.92e-07   J' err: 2.61e-07
+  v=2.5  deg=20  [f64]   J err: 9.71e-16   J' err: 2.75e-15
+  v=2.5  deg=20  [f32]   J err: 8.22e-07   J' err: 7.47e-07
+
+Verdict: no degree penalty for the first derivative; f32 floor ~1e-6.

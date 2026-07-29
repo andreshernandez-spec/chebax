@@ -1,0 +1,23 @@
+c_k(v) tabulated on v in [0.0,10.0] (64 nodes), z-domain [0,64] (degree 24)
+
+  v-coefficient decay: last index above 1e-07 (rel) = 26
+  v-coefficient decay: last index above 1e-15 (rel) = 55
+
+  Reconstruction error of J_v at off-node v, truncating the v-series at d_v
+         v | d_v=12   d_v=16   d_v=24   d_v=32   d_v=48   d_v=63   
+    0.3000 |   1.2e-04   6.0e-05   3.9e-07   2.2e-09   1.8e-14   6.3e-16 
+    1.7000 |   1.7e-03   1.9e-04   1.7e-06   1.1e-08   1.2e-13   1.6e-15 
+    3.1416 |   4.1e-03   1.4e-04   1.2e-06   9.6e-09   5.9e-13   1.3e-15 
+    7.7700 |   9.0e-04   6.2e-05   3.6e-07   2.9e-09   1.3e-13   9.0e-16 
+
+  Order gradient dJ/dv via chebder along v (full v-degree), vs mp.diff:
+  v=  0.3000   dJ/dv err: 5.75e-16   (sup-normalized)
+  v=  1.7000   dJ/dv err: 1.81e-15   (sup-normalized)
+  v=  3.1416   dJ/dv err: 3.12e-16   (sup-normalized)
+  v=  7.7700   dJ/dv err: 5.10e-16   (sup-normalized)
+
+  Table: 25x64 = 1600 doubles = 12.5 KB
+  Instantiation at any v: 25 Clenshaws of length 64 ~ 3200 FLOPs, once per trace
+
+Verdict: d_v=32 reaches ~1e-8, d_v=48 ~1e-13, full 63 ~1e-15;
+dJ/dv is machine-accurate. One baked table serves every v in [0,10].

@@ -6,7 +6,10 @@ kernels with exact derivative series, including gradients with respect to functi
 parameters (e.g. the Bessel order). Prebuilt recipes give out-of-the-box special
 functions; a bake step emits self-contained pure-JAX modules and xsf-style C++ headers.
 
-Early development: the generic core is in (fit, jax evaluation, exact derivative
-series, segmentation); special-function recipes and baked tables are not yet. Read
+Early development: the generic core (fit, jax evaluation, exact derivative series,
+segmentation) and the first recipe are in — `besselj(v)` for any real order in
+[0, 10] on x in [0, 8], with dJ/dx via jax.grad and the order gradient via
+`besselj_dnu(v)`, no mpmath at use time. Tails (x > 8), more recipes, and bake
+emitters are not yet. Read
 `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to work here. Grown out
 of `../bessel/` Track B. BSD-3-Clause.

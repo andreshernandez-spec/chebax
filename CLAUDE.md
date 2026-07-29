@@ -45,7 +45,8 @@ python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 
 ```bash
 python -m pip install -e . --no-build-isolation   # once, into the open-source env
-python -m pytest -q                               # ~10 s; conftest enables x64
+python -m pytest -q                               # ~20 s; conftest enables x64
+python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 
 Tests run on whatever backend jax picks (the laptop GPU when present); the
@@ -61,6 +62,7 @@ experiments/    reproducible measurements
 results/        captured output, checked in
 drafts/         prose for upstream (PR text, issues) — Andres rewrites and sends
 src/chebax/     the library: _src/algorithms.py (numpy references),
-                _src/series.py (jax runtime), _src/generate.py (fitting)
-tests/          M1 acceptance tests and convention locks
+                _src/series.py (jax runtime), _src/generate.py (fitting),
+                _src/recipes/ (besselj runtime, generator, baked table)
+tests/          acceptance tests (M1 core, M2 besselj) and convention locks
 ```

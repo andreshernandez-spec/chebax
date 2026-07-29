@@ -228,9 +228,11 @@ accuracy and gradient claims stand alone; its speed claims do not exist until B3
    family was rejected for spectroscopy confusability. PyPI reservation remains his.
 2. ~~**License.**~~ **RESOLVED 2026-07-29:** BSD-3-Clause, confirmed by Andres;
    `LICENSE` checked in. Rationale: scipy/xsf compatibility for baked artifacts.
-3. **Second family** (M5): recommend `besselk` (Matérn demo is the strongest external
-   motivation); alternative is the betainc/hyp2f1 line to join forces with `../betainc/`.
-4. **When public.** Recommend after M2 (one family, full gradient story, honest README).
+3. ~~**Second family** (M5)~~ **RESOLVED 2026-07-29:** `besselk`, confirmed by Andres
+   (the Matérn demo is the strongest external motivation). The betainc/hyp2f1 line
+   stays a candidate for M6 breadth.
+4. ~~**When public.**~~ **RESOLVED 2026-07-29:** after M2, confirmed by Andres (one
+   family, full gradient story, honest README). Going public is his action.
 5. **Cross-project updates** (pending edits, in `../bessel/`): B1/C2 wording should
    absorb the ν-table result; Track C1's FFI route is likely unnecessary for Track B
    artifacts (pure-JAX suffices). Not edited from this project.

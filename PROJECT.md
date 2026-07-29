@@ -24,8 +24,10 @@ chebpy, pychebfun, ChebTools). The spec-* alternatives were rejected: "spec" rea
 spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name is a
 publishing action and stays Andres's.
 
-**Status:** planning. Nothing public, nothing published. Parent evidence lives in
-`../bessel/` (Track B); this project generalizes B1 into a library.
+**Status:** live (2026-07-29). Public at https://github.com/andreshernandez-spec/chebax;
+name claimed on PyPI with a `0.1.0.dev0` placeholder the same day. M0–M2 done; next is
+M3 (tails), M4 (bake emitters), M5 (`besselk`). Parent evidence lives in `../bessel/`
+(Track B); this project generalizes B1 into a library.
 **Owner:** Andres
 **Last verified:** 2026-07-29, experiments run locally (see `results/`); upstream
 references checked against the clones pinned in `../bessel/PROJECT.md`
@@ -225,14 +227,16 @@ accuracy and gradient claims stand alone; its speed claims do not exist until B3
 ## 6. Open questions — Andres decides
 
 1. ~~**Name.**~~ **RESOLVED 2026-07-29:** `chebax`, confirmed by Andres. The spec-*
-   family was rejected for spectroscopy confusability. PyPI reservation remains his.
+   family was rejected for spectroscopy confusability. Claimed on PyPI the same day
+   (`0.1.0.dev0` placeholder, uploaded by Andres).
 2. ~~**License.**~~ **RESOLVED 2026-07-29:** BSD-3-Clause, confirmed by Andres;
    `LICENSE` checked in. Rationale: scipy/xsf compatibility for baked artifacts.
 3. ~~**Second family** (M5)~~ **RESOLVED 2026-07-29:** `besselk`, confirmed by Andres
    (the Matérn demo is the strongest external motivation). The betainc/hyp2f1 line
    stays a candidate for M6 breadth.
 4. ~~**When public.**~~ **RESOLVED 2026-07-29:** after M2, confirmed by Andres (one
-   family, full gradient story, honest README). Going public is his action.
+   family, full gradient story, honest README). Went public the same day, right after
+   M2 landed.
 5. ~~**Cross-project updates**~~ **RESOLVED 2026-07-29:** `../bessel/PROJECT.md`
    updated (commit `c6891c2` there) — B1 points at chebax and absorbs the ν-table
    result, C2's order-derivative is re-scoped, C1 notes FFI is unnecessary for

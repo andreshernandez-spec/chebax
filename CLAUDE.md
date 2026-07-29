@@ -45,7 +45,7 @@ python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 
 ```bash
 python -m pip install -e . --no-build-isolation   # once, into the open-source env
-python -m pytest -q                               # ~20 s; conftest enables x64
+python -m pytest -q                               # ~50 s; conftest enables x64
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 

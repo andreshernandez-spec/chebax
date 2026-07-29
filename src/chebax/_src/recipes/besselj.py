@@ -1,15 +1,32 @@
-"""J_v for real v in [0, 10] on x in [0, 8], from the baked nu-table.
+"""J_v for real v in [0, 10] on x >= 0, from baked nu-tables.
 
-J_v(x) = (x/2)^v / Gamma(v+1) * g_v(x^2), where g_v(z) = 0F1(; v+1; -z/4) is
-entire, so g_v is one short Chebyshev series in z (the ../../bessel evidence,
-PROJECT.md section 2). The baked table stores each z-coefficient as a
-Chebyshev series in v; instantiation is 25 numpy Clenshaws, once per order,
-cached. dJ/dx comes from jax.grad through the series custom_jvp; dJ/dv comes
-from chebder along the v axis of the table (besselj_dnu).
+Three regions, assembled with predicated selects (both seams are hard
+switches, per ../../bessel/experiments/04):
 
-Out of range is the caller's problem in v1: x > 8 evaluates the polynomial
-outside its interval and diverges (tails are milestone M3); v outside [0, 10]
-raises at instantiation.
+- x in [0, 8]:   J = (x/2)^v / Gamma(v+1) * g_v(x^2), g_v = 0F1(; v+1; -z/4)
+                 entire, one short Chebyshev series in z (the M2 table). The
+                 factorization carries the x^v branch point, so accuracy near
+                 0 is relative, not just absolute.
+- x in (8, 30]:  J_v(x) as a direct Chebyshev series in x (no factorization
+                 needed away from 0; direct fitting keeps the table
+                 sup-accurate at large v where g_v spans six decades).
+- x > 30:        J = sqrt(2/(pi x)) (P cos w - Q sin w) with the exact
+                 modulus functions P, Q tabulated in t = (30/x)^2. The phase
+                 w = x - (v/2 + 1/4) pi is never formed: with phi = (v/2 +
+                 1/4) pi baked into instantiation constants,
+                     J = sqrt(2/(pi x)) (cos(x) A + sin(x) B),
+                     A = P cos(phi) + Q sin(phi),  B = P sin(phi) - Q cos(phi)
+                 so sincos(x) does its own argument reduction and the eps*x
+                 phase-subtraction error never appears.
+
+Instantiation reconstructs every coefficient vector at v by Clenshaw in v
+across the table rows (numpy, cached, no mpmath). dJ/dx flows through the
+series custom_jvp; besselj_dnu gives dJ/dv via chebder along the v axis (for
+the outer region, dA/dv and dB/dv pick up -(pi/2) B and +(pi/2) A from the
+phi rotation). Validated against mpmath to x = 1e4; the outer form has no
+upper limit beyond sincos accuracy. dJ/dv is log-singular at x = 0 (real for
+v = 0, where besselj_dnu returns nan at exactly 0). v outside [0, 10] raises
+at instantiation.
 """
 
 import functools
@@ -21,6 +38,7 @@ import numpy as np
 
 from chebax._src import algorithms
 from chebax._src.recipes import besselj_table as _tab
+from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.series import ChebSeries
 
 
@@ -36,10 +54,17 @@ def _digamma(z):
     return acc + math.log(z) - 0.5 / z - zi * tail
 
 
-def _coef_at(v):
-    """The z-coefficient vector at order v: Clenshaw in v across table rows."""
+def _nu_eval(table, v):
+    """Coefficient vector at order v: Clenshaw in v across table rows."""
     t = 2.0 * v / _tab.VMAX - 1.0
-    return np.array([algorithms.chebval(t, row) for row in _tab.TABLE])
+    return np.array([algorithms.chebval(t, row) for row in table])
+
+
+def _nu_eval_der(table, v):
+    """d/dv of the coefficient vector, via chebder along the v axis."""
+    t = 2.0 * v / _tab.VMAX - 1.0
+    d = np.array([algorithms.chebval(t, algorithms.chebder(row)) for row in table])
+    return d * (2.0 / _tab.VMAX)
 
 
 def _check_order(v):
@@ -49,90 +74,154 @@ def _check_order(v):
     return v
 
 
-@jax.tree_util.register_pytree_node_class
-class BesselJ:
-    """Callable J_v on [0, 8]. Build with besselj(v)."""
+def _series_at(v):
+    return dict(
+        g=ChebSeries(_nu_eval(_tab.TABLE, v), (0.0, _tab.ZMAX)),
+        jm=ChebSeries(_nu_eval(_ext.TABLE_MID, v), (_ext.MID_X0, _ext.MID_X1)),
+        p=ChebSeries(_nu_eval(_ext.TABLE_P, v), (0.0, 1.0)),
+        q=ChebSeries(_nu_eval(_ext.TABLE_QS, v), (0.0, 1.0)),
+    )
 
-    def __init__(self, v, g):
+
+class _Constants:
+    """Shared v-derived scalars, recomputed deterministically on unflatten."""
+
+    def _init_constants(self, v):
         self.v = float(v)
-        self.g = g
         self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
+        phi = (self.v / 2 + 0.25) * math.pi
+        self._cphi = math.cos(phi)
+        self._sphi = math.sin(phi)
+
+    # Branch inputs: the active branch must see the raw x right up to and
+    # including its own seam, or grad halves there (min/max ties split the
+    # tangent). Inactive branches get clamped constants; where() masks their
+    # gradients out.
+    def _xin(self, x):
+        return jnp.where(x <= _ext.MID_X0, x, _ext.MID_X0)
+
+    def _xmid(self, x):
+        return jnp.where(x <= _ext.MID_X0, _ext.MID_X0,
+                         jnp.where(x <= _ext.MID_X1, x, _ext.MID_X1))
+
+    def _xout(self, x):
+        return jnp.where(x <= _ext.MID_X1, _ext.MID_X1, x)
+
+    def _inner(self, x):
+        xi = self._xin(x)
+        return self._inv_gamma * jnp.power(xi / 2, self.v) * self.g(xi * xi)
+
+    def _mid(self, x):
+        return self.jm(self._xmid(x))
+
+    def _outer_pq(self, x):
+        xo = self._xout(x)
+        s = _ext.XS / xo
+        t = s * s
+        return xo, self.p(t), s * self.q(t)
+
+    @staticmethod
+    def _select(x, inner, mid, outer):
+        return jnp.where(x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer))
+
+
+@jax.tree_util.register_pytree_node_class
+class BesselJ(_Constants):
+    """Callable J_v on x >= 0. Build with besselj(v)."""
+
+    def __init__(self, v, g, jm, p, q):
+        self._init_constants(v)
+        self.g, self.jm, self.p, self.q = g, jm, p, q
 
     def __call__(self, x):
         x = jnp.asarray(x)
-        return self._inv_gamma * jnp.power(x / 2, self.v) * self.g(x * x)
+        xo, P, Q = self._outer_pq(x)
+        a = P * self._cphi + Q * self._sphi
+        b = P * self._sphi - Q * self._cphi
+        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * a + jnp.sin(xo) * b)
+        return self._select(x, self._inner(x), self._mid(x), outer)
 
     def astype(self, dtype):
-        return BesselJ(self.v, self.g.astype(dtype))
+        return BesselJ(self.v, *(s.astype(dtype) for s in (self.g, self.jm, self.p, self.q)))
 
     def __repr__(self):
         return f"BesselJ(v={self.v}, dtype={self.g.coef.dtype})"
 
     def tree_flatten(self):
-        return (self.g,), self.v
+        return (self.g, self.jm, self.p, self.q), self.v
 
     @classmethod
     def tree_unflatten(cls, v, children):
         obj = object.__new__(cls)
-        obj.v = v
-        obj.g = children[0]
-        obj._inv_gamma = 1.0 / math.gamma(v + 1.0)
+        obj._init_constants(v)
+        obj.g, obj.jm, obj.p, obj.q = children
         return obj
 
 
 @jax.tree_util.register_pytree_node_class
-class BesselJdnu:
-    """Callable dJ_v/dv on (0, 8]. Build with besselj_dnu(v).
+class BesselJdnu(_Constants):
+    """Callable dJ_v/dv on x > 0. Build with besselj_dnu(v)."""
 
-    dJ/dv = pref * [(log(x/2) - psi(v+1)) g(z) + g_v(z)], g_v from chebder
-    along the v axis. The log makes x = 0 nan; for v = 0 that singularity
-    is real."""
-
-    def __init__(self, v, g, gnu):
-        self.v = float(v)
-        self.g = g
-        self.gnu = gnu
-        self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
+    def __init__(self, v, g, jm, p, q, gnu, jmnu, pnu, qnu):
+        self._init_constants(v)
         self._psi = _digamma(self.v + 1.0)
+        self.g, self.jm, self.p, self.q = g, jm, p, q
+        self.gnu, self.jmnu, self.pnu, self.qnu = gnu, jmnu, pnu, qnu
 
     def __call__(self, x):
         x = jnp.asarray(x)
-        z = x * x
-        pref = self._inv_gamma * jnp.power(x / 2, self.v)
-        return pref * ((jnp.log(x / 2) - self._psi) * self.g(z) + self.gnu(z))
+        xi = self._xin(x)
+        z = xi * xi
+        pref = self._inv_gamma * jnp.power(xi / 2, self.v)
+        inner = pref * ((jnp.log(xi / 2) - self._psi) * self.g(z) + self.gnu(z))
+
+        mid = self.jmnu(self._xmid(x))
+
+        xo, P, Q = self._outer_pq(x)
+        s = _ext.XS / xo
+        Pn = self.pnu(s * s)
+        Qn = s * self.qnu(s * s)
+        a = P * self._cphi + Q * self._sphi
+        b = P * self._sphi - Q * self._cphi
+        an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
+        bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
+        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * an + jnp.sin(xo) * bn)
+        return self._select(x, inner, mid, outer)
 
     def astype(self, dtype):
-        return BesselJdnu(self.v, self.g.astype(dtype), self.gnu.astype(dtype))
+        return BesselJdnu(self.v, *(s.astype(dtype) for s in (
+            self.g, self.jm, self.p, self.q, self.gnu, self.jmnu, self.pnu, self.qnu)))
 
     def __repr__(self):
         return f"BesselJdnu(v={self.v}, dtype={self.g.coef.dtype})"
 
     def tree_flatten(self):
-        return (self.g, self.gnu), self.v
+        return (self.g, self.jm, self.p, self.q, self.gnu, self.jmnu, self.pnu, self.qnu), self.v
 
     @classmethod
     def tree_unflatten(cls, v, children):
         obj = object.__new__(cls)
-        obj.v = v
-        obj.g, obj.gnu = children
-        obj._inv_gamma = 1.0 / math.gamma(v + 1.0)
-        obj._psi = _digamma(v + 1.0)
+        obj._init_constants(v)
+        obj._psi = _digamma(obj.v + 1.0)
+        obj.g, obj.jm, obj.p, obj.q, obj.gnu, obj.jmnu, obj.pnu, obj.qnu = children
         return obj
 
 
 @functools.lru_cache(maxsize=None)
 def besselj(v):
-    """J_v on [0, 8] for real v in [0, 10]. Cached per order; no mpmath."""
+    """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath."""
     v = _check_order(v)
-    return BesselJ(v, ChebSeries(_coef_at(v), (0.0, _tab.ZMAX)))
+    return BesselJ(v, **_series_at(v))
 
 
 @functools.lru_cache(maxsize=None)
 def besselj_dnu(v):
-    """dJ_v/dv on (0, 8] for real v in [0, 10] (the order gradient)."""
+    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient)."""
     v = _check_order(v)
-    t = 2.0 * v / _tab.VMAX - 1.0
-    gnu = np.array([algorithms.chebval(t, algorithms.chebder(row)) for row in _tab.TABLE])
-    gnu *= 2.0 / _tab.VMAX
-    return BesselJdnu(v, ChebSeries(_coef_at(v), (0.0, _tab.ZMAX)),
-                      ChebSeries(gnu, (0.0, _tab.ZMAX)))
+    return BesselJdnu(
+        v, **_series_at(v),
+        gnu=ChebSeries(_nu_eval_der(_tab.TABLE, v), (0.0, _tab.ZMAX)),
+        jmnu=ChebSeries(_nu_eval_der(_ext.TABLE_MID, v), (_ext.MID_X0, _ext.MID_X1)),
+        pnu=ChebSeries(_nu_eval_der(_ext.TABLE_P, v), (0.0, 1.0)),
+        qnu=ChebSeries(_nu_eval_der(_ext.TABLE_QS, v), (0.0, 1.0)),
+    )

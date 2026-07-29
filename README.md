@@ -8,9 +8,9 @@ functions; a bake step emits self-contained pure-JAX modules and xsf-style C++ h
 
 Early development: the generic core (fit, jax evaluation, exact derivative series,
 segmentation) and the first recipe are in — `besselj(v)` for any real order in
-[0, 10] on x in [0, 8], with dJ/dx via jax.grad and the order gradient via
-`besselj_dnu(v)`, no mpmath at use time. Tails (x > 8), more recipes, and bake
-emitters are not yet. Read
+[0, 10] on x >= 0 (validated against mpmath to x = 1e4), with dJ/dx via jax.grad
+and the order gradient via `besselj_dnu(v)`, no mpmath at use time. More recipes
+and bake emitters are not yet. Read
 `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to work here. Grown out
 of a private research project (the `../bessel/` references in `PROJECT.md` point
 there); the two load-bearing measurements are reproduced here in `experiments/`.

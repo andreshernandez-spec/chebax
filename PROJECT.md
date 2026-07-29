@@ -19,8 +19,10 @@ parameter arrays are out of scope; that regime belongs to the branchy CPU-style 
 need a per-family asymptotic recipe (phase/modulus for oscillatory functions) — the
 machinery does not remove that analysis and does not claim to.
 
-**Name:** `chebax` is provisional (PyPI and GitHub free as of 2026-07-29; nearest
-neighbors chebpy, pychebfun, ChebTools — no collision). Final call is Andres's.
+**Name:** `chebax` — confirmed 2026-07-29. PyPI and GitHub free (nearest neighbors
+chebpy, pychebfun, ChebTools). The spec-* alternatives were rejected: "spec" reads as
+spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name is a
+publishing action and stays Andres's.
 
 **Status:** planning. Nothing public, nothing published. Parent evidence lives in
 `../bessel/` (Track B); this project generalizes B1 into a library.
@@ -192,7 +194,7 @@ chebax.bake.xsf_header(jv, "cyl_bessel_j_2p5.h")
 
 | ID | Milestone | Acceptance criteria |
 |---|---|---|
-| M0 | Bootstrap: repo, plan, foundation experiments. **DONE 2026-07-29** (this commit). Name + license are Andres's call (§6 q1-q2). | Repo exists with correct identity; experiments reproduce. |
+| M0 | Bootstrap: repo, plan, foundation experiments. **DONE 2026-07-29.** Name and license confirmed same day (§6 q1-q2). | Repo exists with correct identity; experiments reproduce. |
 | M1 | Generic core on a finite interval: `fit`/`__call__`/`deriv`, numpy+mpmath build path, jax runtime, pytree + custom_jvp, f32 rounding. | Fit exp/cos on [-1,1] and 1/(1+25x²) segmented to ≤5e-16 sup-normalized; chebder matches analytic derivatives ≤1e-14; `jit(vmap(jax.grad(p)))` runs and equals the derivative series to f64 rounding. |
 | M2 | `besselj` recipe on x ∈ [0,8], ν ∈ [0,10] via the ν-table. | Sup-normalized error vs mpmath(40 dps) on dense grids and ≥20 off-node ν: ≤2e-15 f64, ≤1e-6 f32; same bar for dJ/dx; ≤5e-15 for ∂J/∂ν; tables regenerate bit-for-bit; instantiation works under jit with static ν. |
 | M3 | Full domain: segmentation + oscillatory tail recipe (phase/modulus a la Hankel) for x > 8. | Errors hold across every seam (method of `../bessel/experiments/04`); f64 bar maintained to x = 10⁴; branch count per eval stays 1 (select, no divergence). |
@@ -222,10 +224,10 @@ accuracy and gradient claims stand alone; its speed claims do not exist until B3
 
 ## 6. Open questions — Andres decides
 
-1. **Name.** `chebax` free and consistent with the ecosystem (-ax). Confirm or rename;
-   reserving the PyPI name is a publishing action and is yours.
-2. **License.** Recommend BSD-3 (scipy/xsf compatibility for baked artifacts); Apache-2
-   would match JAX instead. Decide before anything is public.
+1. ~~**Name.**~~ **RESOLVED 2026-07-29:** `chebax`, confirmed by Andres. The spec-*
+   family was rejected for spectroscopy confusability. PyPI reservation remains his.
+2. ~~**License.**~~ **RESOLVED 2026-07-29:** BSD-3-Clause, confirmed by Andres;
+   `LICENSE` checked in. Rationale: scipy/xsf compatibility for baked artifacts.
 3. **Second family** (M5): recommend `besselk` (Matérn demo is the strongest external
    motivation); alternative is the betainc/hyp2f1 line to join forces with `../betainc/`.
 4. **When public.** Recommend after M2 (one family, full gradient story, honest README).

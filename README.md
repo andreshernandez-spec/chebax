@@ -7,4 +7,4 @@ parameters (e.g. the Bessel order). Prebuilt recipes give out-of-the-box special
 functions; a bake step emits self-contained pure-JAX modules and xsf-style C++ headers.
 
 Planning stage. Read `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to
-work here. Grown out of `../bessel/` Track B; the name is provisional.
+work here. Grown out of `../bessel/` Track B. BSD-3-Clause.

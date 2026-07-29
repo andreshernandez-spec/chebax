@@ -233,9 +233,10 @@ accuracy and gradient claims stand alone; its speed claims do not exist until B3
    stays a candidate for M6 breadth.
 4. ~~**When public.**~~ **RESOLVED 2026-07-29:** after M2, confirmed by Andres (one
    family, full gradient story, honest README). Going public is his action.
-5. **Cross-project updates** (pending edits, in `../bessel/`): B1/C2 wording should
-   absorb the ν-table result; Track C1's FFI route is likely unnecessary for Track B
-   artifacts (pure-JAX suffices). Not edited from this project.
+5. ~~**Cross-project updates**~~ **RESOLVED 2026-07-29:** `../bessel/PROJECT.md`
+   updated (commit `c6891c2` there) — B1 points at chebax and absorbs the ν-table
+   result, C2's order-derivative is re-scoped, C1 notes FFI is unnecessary for
+   Track B artifacts, and the §2.5 2-D row records the per-instantiation distinction.
 
 ---
 

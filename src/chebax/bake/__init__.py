@@ -6,14 +6,21 @@ runtime is the single source of truth, so artifact and runtime cannot
 diverge. Constants are inlined as python floats (weak typed: the emitted
 function follows the dtype of x); plain jax AD differentiates it.
 
-xsf_header(inst, path)  writes a standalone C++17 header (only <cmath>),
-double precision, from the same trace. XSF_HOST_DEVICE is defined empty
-when absent so the header drops into xsf or plain host code unchanged.
+xsf_header(inst, path)  writes a standalone C++17 header (only <cmath> and
+<limits>), double precision, from the same trace. XSF_HOST_DEVICE is
+defined empty when absent so the header drops into xsf or plain host code
+unchanged.
 
 Both emissions are deterministic (same instance, same bytes) and generic
 over recipes: any Recipe subclass with a closed-form evaluation path bakes;
-solver-based callables raise NotImplementedError. See _jaxpr_emit for the
-mechanism and its (dev-time-only) coupling to jaxpr structure.
+solver-based callables raise NotImplementedError. Baking requires float64
+tables (enable jax_enable_x64 before constructing the instance): a float32
+source would silently produce a "double" artifact with float32 content.
+Known semantic edge of the C++ backend: std::fmax/fmin ignore NaN operands
+where jnp.maximum/minimum propagate them; recipes keep NaN out of interior
+min/max by construction, but a custom recipe relying on NaN propagation
+through min/max will differ. See _jaxpr_emit for the mechanism and its
+(dev-time-only) coupling to jaxpr structure.
 """
 
 import numpy as np
@@ -23,11 +30,24 @@ from chebax._src.pytree import Recipe
 from chebax.bake._jaxpr_emit import trace_and_emit
 
 
+def _f64_tables(inst):
+    for f in inst._series_fields:
+        s = getattr(inst, f)
+        if hasattr(s, "_series_fields"):
+            _f64_tables(s)
+        elif np.asarray(s.coef).dtype != np.float64:
+            raise ValueError(
+                "bake emits double-precision artifacts, but this instance holds "
+                f"{np.asarray(s.coef).dtype} tables (jax x64 disabled?); enable "
+                "jax.config.update('jax_enable_x64', True) before constructing it")
+
+
 def _check(inst):
     if not isinstance(inst, Recipe):
         raise TypeError(
             "bake supports Recipe instances (BesselJ, BesselK, BesselI, BesselY, "
             f"BetaInc, ...); got {type(inst).__name__}")
+    _f64_tables(inst)
     return inst
 
 
@@ -117,6 +137,7 @@ def xsf_header(inst, path, name=None):
 #define CHEBAX_BAKED_{guard}_H
 
 #include <cmath>
+#include <limits>
 
 #ifndef XSF_HOST_DEVICE
 #define XSF_HOST_DEVICE

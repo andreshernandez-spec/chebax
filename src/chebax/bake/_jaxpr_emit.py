@@ -33,8 +33,7 @@ except ImportError:  # older jax
 
 _INLINE_CALLS = {"jit", "pjit", "closed_call", "core_call", "named_call"}
 _LOOP_PRIMS = {"while", "scan", "cond"}
-_PASSTHROUGH = {"convert_element_type", "broadcast_in_dim", "stop_gradient",
-                "copy", "squeeze", "reshape"}
+_PASSTHROUGH = {"broadcast_in_dim", "stop_gradient", "copy", "squeeze", "reshape"}
 _BINOP = {"add": "+", "sub": "-", "mul": "*", "div": "/"}
 _CMP = {"lt": "<", "le": "<=", "gt": ">", "ge": ">=", "eq": "==", "ne": "!="}
 
@@ -96,23 +95,46 @@ def _lit(val, cpp):
         if cpp:
             return ("true" if bool(a) else "false"), True
         return ("True" if bool(a) else "False"), True
-    return repr(float(a)), False
+    v = float(a)
+    if v != v:
+        return ("(std::numeric_limits<double>::quiet_NaN())" if cpp
+                else "float('nan')"), False
+    if v == float("inf") or v == float("-inf"):
+        s = ("std::numeric_limits<double>::infinity()" if cpp
+             else "float('inf')")
+        return (f"(-{s})" if v < 0 else s), False
+    return repr(v), False
 
 
-def _match_series(inst, const):
-    a = np.asarray(const)
+def _collect_matches(inst, a, prefix=""):
+    hits = []
     for f in inst._series_fields:
         s = getattr(inst, f)
         # nested recipes (spherical wraps a cylindrical instance)
         if hasattr(s, "_series_fields"):
-            hit = _match_series(s, const)
-            if hit is not None:
-                return f"{f}_{hit[0]}", hit[1]
+            hits += _collect_matches(s, a, prefix + f + "_")
             continue
         coef = np.asarray(s.coef)
         if coef.shape == a.shape and np.array_equal(coef, a):
-            return f, s
-    return None
+            hits.append((prefix + f, s))
+    return hits
+
+
+def _match_series(inst, const):
+    hits = _collect_matches(inst, np.asarray(const))
+    if not hits:
+        return None
+    # identification is by coefficient VALUE; two fields with equal
+    # coefficients but different domains would fold to the wrong affine
+    # map while looking valid, so refuse to guess
+    domains = {(float(h[1].domain[0]), float(h[1].domain[1])) for h in hits}
+    if len(domains) > 1:
+        names = [h[0] for h in hits]
+        raise NotImplementedError(
+            f"a coefficient constant matches series fields {names} whose domains "
+            f"differ ({sorted(domains)}); value-matching cannot identify it — "
+            "make the coefficient vectors distinct")
+    return hits[0]
 
 
 def _emit_jaxpr(em, jaxpr, env):
@@ -156,6 +178,21 @@ def _emit_jaxpr(em, jaxpr, env):
             for ov, iv in zip(eqn.outvars, inner_jaxpr.outvars):
                 env[ov] = inner_env[iv] if not isinstance(iv, _Literal) \
                     else _lit(iv.val, em.cpp)[0]
+        elif p == "convert_element_type":
+            nd = np.dtype(eqn.params["new_dtype"])
+            src = read(eqn.invars[0])
+            if nd == eqn.invars[0].aval.dtype:
+                env[out] = src  # weak-type normalization only
+            elif nd == np.float64:
+                # bool -> double masks and float promotions; multiplying by
+                # 1.0 is exact for floats and promotes bools, keeping the
+                # emitted python weak-typed
+                env[out] = em.assign(f"(double)({src})" if em.cpp
+                                     else f"({src}) * 1.0")
+            else:
+                raise NotImplementedError(
+                    f"cast to {nd} in the traced computation; a double artifact "
+                    "cannot preserve reduced-precision semantics")
         elif p in _PASSTHROUGH:
             env[out] = read(eqn.invars[0])
         elif p in _BINOP:

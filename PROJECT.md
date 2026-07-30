@@ -214,6 +214,21 @@ is noticeably faster, offer both: the unlimited `besselj(v)` and a domain-limite
 `besselj(v, domain=(a, b))` that trims to one region. The natural first customer is the
 M5 Matérn demo, where kernel inputs live in a known window.
 
+**Queued gammainc work (2026-07-30, Andres; GPU busy ~10 h from queuing):** two items,
+strictly ordered. (1) **Benchmark first**: XLA's `igamma` is two `while` loops in the
+lowered HLO (verified) — Cephes series + continued fraction, whole-array re-execution
+until the worst element converges, fusion-barrier, plus a third looped series on the
+gradient path. Race it on the 3080 against a mock fixed-degree kernel (betainc-runtime
+class) over representative (a, x) distributions, and record iteration-count statistics.
+Analytical headroom is the 10–100× class, not percent; the benchmark sizes the prize.
+Note `gammaincinv` compounds any win ~40× (each solver step currently pays both
+loops). (2) **Build second, if the prize is real**: a Y-class two-region recipe —
+moderate a via log-tables of the Kummer part M = ₁F₁(1; a+1; x) (the betainc pattern),
+large a via Temme's uniform representation P ≈ ½erfc(−η√(a/2)) + R(1/a, η), which
+covers a → ∞ through the 1/a variable with erfc XLA-native. Same fits-both-orders
+consideration as betainc does not arise (single parameter). Also likely fixes XLA
+igamma's f32 accuracy reputation in passing.
+
 **Queued f32 work (2026-07-30, Andres):** three bake-step options, in order of value.
 (1) Degree truncation for f32: `astype(f32)` keeps the full f64 degree, roughly 2× the
 terms f32 accuracy needs (exp-02: f32 degrees are about half the f64 ones); a

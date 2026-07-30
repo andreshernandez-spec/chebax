@@ -78,6 +78,7 @@ def test_order_out_of_range():
         chebax.bessely(10.5)
 
 
+@pytest.mark.slow
 def test_tables_regenerate_bit_for_bit():
     ta, tb = bessely_gen.generate_inner_tables()
     mid = bessely_gen.generate_mid_table()

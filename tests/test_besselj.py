@@ -113,6 +113,7 @@ def test_jit_with_static_order():
     np.testing.assert_allclose(np.asarray(y_closed), ref, rtol=0, atol=1e-15)
 
 
+@pytest.mark.slow
 def test_table_regenerates_bit_for_bit():
     regen = besselj_gen.generate_table()
     assert regen.shape == tab.TABLE.shape

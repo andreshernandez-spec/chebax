@@ -123,6 +123,7 @@ def test_x_large_smoke():
     assert abs(float(chebax.besselj(2.5)(1e6)) - ref) <= 1e-16
 
 
+@pytest.mark.slow
 def test_ext_tables_regenerate_bit_for_bit():
     mid = besselj_gen.generate_mid_table()
     ptab, qtab = besselj_gen.generate_outer_tables()

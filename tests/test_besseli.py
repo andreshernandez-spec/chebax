@@ -81,6 +81,7 @@ def test_order_out_of_range():
         chebax.besseli(-0.5)
 
 
+@pytest.mark.slow
 def test_tables_regenerate_bit_for_bit():
     assert np.array_equal(besseli_gen.generate_inner_table(), it.TABLE_IN)
     assert np.array_equal(besseli_gen.generate_tail_table(), it.TABLE_TAIL)

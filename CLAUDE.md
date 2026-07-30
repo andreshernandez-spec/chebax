@@ -45,9 +45,12 @@ python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 
 ```bash
 python -m pip install -e . --no-build-isolation   # once, into the open-source env
-python -m pytest -q                               # ~4 min; conftest enables x64
+python -m pytest -q -m "not slow"                 # quick loop, ~2.5 min (skips regen;
+                                                  #  mpmath references are the rest)
+python -m pytest -q                               # full suite ~4 min; run before commits
                                                   # (bake header test skips without g++;
-                                                  #  the regen tests are most of the time)
+                                                  #  conftest enables x64; CI runs the
+                                                  #  full suite on every push)
 python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-tables
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables

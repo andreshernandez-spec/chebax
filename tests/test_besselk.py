@@ -135,6 +135,7 @@ def test_matern_learns_nu():
     assert abs(float(jnp.exp(theta[2])) - sig2_t) <= 1e-3
 
 
+@pytest.mark.slow
 def test_tables_regenerate_bit_for_bit():
     lo, hi = besselk_gen.generate_inner_tables()
     tail = besselk_gen.generate_tail_table()

@@ -15,6 +15,8 @@ pip install chebax[examples]     # adds matplotlib and numpyro
 | [03_numpyro_truncated_and_circular](03_numpyro_truncated_and_circular.ipynb) | a truncated Student-t distribution for numpyro (numpyro#1365) fitted with NUTS, and von Mises CDF/quantile with pathwise gradients in kappa |
 | [04_erfcx_lambertw_betainc](04_erfcx_lambertw_betainc.ipynb) | Gaussian tails without overflow, both real branches of Lambert W (jax#13680), and binomial reliability via betainc gradients (jax#38610) |
 | [05_baking_artifacts](05_baking_artifacts.ipynb) | baking any recipe into a dependency-free pure-jax module or a standalone C++17 header |
+| [06_copula_variational_inference](06_copula_variational_inference.ipynb) | a Gaussian-copula guide with Beta marginals, trained end to end through `betaincinv`: correlated posteriors over probabilities that mean-field cannot represent |
+| [07_censored_and_robust_likelihoods](07_censored_and_robust_likelihoods.ipynb) | detection-limit censoring via `betainc_fn` in the likelihood, and robit regression with `stdtr` where the degrees of freedom are a latent |
 
 All notebooks run on CPU in a few minutes total. They enable x64 at the
 top; committed outputs were produced with fixed PRNG keys, so rerunning

@@ -89,3 +89,25 @@ def test_table_regenerates_bit_for_bit():
     t = vonmises_gen.generate_table()
     assert np.array_equal(t, vt.TABLE)
     assert vt.META["dps"] == vonmises_gen.DPS
+
+
+# ---- review 2026-07-30 regressions ------------------------------------------
+
+def test_kappa_gradient_at_zero():
+    # the sqrt(kappa) table axis made d/dkappa infinite at the documented
+    # boundary; the exact Fourier limit is sin(theta)/(2 pi)
+    import math
+    g = float(jax.grad(chebax.vonmises_cdf)(0.0, 0.5))
+    assert abs(g - math.sin(0.5) / (2 * math.pi)) <= 1e-12
+    assert float(jax.grad(chebax.vonmises_cdf)(0.0, 0.0)) == 0.0
+    # continuous across the series/AD threshold
+    g1 = float(jax.grad(chebax.vonmises_cdf)(1e-8, 0.5))
+    g2 = float(jax.grad(chebax.vonmises_cdf)(2e-8, 0.5))
+    assert abs(g1 - g2) <= 1e-7
+    assert np.isfinite(float(jax.grad(chebax.vonmises_icdf)(0.0, 0.6)))
+
+
+def test_icdf_nan_and_oob():
+    assert np.isnan(float(chebax.vonmises_icdf(5.0, jnp.nan)))
+    assert np.isnan(float(chebax.vonmises_icdf(5.0, -1.0)))
+    assert np.isnan(float(chebax.vonmises_icdf(5.0, 2.0)))

@@ -58,3 +58,23 @@ def test_jit():
     xs = jnp.asarray([0.5, 2.0, 10.0])
     np.testing.assert_allclose(np.asarray(jax.jit(chebax.lambertw)(xs)),
                                np.asarray(chebax.lambertw(xs)), rtol=0, atol=1e-15)
+
+
+# ---- review 2026-07-30 regressions ------------------------------------------
+
+def test_branch_point_both_roundings():
+    # 1/math.e and math.exp(-1) can round to different doubles; both must
+    # be accepted as the branch point (the old check rejected one with nan)
+    import math
+    for x in (-1.0 / math.e, -math.exp(-1.0)):
+        assert float(chebax.lambertw(x)) == -1.0
+        assert float(chebax.lambertw(x, k=-1)) == -1.0
+
+
+def test_inf_and_boundary_derivatives():
+    import math
+    assert float(chebax.lambertw(np.inf)) == np.inf
+    assert np.isnan(float(chebax.lambertw(np.nan)))
+    br = -math.exp(-1.0)
+    assert float(jax.grad(chebax.lambertw)(br)) == np.inf
+    assert float(jax.grad(lambda x: chebax.lambertw(x, k=-1))(br)) == -np.inf

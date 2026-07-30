@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import vonmises_table as _vt
+from chebax._src.recipes._common import canon_float as _canon
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
 from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.besseli import besseli_fn
@@ -34,13 +35,40 @@ def _h_series(kappa):
     return ChebSeries(traced_coefs(_vt.TABLE, 0.0, _vt.RMAX, r), (0.0, _vt.WMAX))
 
 
-def vonmises_cdf(kappa, theta):
-    """CDF of vonMises(mu=0, kappa) at theta in [-pi, pi]; kappa traceable."""
-    theta = jnp.asarray(theta)
+def _cdf_impl(kappa, theta):
     h = _h_series(kappa)
     tc = jnp.clip(theta, -jnp.pi, jnp.pi)
     core = 0.5 + tc / (2 * jnp.pi) + tc * h(tc * tc)
     return jnp.where(theta <= -jnp.pi, 0.0, jnp.where(theta >= jnp.pi, 1.0, core))
+
+
+@jax.custom_jvp
+def vonmises_cdf(kappa, theta):
+    """CDF of vonMises(mu=0, kappa) at theta in [-pi, pi]; kappa traceable.
+
+    The kappa gradient is finite on the whole documented domain including
+    kappa = 0, where it is the exact Fourier limit sin(theta)/(2 pi)."""
+    return _cdf_impl(_canon(kappa), _canon(theta))
+
+
+@vonmises_cdf.defjvp
+def _vonmises_cdf_jvp(primals, tangents):
+    kappa, theta = primals
+    dkappa, dtheta = tangents
+    k, th = _canon(kappa), _canon(theta)
+    F = _cdf_impl(k, th)
+    _, d_th = jax.jvp(lambda t: _cdf_impl(k, t), (th,), (_canon(dtheta),))
+    # kappa direction: the table lives on r = sqrt(kappa), so AD divides
+    # the (noisy, unconstrained) slope at r = 0 by 2 sqrt(kappa) -> inf at
+    # the documented boundary. Below 1e-8 use the exact Fourier limit
+    # dF/dkappa|_0 = sin(theta)/(2 pi) (the neglected terms are O(kappa)).
+    ks = jnp.maximum(k, 1e-8)
+    _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (_canon(dkappa),))
+    interior = (th > -jnp.pi) & (th < jnp.pi)
+    lead = jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi))
+                     / (2 * jnp.pi), 0.0) * _canon(dkappa)
+    dF = d_th + jnp.where(k < 1e-8, lead, d_k_ad)
+    return F, jnp.where(jnp.isnan(F), jnp.nan, dF)
 
 
 def _log_pdf(kappa, theta):
@@ -50,9 +78,12 @@ def _log_pdf(kappa, theta):
 
 @jax.custom_jvp
 def vonmises_icdf(kappa, p):
-    """Quantile of vonMises(mu=0, kappa): inverse of vonmises_cdf in theta."""
-    kappa = jnp.asarray(kappa)
-    p = jnp.asarray(p)
+    """Quantile of vonMises(mu=0, kappa): inverse of vonmises_cdf in theta.
+
+    NaN inputs and p outside [0, 1] return nan; the endpoints return
+    -pi and pi exactly."""
+    kappa = _canon(kappa)
+    p = _canon(p)
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
     h = _h_series(kappa)
@@ -64,7 +95,9 @@ def vonmises_icdf(kappa, p):
     th0 = 2 * jnp.pi * (pc - 0.5)
     th = _newton_bisect(f_and_df, th0, jnp.full_like(pc, -jnp.pi),
                         jnp.full_like(pc, jnp.pi), 30)
-    return jnp.where(p <= 0.0, -jnp.pi, jnp.where(p >= 1.0, jnp.pi, th))
+    th = jnp.where(p <= 0.0, -jnp.pi, jnp.where(p >= 1.0, jnp.pi, th))
+    oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(kappa)
+    return jnp.where(oob, jnp.nan, th)
 
 
 @vonmises_icdf.defjvp
@@ -77,4 +110,4 @@ def _vonmises_icdf_jvp(primals, tangents):
     pdf = jnp.exp(_log_pdf(kappa, ths))
     _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths), (kappa,), (dkappa,))
     dth = (jnp.asarray(dp) - d_cdf) / pdf
-    return th, jnp.where(interior, dth, 0.0)
+    return th, jnp.where(jnp.isnan(th), jnp.nan, jnp.where(interior, dth, 0.0))

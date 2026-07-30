@@ -180,7 +180,8 @@ import chebax, jax
 # generic core: any smooth f on a finite interval
 p = chebax.fit(f, domain=(0.0, 64.0), tol=1e-15)    # build time: numpy + mpmath
 p(x)                     # jax runtime: Clenshaw, jit/vmap-safe pytree
-p.deriv()(x)             # chebder series, computed once, cached
+p.deriv()(x)             # chebder series (recomputed per deriv() call;
+                         #  jit folds it for concrete coefficients)
 
 # recipes: prebuilt families, tables baked into the package
 jv = chebax.besselj(2.5)         # any real v in the table domain; no mpmath
@@ -244,6 +245,48 @@ downcast leaves only ~2% on the table in the Chebyshev basis (coefficient roundi
 the rest), so this only becomes worthwhile if chebax ever targets correctly-rounded-
 grade f32 kernels. In the monomial basis the calculus flips — another reason the
 runtime stays Chebyshev + Clenshaw.
+
+**Queued per-group parameter API (2026-07-30, Andres; strictly after the B3
+benchmark study, scheduled 2026-07-31 in `../bessel/`):** a wrapper over the
+traced-parameter path serving *per-group* parameters: G unique parameter values
+plus a static group-index array; build the G coefficient tables under `vmap`
+(~3k FLOPs each, differentiable, inside `jit`), gather per element. This
+relaxes uniform-per-call to "per-group, grouping static, values free to change
+every iteration" — the hierarchical-model regime (numpyro
+`Beta(alpha[group_idx], ...)`, censored likelihoods with per-group shapes,
+mixtures, multi-kernel GPs), which is where the adoption map's constraint
+caveat actually bites (`docs/adoption-map.md`). Cost is
+G × (reconstruction + n_g × polynomial); B3 must measure the crossover n per
+group where reconstruction overhead disappears before any API is designed or
+claimed. The per-element contract (one parameter per point, scipy's
+`jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
+wrapper changes its arithmetic.
+
+**Queued low-rank table compression (2026-07-30, Andres; sequenced with the f32
+bake work, FLOP payoffs gated on B3):** Chebfun2-style separated representation
+c(ν,k) ≈ Σ_j σ_j u_j(ν) v_j(k) (Townsend & Trefethen 2013; Hashemi & Trefethen
+for 3-D). No cross-approximation needed: the generator already materializes the
+full tensor, so this is a truncated SVD at bake time (Tucker/HOSVD for the 3-D
+betainc tensor), plus a `compress(tol)` emitter option. Measured 2026-07-30 on
+the baked tables (SVD of the checked-in coefficient matrices; sup function
+error verified ≈ σ_{r+1} on a dense grid): besselj inner 25×64 has rank 10 at
+1e-15 / 7 at 1e-7; besselk panels 20-21/56; bessely mid (oscillatory) 20/48 —
+phase/modulus structure is inherently low-rank; betainc 24×72×28 has Tucker
+mode ranks (18,21,18) at 1e-15 and (8,10,9) at 1e-7. Every baked family is
+strongly rank-deficient. What it buys, honestly: does NOT rescue per-element
+parameters (rank-r evaluation is r·(d_ν+d_x) per point ≈ 2k FLOPs for besselj
+f64, still ~20-40× over the roofline budget — the §2.5 verdict stands);
+instantiation collapse drops ~1.8× for the 2-D families (lowers the per-group
+crossover n_g, measure under B3 with the per-group item above); the real wins
+are betainc (~5× cheaper (a,b) instantiation, 5× smaller table at f64, ~40-60×
+at f32-grade) and feasibility of future 3-and-4-parameter recipes, where dense
+tensor-product tables scale as the product of degrees and compressed ones as
+the sum plus a small core. Also shrinks baked artifacts (headers/modules),
+which feeds the vendoring pitch in `docs/adoption-map.md`. Derivative exactness
+survives: chebder applies factor-by-factor, ∂f/∂ν = Σ σ_j u_j'(ν) v_j(x).
+Composes with f32 degree truncation (the two truncations compound). When
+picked up, first action is an `experiments/` script reproducing the rank table
+above per convention.
 
 **External review 2026-07-30:** a full read-only review found 26 issues, several
 release-blocking (silent deep-tail quantile saturation, an aliasing hole in the

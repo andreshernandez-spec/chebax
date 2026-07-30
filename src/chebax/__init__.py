@@ -16,7 +16,12 @@ from chebax._src.recipes.quantiles import betaincinv, gammaincinv, stdtr, stdtri
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
 from chebax._src.series import ChebSeries, PiecewiseCheb
 
-__version__ = "0.1.0.dev0"
+# single-sourced from pyproject.toml via package metadata
+try:
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("chebax")
+except Exception:  # not installed (e.g. running from a source checkout)
+    __version__ = "0+unknown"
 __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn",
            "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",

@@ -238,3 +238,34 @@ def test_max_deg_is_a_cap():
 def test_fixed_degree():
     p = chebax.fit(np.exp, deg=12)
     assert p.degree == 12
+
+
+# ---- review 2026-07-30: constructor validation and mixed dtype --------------
+
+def test_series_constructor_validation():
+    with pytest.raises(ValueError):
+        chebax.ChebSeries(np.array([]))
+    with pytest.raises(ValueError):
+        chebax.ChebSeries(np.ones((2, 3)))
+    with pytest.raises(ValueError):
+        chebax.ChebSeries(np.ones(3), (1.0, 1.0))
+    with pytest.raises(ValueError):
+        chebax.ChebSeries(np.ones(3), (0.0, np.inf))
+    with pytest.raises(ValueError):
+        chebax.PiecewiseCheb(np.ones((2, 0)), (0.0, 1.0, 2.0))
+    with pytest.raises(ValueError):
+        chebax.PiecewiseCheb(np.ones((1, 3)), (0.0,))
+    # integer coefficients promote (they truncated under integ and broke
+    # coefficient AD with float0 tangents)
+    s = chebax.ChebSeries(np.array([1, 2, 3]))
+    assert jnp.issubdtype(s.coef.dtype, jnp.floating)
+    assert np.asarray(s.integ().coef)[1] == -0.5
+
+
+def test_mixed_dtype_matches_piecewise():
+    # a float32 x against float64 coefficients must promote before the
+    # domain map, like the segmented path; the residual difference is the
+    # float32 input's own representation error
+    p = chebax.fit(np.exp, domain=(-1.0, 1.0))
+    x32 = jnp.asarray(0.7, jnp.float32)
+    assert abs(float(p(x32)) - float(p(jnp.asarray(np.float64(x32))))) <= 1e-15

@@ -145,7 +145,11 @@ def gammaincinv(a, p):
     a is a (traceable) positive scalar, uniform per call; p any shape. Needs
     no chebax tables (jax's own gammainc supplies values and the a-gradient).
     Quantiles below the smallest positive float64 return 0.0; a solve that
-    fails its CDF-residual check returns nan instead of a wrong value."""
+    fails its CDF-residual check returns nan instead of a wrong value.
+
+    Once differentiable in a: the a-gradient routes through jax's
+    igamma_grad_a primitive, which has no JVP rule of its own, so second
+    derivatives with respect to a raise inside jax."""
     a = _canon(a)
     p = _canon(p)
     interior = (p > 0.0) & (p < 1.0)

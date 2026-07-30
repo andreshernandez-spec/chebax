@@ -69,7 +69,10 @@ class _JBase(Recipe):
 
     def _inner(self, x):
         xi = self._xin(x)
-        return self._inv_gamma * jnp.power(xi / 2, self.v) * self.g(xi * xi)
+        # (x/2)^0 = 1, but the generic power rule is 0 * (x/2)^-1 at the
+        # origin: NaN gradient for a constant prefactor
+        pref = 1.0 if self.v == 0.0 else jnp.power(xi / 2, self.v)
+        return self._inv_gamma * pref * self.g(xi * xi)
 
     def _mid(self, x):
         return self.jm(self._xmid(x))
@@ -97,7 +100,7 @@ class BesselJ(_JBase):
         xo, P, Q = self._outer_pq(x)
         a = P * self._cphi + Q * self._sphi
         b = P * self._sphi - Q * self._cphi
-        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * a + jnp.sin(xo) * b)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.cos(xo) * a + jnp.sin(xo) * b)
         return self._select(x, self._inner(x), self._mid(x), outer)
 
 
@@ -129,7 +132,7 @@ class BesselJdnu(_JBase):
         b = P * self._sphi - Q * self._cphi
         an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
         bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
-        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * an + jnp.sin(xo) * bn)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.cos(xo) * an + jnp.sin(xo) * bn)
         return self._select(x, inner, mid, outer)
 
 

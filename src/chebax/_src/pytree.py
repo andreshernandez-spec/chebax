@@ -32,7 +32,16 @@ class Recipe:
 
     def __repr__(self):
         statics = ", ".join(f"{f}={getattr(self, f)!r}" for f in self._static_fields)
-        dtype = getattr(self, self._series_fields[0]).coef.dtype if self._series_fields else "-"
+        dtype = "-"
+        # first series child with a coefficient array; children may be
+        # nested recipes (spherical wraps a cylindrical instance)
+        node = self
+        while getattr(node, "_series_fields", ()):
+            node = getattr(node, node._series_fields[0])
+            coef = getattr(node, "coef", None)
+            if coef is not None:
+                dtype = coef.dtype
+                break
         return f"{type(self).__name__}({statics}, dtype={dtype})"
 
     def tree_flatten(self):

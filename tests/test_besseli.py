@@ -86,3 +86,43 @@ def test_tables_regenerate_bit_for_bit():
     assert np.array_equal(besseli_gen.generate_inner_table(), it.TABLE_IN)
     assert np.array_equal(besseli_gen.generate_tail_table(), it.TABLE_TAIL)
     assert it.META["dps"] == besseli_gen.DPS
+
+
+# ---- review 2026-07-30 regressions ------------------------------------------
+
+def test_dnu_zero_order_is_neg_k0():
+    # dI_v/dv|_{v=0} = -K_0(x): exponentially small, while the generic
+    # I * dlog form amplified table noise by e^2x (returned +2.2e242 at
+    # x=600 for a true value of -1.4e-262)
+    mp = pytest.importorskip("mpmath")
+    mp.mp.dps = 40
+    d = chebax.besseli_dnu(0.0)
+    for x in [0.5, 5.0, 30.0, 100.0, 600.0]:
+        ref = float(-mp.besselk(0, x))
+        assert abs(float(d(x)) - ref) / abs(ref) <= 1e-13, x
+    g = float(jax.grad(chebax.besseli_fn, argnums=0)(0.0, 30.0))
+    assert abs(g - float(-mp.besselk(0, 30.0))) / 2.13e-14 <= 1e-12
+    gs = float(jax.grad(lambda n: chebax.besseli_fn(n, 30.0, scaled=True))(0.0))
+    ref_s = float(-mp.besselk(0, 30.0) * mp.exp(-30.0))
+    assert abs(gs - ref_s) / abs(ref_s) <= 1e-12
+
+
+def test_overflow_window_and_inf():
+    # e^x alone overflows at 709.78 but I_v is representable to ~713
+    mp = pytest.importorskip("mpmath")
+    mp.mp.dps = 40
+    for v, x in [(0.0, 713.0), (10.0, 714.0)]:
+        ref = float(mp.besseli(v, x))
+        got = float(chebax.besseli(v)(x))
+        assert np.isfinite(got) and abs(got - ref) / ref <= 1e-12, (v, x)
+    assert float(chebax.besseli(0.0)(jnp.inf)) == np.inf
+    assert float(chebax.besseli(0.0, scaled=True)(jnp.inf)) == 0.0
+    assert np.isnan(float(chebax.besseli(2.5)(jnp.nan)))
+
+
+def test_origin_gradients():
+    # the generic power rule is 0 * (x/2)^-1 at v = 0: NaN for a constant
+    assert float(jax.grad(chebax.besseli(0.0))(0.0)) == 0.0
+    assert abs(float(jax.grad(chebax.besseli(0.0, scaled=True))(0.0)) + 1.0) <= 1e-14
+    assert abs(float(jax.grad(chebax.besseli(1.0))(0.0)) - 0.5) <= 1e-14
+    assert float(jax.grad(chebax.besseli_fn, argnums=1)(0.0, 0.0)) == 0.0

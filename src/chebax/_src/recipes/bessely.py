@@ -93,7 +93,7 @@ class BesselY(_YBase):
         xo, P, Q = self._outer_pq(x)
         a = P * self._cphi + Q * self._sphi
         b = P * self._sphi - Q * self._cphi
-        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.sin(xo) * a - jnp.cos(xo) * b)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.sin(xo) * a - jnp.cos(xo) * b)
         return self._select(x, inner, mid, outer)
 
 
@@ -137,7 +137,7 @@ class BesselYdnu(_YBase):
         b = P * self._sphi - Q * self._cphi
         an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
         bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
-        outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.sin(xo) * an - jnp.cos(xo) * bn)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.sin(xo) * an - jnp.cos(xo) * bn)
         return self._select(x, inner, mid, outer)
 
 

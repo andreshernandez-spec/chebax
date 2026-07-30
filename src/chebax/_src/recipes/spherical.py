@@ -1,22 +1,30 @@
 """Spherical Bessel functions j_n and y_n for integer n in [0, 9].
 
-One-line wrappers over the half-integer cylindrical tables (jax#18119):
+Wrappers over the half-integer cylindrical tables (jax#18119):
 
     j_n(x) = sqrt(pi / (2x)) J_{n+1/2}(x),
-    y_n(x) = sqrt(pi / (2x)) Y_{n+1/2}(x),
+    y_n(x) = sqrt(pi / (2x)) Y_{n+1/2}(x).
 
-so they inherit the cylindrical recipes' domains and accuracy. Domain
-x >= 0 (j_n) and x > 0 (y_n); x = 0 returns the exact limit for j_n
-(1 for n = 0, else 0; the gradient at exactly 0 is masked and reads 0,
-which is wrong only for n = 1 where j_1'(0) = 1/3) and -inf for y_n.
+For j_n the inner region does NOT go through that singular prefactor:
+J_{n+1/2} = (x/2)^{n+1/2} g(x^2) / Gamma(n+3/2) makes
+
+    j_n(x) = sqrt(pi) / (2^{n+1} Gamma(n+3/2)) * x^n * g(x^2)
+
+exact at the origin, values and gradients both (j_1'(0) = 1/3 comes out of
+the integer power, not a mask). Domain x >= 0 for j_n; y_n inherits the
+cylindrical clamp at 1e-6 (both factors clamp together, so the wrapper
+never mixes a raw prefactor with a clamped Y) and returns -inf at x <= 0.
 """
 
 import functools
+import math
 
 import jax
 import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
+from chebax._src.recipes import besselj_table_ext as _ext
+from chebax._src.recipes import bessely_table as _yt
 from chebax._src.recipes.besselj import besselj
 from chebax._src.recipes.bessely import bessely
 
@@ -24,19 +32,41 @@ _NMAX = 9  # n + 1/2 must stay inside the cylindrical tables' [0, 10]
 
 
 @jax.tree_util.register_pytree_node_class
-class _Spherical(Recipe):
-    _static_fields = ("n", "limit0")
+class _SphericalJ(Recipe):
+    _static_fields = ("n",)
     _series_fields = ("inst",)
 
     def _post_init(self):
         self.n = int(self.n)
-        self.limit0 = float(self.limit0)
+        self._c0 = math.sqrt(math.pi) / (2.0 ** (self.n + 1) * math.gamma(self.n + 1.5))
 
     def __call__(self, x):
         x = jnp.asarray(x)
-        xs = jnp.where(x > 0, x, 1.0)  # masked lanes get a safe dummy
-        val = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
-        return jnp.where(x > 0, val, self.limit0)
+        inner_region = x <= _ext.MID_X0
+        xi = jnp.where(inner_region, x, _ext.MID_X0)
+        inner = self._c0 * xi ** self.n * self.inst.g(xi * xi)
+        xs = jnp.where(inner_region, 1.0, x)  # masked lanes get a safe dummy
+        outer = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
+        out = jnp.where(inner_region, inner, outer)
+        return jnp.where(jnp.isnan(x), jnp.nan, out)
+
+
+@jax.tree_util.register_pytree_node_class
+class _SphericalY(Recipe):
+    _static_fields = ("n",)
+    _series_fields = ("inst",)
+
+    def _post_init(self):
+        self.n = int(self.n)
+
+    def __call__(self, x):
+        x = jnp.asarray(x)
+        # clamp the prefactor together with the cylindrical eval: mixing raw
+        # 1/sqrt(x) with the clamped Y gave -1e13 where y_1(1e-8) ~ -1e16
+        xc = jnp.where(x < _yt.XMIN, _yt.XMIN, x)
+        val = jnp.sqrt(jnp.pi / (2 * xc)) * self.inst(xc)
+        out = jnp.where(x > 0, val, -jnp.inf)
+        return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 
 def _check_n(n):
@@ -47,13 +77,13 @@ def _check_n(n):
 
 @functools.lru_cache(maxsize=None)
 def spherical_jn(n):
-    """j_n on x >= 0 for integer n in [0, 9]."""
+    """j_n on x >= 0 for integer n in [0, 9]. Exact values and gradients at 0."""
     n = _check_n(n)
-    return _Spherical(n, 1.0 if n == 0 else 0.0, besselj(n + 0.5))
+    return _SphericalJ(n, besselj(n + 0.5))
 
 
 @functools.lru_cache(maxsize=None)
 def spherical_yn(n):
-    """y_n on x > 0 for integer n in [0, 9] (x = 0 returns -inf)."""
+    """y_n for integer n in [0, 9]; x clamps at 1e-6, x <= 0 returns -inf."""
     n = _check_n(n)
-    return _Spherical(n, -jnp.inf, bessely(n + 0.5))
+    return _SphericalY(n, bessely(n + 0.5))

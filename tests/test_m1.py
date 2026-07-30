@@ -203,8 +203,36 @@ def test_runtime_does_not_import_mpmath():
 
 
 def test_nonsmooth_raises():
-    with pytest.raises(ValueError, match="no convergence"):
+    with pytest.raises(ValueError, match="no validated convergence"):
         chebax.fit(np.abs)
+
+
+def test_aliasing_rejected():
+    # T_34 samples exactly as -T_0 on the 17 initial nodes; the old
+    # last-two-coefficients criterion certified the constant -1 (max err 2)
+    f = chebax.fit(lambda x: np.cos(34 * np.arccos(np.clip(x, -1.0, 1.0))))
+    xs = np.linspace(-1.0, 1.0, 2001)
+    assert f.degree == 34
+    assert np.max(np.abs(np.asarray(f(xs)) - np.cos(34 * np.arccos(xs)))) <= 1e-12
+
+
+def test_oscillatory_noise_floor():
+    # float64 sampling noise sits above tol here; the chop must settle at
+    # the measured plateau instead of keeping hundreds of noise terms
+    # (sin(20x) used to return degree 230) or failing outright (sin(50x))
+    for k, dmax in [(20, 60), (50, 110)]:
+        f = chebax.fit(lambda x, k=k: np.sin(k * x))
+        xs = np.linspace(-1.0, 1.0, 2001)
+        assert f.degree <= dmax
+        assert np.max(np.abs(np.asarray(f(xs)) - np.sin(k * xs))) <= 1e-13
+
+
+def test_max_deg_is_a_cap():
+    # used to return degree 23 from a max_deg=17 call
+    with pytest.raises(ValueError, match="no validated convergence"):
+        chebax.fit(lambda x: np.exp(5 * x), max_deg=17)
+    p = chebax.fit(lambda x: np.exp(5 * x))
+    assert p.degree <= 256
 
 
 def test_fixed_degree():

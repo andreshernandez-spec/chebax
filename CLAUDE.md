@@ -14,9 +14,12 @@ This file is how to work here.
 - **No performance claims until bessel B3 runs.** chebax claims accuracy and gradients.
   Speed language ("fast", "N×") stays out of code, docs, and drafts until
   `../bessel/PROJECT.md` B3 produces a measured number to cite.
-- **Accuracy contract is sup-normalized (absolute).** Relative accuracy at function
-  zeros is a known impossibility; see `../bessel/PROJECT.md` §4 q4. Every number in
-  docs/results states the metric.
+- **The accuracy metric is chosen per family** and stated in each test file's
+  docstring: sup-normalized for oscillatory J (relative accuracy at zeros is a known
+  impossibility, `../bessel/PROJECT.md` §4 q4), modulus-relative (err/√(J²+Y²)) for Y,
+  pointwise-relative for positive functions (K, I, erfcx), absolute for CDFs,
+  two-sided for quantile inversions. Test bars sit at ~4× the measured worst case;
+  both numbers are recorded in the test docstring.
 - **Tables are regenerable bit-for-bit.** Any checked-in coefficient table carries
   generator version, mpmath dps, domain, and degree in metadata, and a test that
   regenerates and diffs it.
@@ -68,12 +71,14 @@ accuracy contract is device-independent, so that is fine.
 ```
 PROJECT.md      the plan and evidence
 CLAUDE.md       this file
-README.md       short orientation
-experiments/    reproducible measurements
+README.md       orientation, quickstart, capability table
+docs/           adding-a-recipe.md (the recipe workflow), increments.md (design log)
+experiments/    reproducible measurements, incl. 03_degree_measurement.py which
+                reproduces every degree claim in the generator docstrings
 results/        captured output, checked in
 drafts/         prose for upstream (PR text, issues) — Andres rewrites and sends
-src/chebax/     the library: _src/algorithms.py (numpy references),
-                _src/series.py (jax runtime), _src/generate.py (fitting),
-                _src/recipes/ (besselj runtime, generator, baked table)
-tests/          acceptance tests (M1 core, M2 besselj) and convention locks
+src/chebax/     the library: _src/{algorithms,series,generate,pytree}.py (core),
+                _src/recipes/ (per-family gen + baked table + runtime, with
+                _common.py and _gen_common.py as the shared machinery), bake/
+tests/          per-recipe acceptance tests; test_besselk.py is the template
 ```

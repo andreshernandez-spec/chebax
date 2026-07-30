@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th v-coefficient of the k-th argument coefficient; TABLE_IN_LO
 
 import numpy as np
 
-META = {'nu_in': 80, 'nv_in': 56, 'nt_tail': 24, 'nv_tail': 32, 'xmin': 1e-06, 'xs': 8.0, 'vsplit': 1.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nu_in': 80, 'nv_in': 56, 'nt_tail': 24, 'nv_tail': 32, 'xmin': 1e-06, 'xs': 8.0, 'vsplit': 1.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '8b95b80b32616746'}
 XMIN = 1e-06
 XS = 8.0
 VSPLIT = 1.0

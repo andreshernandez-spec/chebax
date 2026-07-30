@@ -6,7 +6,7 @@ Axes: TENSOR[k, m, n] = (m-th a-coefficient, n-th b-coefficient) of the k-th x-c
 
 import numpy as np
 
-META = {'nx': 24, 'na': 72, 'nb': 28, 'ab_domain': (0.1, 10.0), 'xsplit': 0.5, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nx': 24, 'na': 72, 'nb': 28, 'ab_domain': (0.1, 10.0), 'xsplit': 0.5, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '55df0021d109e225'}
 ALO = 0.1
 AHI = 10.0
 XSPLIT = 0.5

@@ -38,7 +38,7 @@ Measured degrees are reproducible via experiments/03_degree_measurement.py.
 import pathlib
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, write_table_module)
+                                             to_f64, table_path, write_table_module)
 
 # inner table
 NZ = 25      # z-degree 24, covers the worst case (v=0) with margin
@@ -119,10 +119,10 @@ def generate_outer_tables():
     return to_f64(ptab), to_f64(qtab)
 
 
-def main():
-    here = pathlib.Path(__file__).parent
+def main(out_dir=None):
     write_table_module(
-        here / "besselj_table.py", "chebax._src.recipes.besselj_gen",
+        table_path(out_dir, __file__, "besselj_table.py"),
+        "chebax._src.recipes.besselj_gen",
         "TABLE[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th "
         "z-coefficient (z in [0, ZMAX])",
         {"nz": NZ, "nv": NV, "zmax": ZMAX, "vmax": VMAX},
@@ -131,7 +131,8 @@ def main():
     mid = generate_mid_table()
     ptab, qtab = generate_outer_tables()
     write_table_module(
-        here / "besselj_table_ext.py", "chebax._src.recipes.besselj_gen",
+        table_path(out_dir, __file__, "besselj_table_ext.py"),
+        "chebax._src.recipes.besselj_gen",
         "T[k, j] = j-th v-coefficient (v in [0, 10]) of the k-th argument "
         "coefficient (x in [MID_X0, MID_X1] for TABLE_MID; t = (XS/x)^2 in "
         "[0, 1] for TABLE_P and TABLE_QS)",

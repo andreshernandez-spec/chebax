@@ -6,7 +6,7 @@ Axes: TABLE[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th z-coefficien
 
 import numpy as np
 
-META = {'nz': 25, 'nv': 64, 'zmax': 64.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nz': 25, 'nv': 64, 'zmax': 64.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': 'a02638afcad66040'}
 ZMAX = 64.0
 VMAX = 10.0
 

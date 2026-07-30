@@ -27,7 +27,7 @@ import pathlib
 import numpy as np
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes,
-                                             write_table_module)
+                                             table_path, write_table_module)
 
 ALO, AHI = 0.1, 10.0
 XSPLIT = 0.5
@@ -61,9 +61,9 @@ def generate_table():
     return np.array(tensor)  # (NX, NA, NB)
 
 
-def main():
+def main(out_dir=None):
     write_table_module(
-        pathlib.Path(__file__).with_name("betainc_table.py"),
+        table_path(out_dir, __file__, "betainc_table.py"),
         "chebax._src.recipes.betainc_gen",
         "TENSOR[k, m, n] = (m-th a-coefficient, n-th b-coefficient) of the "
         "k-th x-coefficient of ln 2F1(a+b, 1; a+1; x); a, b in [ALO, AHI], "

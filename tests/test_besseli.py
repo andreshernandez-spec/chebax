@@ -82,10 +82,12 @@ def test_order_out_of_range():
 
 
 @pytest.mark.slow
-def test_tables_regenerate_bit_for_bit():
-    assert np.array_equal(besseli_gen.generate_inner_table(), it.TABLE_IN)
-    assert np.array_equal(besseli_gen.generate_tail_table(), it.TABLE_TAIL)
-    assert it.META["dps"] == besseli_gen.DPS
+def test_tables_regenerate_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    besseli_gen.main(tmp_path)
+    assert (tmp_path / "besseli_table.py").read_text() == pathlib.Path(it.__file__).read_text()
 
 
 # ---- review 2026-07-30 regressions ------------------------------------------

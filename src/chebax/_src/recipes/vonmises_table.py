@@ -6,7 +6,7 @@ Axes: TABLE[k, j] = j-th r-coefficient (r = sqrt(kappa) in [0, RMAX]) of the k-t
 
 import numpy as np
 
-META = {'nw': 104, 'nk': 80, 'kmax': 50.0, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nw': 104, 'nk': 80, 'kmax': 50.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '7d43bb92d9c639ae'}
 KMAX = 50.0
 WMAX = 9.869604401089358
 RMAX = 7.0710678118654755

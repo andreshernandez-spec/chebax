@@ -6,7 +6,7 @@ Axes: 1-D coefficient vectors; DAWSN_E on z = x^2 in [0, XS^2], ERFCX_C on x in 
 
 import numpy as np
 
-META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'nc_erfcx': 40, 'nt_erfcx': 16, 'xs': 6.0, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'nc_erfcx': 40, 'nt_erfcx': 16, 'xs': 6.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '5745b0d76017f960'}
 XS = 6.0
 
 DAWSN_E = np.array([

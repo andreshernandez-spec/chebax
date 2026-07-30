@@ -16,7 +16,9 @@ dependencies = ["jax>=0.4.30", "numpy>=1.26"]
 Repository = "https://github.com/andreshernandez-spec/chebax"
 
 [project.optional-dependencies]
-gen = ["mpmath>=1.3"]
+# tables record the mpmath version that built them; regeneration is verified
+# byte for byte, so the build dependency is pinned to the recorded minor
+gen = ["mpmath>=1.4.1,<1.5"]
 test = ["pytest"]
 examples = ["matplotlib", "numpyro"]
 

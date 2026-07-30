@@ -39,7 +39,7 @@ import math
 import pathlib
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, write_table_module)
+                                             to_f64, table_path, write_table_module)
 from chebax._src.recipes.besselj_gen import VMAX
 
 XMIN_Y = 1e-6
@@ -83,11 +83,11 @@ def generate_mid_table():
         return to_f64(param_fit(mp, rows))
 
 
-def main():
+def main(out_dir=None):
     ta, tb = generate_inner_tables()
     mid = generate_mid_table()
     write_table_module(
-        pathlib.Path(__file__).with_name("bessely_table.py"),
+        table_path(out_dir, __file__, "bessely_table.py"),
         "chebax._src.recipes.bessely_gen",
         "T[k, j] = j-th parameter coefficient of the k-th argument "
         "coefficient; TABLE_A/TABLE_B have mu in [0, 1], argument u = ln x "

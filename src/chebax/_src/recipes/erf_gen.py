@@ -19,7 +19,7 @@ import pathlib
 import numpy as np
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes,
-                                             write_table_module)
+                                             table_path, write_table_module)
 
 XS_E = 6.0
 NZ_DAWSN = 44
@@ -52,10 +52,10 @@ def generate_tables():
     return tof(e), tof(g), tof(c), tof(h)
 
 
-def main():
+def main(out_dir=None):
     e, g, c, h = generate_tables()
     write_table_module(
-        pathlib.Path(__file__).with_name("erf_table.py"),
+        table_path(out_dir, __file__, "erf_table.py"),
         "chebax._src.recipes.erf_gen",
         "1-D coefficient vectors; DAWSN_E on z = x^2 in [0, XS^2], ERFCX_C "
         "on x in [0, XS], the two tails on t = (XS/x)^2 in [0, 1]",

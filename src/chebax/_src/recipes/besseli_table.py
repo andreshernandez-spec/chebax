@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th argument coeffic
 
 import numpy as np
 
-META = {'nz': 72, 'nv': 64, 'nt_tail': 48, 'nv_tail': 32, 'zmax': 64.0, 'xs': 8.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
+META = {'nz': 72, 'nv': 64, 'nt_tail': 48, 'nv_tail': 32, 'zmax': 64.0, 'xs': 8.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '09774c6821122480'}
 ZMAX = 64.0
 XS = 8.0
 VMAX = 10.0

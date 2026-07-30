@@ -140,10 +140,9 @@ def test_matern_learns_nu():
 
 
 @pytest.mark.slow
-def test_tables_regenerate_bit_for_bit():
-    lo, hi = besselk_gen.generate_inner_tables()
-    tail = besselk_gen.generate_tail_table()
-    assert np.array_equal(lo, kt.TABLE_IN_LO)
-    assert np.array_equal(hi, kt.TABLE_IN_HI)
-    assert np.array_equal(tail, kt.TABLE_TAIL)
-    assert kt.META["dps"] == besselk_gen.DPS
+def test_tables_regenerate_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    besselk_gen.main(tmp_path)
+    assert (tmp_path / "besselk_table.py").read_text() == pathlib.Path(kt.__file__).read_text()

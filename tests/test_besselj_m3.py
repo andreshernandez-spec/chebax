@@ -123,11 +123,5 @@ def test_x_large_smoke():
     assert abs(float(chebax.besselj(2.5)(1e6)) - ref) <= 1e-16
 
 
-@pytest.mark.slow
-def test_ext_tables_regenerate_bit_for_bit():
-    mid = besselj_gen.generate_mid_table()
-    ptab, qtab = besselj_gen.generate_outer_tables()
-    assert np.array_equal(mid, ext.TABLE_MID)
-    assert np.array_equal(ptab, ext.TABLE_P)
-    assert np.array_equal(qtab, ext.TABLE_QS)
-    assert ext.META["dps"] == besselj_gen.DPS
+# regeneration of besselj_table_ext.py is covered by the full-file test in
+# test_besselj.py (one besselj_gen.main run emits and checks both tables)

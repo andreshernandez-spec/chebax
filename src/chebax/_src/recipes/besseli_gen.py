@@ -24,7 +24,7 @@ via experiments/03_degree_measurement.py. Regenerate with:
 import pathlib
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, write_table_module)
+                                             to_f64, table_path, write_table_module)
 from chebax._src.recipes.besselj_gen import VMAX
 
 ZMAX_I = 64.0
@@ -67,9 +67,9 @@ def generate_tail_table():
         return to_f64(param_fit(mp, rows))
 
 
-def main():
+def main(out_dir=None):
     write_table_module(
-        pathlib.Path(__file__).with_name("besseli_table.py"),
+        table_path(out_dir, __file__, "besseli_table.py"),
         "chebax._src.recipes.besseli_gen",
         "T[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th argument "
         "coefficient (z = x^2 in [0, ZMAX] for TABLE_IN; t = XS/x in [0, 1] "

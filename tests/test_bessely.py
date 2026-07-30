@@ -79,10 +79,9 @@ def test_order_out_of_range():
 
 
 @pytest.mark.slow
-def test_tables_regenerate_bit_for_bit():
-    ta, tb = bessely_gen.generate_inner_tables()
-    mid = bessely_gen.generate_mid_table()
-    assert np.array_equal(ta, yt.TABLE_A)
-    assert np.array_equal(tb, yt.TABLE_B)
-    assert np.array_equal(mid, yt.TABLE_MID)
-    assert yt.META["dps"] == bessely_gen.DPS
+def test_tables_regenerate_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    bessely_gen.main(tmp_path)
+    assert (tmp_path / "bessely_table.py").read_text() == pathlib.Path(yt.__file__).read_text()

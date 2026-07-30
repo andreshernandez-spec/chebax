@@ -32,7 +32,7 @@ import math
 import pathlib
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, write_table_module)
+                                             to_f64, table_path, write_table_module)
 from chebax._src.recipes.besselj_gen import VMAX
 
 XMIN = 1e-6
@@ -86,11 +86,11 @@ def generate_tail_table():
         return to_f64(param_fit(mp, rows))
 
 
-def main():
+def main(out_dir=None):
     lo, hi = generate_inner_tables()
     tail = generate_tail_table()
     write_table_module(
-        pathlib.Path(__file__).with_name("besselk_table.py"),
+        table_path(out_dir, __file__, "besselk_table.py"),
         "chebax._src.recipes.besselk_gen",
         "T[k, j] = j-th v-coefficient of the k-th argument coefficient; "
         "TABLE_IN_LO has v in [0, VSPLIT], TABLE_IN_HI v in [VSPLIT, VMAX], "

@@ -114,10 +114,11 @@ def test_jit_with_static_order():
 
 
 @pytest.mark.slow
-def test_table_regenerates_bit_for_bit():
-    regen = besselj_gen.generate_table()
-    assert regen.shape == tab.TABLE.shape
-    assert np.array_equal(regen, tab.TABLE)
-    # the mpmath version in META is informational; the array equality above is
-    # the real guard (arrays proved bit-stable across mpmath 1.4.0 -> 1.4.1)
-    assert tab.META["dps"] == besselj_gen.DPS
+def test_table_regenerates_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    besselj_gen.main(tmp_path)  # emits both the inner and the ext tables
+    for name in ("besselj_table.py", "besselj_table_ext.py"):
+        packaged = pathlib.Path(tab.__file__).with_name(name).read_text()
+        assert (tmp_path / name).read_text() == packaged, name

@@ -72,9 +72,9 @@ def test_jit():
 
 
 @pytest.mark.slow
-def test_tables_regenerate_bit_for_bit():
-    e, g, c, h = erf_gen.generate_tables()
-    assert np.array_equal(e, et.DAWSN_E)
-    assert np.array_equal(g, et.DAWSN_G)
-    assert np.array_equal(c, et.ERFCX_C)
-    assert np.array_equal(h, et.ERFCX_H)
+def test_tables_regenerate_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    erf_gen.main(tmp_path)
+    assert (tmp_path / "erf_table.py").read_text() == pathlib.Path(et.__file__).read_text()

@@ -22,7 +22,7 @@ import math
 import pathlib
 
 from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, write_table_module)
+                                             to_f64, table_path, write_table_module)
 
 KMAX_VM = 50.0
 NW_VM = 104
@@ -51,9 +51,9 @@ def generate_table():
         return to_f64(param_fit(mp, rows))
 
 
-def main():
+def main(out_dir=None):
     write_table_module(
-        pathlib.Path(__file__).with_name("vonmises_table.py"),
+        table_path(out_dir, __file__, "vonmises_table.py"),
         "chebax._src.recipes.vonmises_gen",
         "TABLE[k, j] = j-th r-coefficient (r = sqrt(kappa) in [0, RMAX]) of "
         "the k-th w-coefficient (w = theta^2 in [0, WMAX])",

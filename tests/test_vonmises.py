@@ -85,10 +85,12 @@ def test_endpoints_and_jit():
 
 
 @pytest.mark.slow
-def test_table_regenerates_bit_for_bit():
-    t = vonmises_gen.generate_table()
-    assert np.array_equal(t, vt.TABLE)
-    assert vt.META["dps"] == vonmises_gen.DPS
+def test_table_regenerates_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    vonmises_gen.main(tmp_path)
+    assert (tmp_path / "vonmises_table.py").read_text() == pathlib.Path(vt.__file__).read_text()
 
 
 # ---- review 2026-07-30 regressions ------------------------------------------

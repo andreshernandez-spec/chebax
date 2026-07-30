@@ -21,8 +21,12 @@ This file is how to work here.
   two-sided for quantile inversions. Test bars sit at ~4× the measured worst case;
   both numbers are recorded in the test docstring.
 - **Tables are regenerable bit-for-bit.** Any checked-in coefficient table carries
-  generator version, mpmath dps, domain, and degree in metadata, and a test that
-  regenerates and diffs it.
+  mpmath version, dps, domain, degree, and a sha256 of the generator source (plus
+  `_gen_common`) in META, and a slow test that regenerates the COMPLETE module and
+  compares it byte for byte. Consequence: any edit to a generator or to
+  `_gen_common.py`, even a comment, changes the recorded hash — rerun that
+  generator (all of them for `_gen_common`) as part of the same change or the
+  slow test fails.
 - **Runtime imports are `jax` + `numpy` only.** mpmath/scipy live behind the `[gen]`
   extra. If a runtime module imports mpmath, that is a bug.
 - **Coefficient conventions follow `numpy.polynomial`** (plain c0, lowest-first,

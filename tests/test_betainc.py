@@ -94,7 +94,10 @@ def test_param_out_of_range():
 
 
 @pytest.mark.slow
-def test_table_regenerates_bit_for_bit():
-    t = betainc_gen.generate_table()
-    assert np.array_equal(t, bt.TENSOR)
+def test_table_regenerates_bit_for_bit(tmp_path):
+    # full-file comparison: coefficients, META (generator hash, mpmath
+    # version, dps) and the header must reproduce byte for byte
+    import pathlib
+    betainc_gen.main(tmp_path)
+    assert (tmp_path / "betainc_table.py").read_text() == pathlib.Path(bt.__file__).read_text()
     assert bt.META["dps"] == betainc_gen.DPS

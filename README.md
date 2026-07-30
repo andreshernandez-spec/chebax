@@ -16,7 +16,9 @@ descent (see `examples/matern_learn_nu.py`); `besseli(v)` on x >= 0 with a
 `besseli_fn`; `bessely(v)` on [1e-6, inf) completing the Bessel quartet; `dawsn` and `erfcx`
 (the erf-family members jax lacks); `betainc(a, b)` with `betainc_fn(a, b, x)` taking
 both shape parameters as traced scalars, so jax.grad gives dI/da and dI/db (which jax
-itself lacks, jax#38610); and bake
+itself lacks, jax#38610); the differentiable quantile toolkit `betaincinv`,
+`gammaincinv`, `stdtr`, `stdtrit` (jax#2399/#5350/#20358 — Beta, Gamma and Student-t
+quantiles with implicit-function-theorem gradients in every argument); and bake
 emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`) that turn an instance into a
 standalone pure-jax module or a self-contained C++17 header. No mpmath at use time

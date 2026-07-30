@@ -106,6 +106,54 @@ def test_xsf_header_compiles_and_matches(tmp_path):
     assert np.max(np.abs(got - J)) / np.max(np.abs(J)) <= 5e-15
 
 
+BAKEABLE = [
+    ("besselj", lambda: chebax.besselj(2.5), np.linspace(0.05, 100.0, 20)),
+    ("besselk", lambda: chebax.besselk(1.5), np.logspace(-5, 2, 20)),
+    ("besseli", lambda: chebax.besseli(2.5, scaled=True), np.linspace(0.0, 100.0, 20)),
+    ("bessely", lambda: chebax.bessely(1.5), np.logspace(-5, 3, 20)),
+    ("betainc", lambda: chebax.betainc(2.0, 3.0), np.linspace(0.0, 1.0, 21)),
+    ("spherical", lambda: __import__("chebax").spherical_jn(2), np.linspace(0.1, 40.0, 20)),
+]
+
+
+@pytest.mark.parametrize("family,make,xs", BAKEABLE, ids=[b[0] for b in BAKEABLE])
+def test_generic_bake_python_matches_runtime(tmp_path, family, make, xs):
+    # the artifact is derived from the runtime's own trace, so it must agree
+    # to reassociation-free precision
+    import importlib.util
+    inst = make()
+    mod = tmp_path / "baked.py"
+    name = bake.jax_module(inst, mod)
+    spec = importlib.util.spec_from_file_location("baked_gen", mod)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    got = np.asarray(getattr(m, name)(xs))
+    ref = np.asarray(inst(xs))
+    np.testing.assert_allclose(got, ref, rtol=1e-13, atol=1e-300)
+
+
+@pytest.mark.parametrize("family,make,xs", BAKEABLE[1:3], ids=["besselk", "besseli"])
+def test_generic_bake_cpp_matches_runtime(tmp_path, family, make, xs):
+    if shutil.which("g++") is None:
+        pytest.skip("g++ not available")
+    inst = make()
+    hdr = tmp_path / "baked.h"
+    name = bake.xsf_header(inst, hdr)
+    main = tmp_path / "main.cpp"
+    main.write_text(
+        '#include "baked.h"\n#include <cstdio>\n'
+        'int main() { double x; while (std::scanf("%lf", &x) == 1) '
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+    exe = tmp_path / "exe"
+    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+                   check=True, cwd=tmp_path)
+    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs),
+                         capture_output=True, text=True, check=True)
+    got = np.array([float(t) for t in out.stdout.split()])
+    ref = np.asarray(inst(xs))
+    np.testing.assert_allclose(got, ref, rtol=1e-12, atol=1e-300)
+
+
 def test_emission_deterministic(tmp_path):
     jv = chebax.besselj(2.5)
     a, b = tmp_path / "a.py", tmp_path / "b.py"

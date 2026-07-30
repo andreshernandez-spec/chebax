@@ -132,4 +132,25 @@ checked in as experiments/03; and this document plus
 `docs/adding-a-recipe.md`. Also surfaced: a plaintext PyPI token in
 `.env` (never committed; moved to Andres's credential handling) and the
 bake module's per-class scaling problem (the besselj formula lives in four
-places), recorded as a design constraint for the next bake consumer.
+places), resolved in the next increment.
+
+## 9 — generic bake via jaxpr emission (2026-07-30)
+
+The bake per-class scaling problem, resolved by Andres's Option-B call:
+trace the instance's own `__call__` to a jaxpr and emit source from that,
+so the runtime is the single source of truth and recipes stay plain, typed
+jnp code — authors keep the type checker and autocomplete, unlike an
+abstract-ops shim (his pandas-vs-pydantic argument). Two structural facts,
+probed before building and now load-bearing: every ChebSeries evaluation
+is ONE `custom_jvp_call` equation whose unrolled Clenshaw stays contained
+in its call_jaxpr — the emitter folds it to `clenshaw(C_FIELD, affine(x))`
+by value-matching the coefficient constant against the instance's series
+fields (recursing into nested recipes like spherical) — and the residual
+vocabulary is ~15 primitives (`lgamma` arrives as a direct primitive and
+maps to `std::lgamma`). Any Recipe instance now bakes: J, K, I(scaled), Y,
+betainc, spherical verified, Python artifacts **bitwise identical** to the
+runtime, C++ within 1e-12 (glibc-vs-XLA ulps). Solver-based callables
+raise NotImplementedError (`fori_loop` → for-loop is the natural v2). The
+two hand-written besselj templates are deleted; the emitter runs at dev
+time only, so jax-internal drift fails loudly at regeneration without
+invalidating committed artifacts.

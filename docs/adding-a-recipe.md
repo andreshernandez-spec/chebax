@@ -92,6 +92,14 @@ taxonomy:
   `grad`-of-`_fn` is unavailable (bessely: the recurrence depth ⌊ν⌋ is
   structural, so ν cannot trace).
 
+## 3b. Baking is automatic
+
+Any `Recipe` with a closed-form `__call__` bakes with **no per-family
+work**: `bake.jax_module` / `bake.xsf_header` derive the artifact from the
+instance's own traced jaxpr (see `bake/_jaxpr_emit.py`), so artifact and
+runtime cannot diverge. Add your family to `BAKEABLE` in
+`tests/test_bake.py`. Solver-based callables are not bakeable yet.
+
 ## 4. Tests (`tests/test_<name>.py`)
 
 Copy the structure of `tests/test_besselk.py`: values (+ traced

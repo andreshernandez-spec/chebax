@@ -24,9 +24,15 @@ import chebax  # noqa: E402
 
 
 def matern(r, nu, ell, sig2):
-    z = jnp.sqrt(2.0 * nu) * r / ell
+    # r = 0 (every covariance diagonal) is exact: the formula's z^nu K_nu(z)
+    # limit is handled by the select, and masked lanes see a safe dummy so
+    # log(0) cannot poison gradients. Radii below ~1e-6 ell/sqrt(2 nu) sit
+    # on besselk's clamp and read as k(that radius), still ~sig2.
+    rs = jnp.where(r > 0, r, 1.0)
+    z = jnp.sqrt(2.0 * nu) * rs / ell
     log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
-    return sig2 * jnp.exp(log_c + nu * jnp.log(z)) * chebax.besselk_fn(nu, z)
+    k = sig2 * jnp.exp(log_c + nu * jnp.log(z)) * chebax.besselk_fn(nu, z)
+    return jnp.where(r > 0, k, sig2)
 
 
 def main():

@@ -23,3 +23,9 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "dawsn", "erfcx", "fit", "gammaincinv", "lambertw", "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
            "__version__"]
+
+# submodule re-export so `import chebax; chebax.bake` works as documented
+# (bake reads __version__, so this import must stay below its definition)
+from chebax import bake  # noqa: E402,F401
+
+__all__.append("bake")

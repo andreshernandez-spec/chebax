@@ -7,15 +7,25 @@ with respect to function *parameters* (Bessel order, Beta shape, von Mises
 concentration), which mainstream ML libraries lack. No mpmath at use time; the
 runtime imports only jax and numpy.
 
+```sh
+pip install chebax
+```
+
 ```python
-import jax, jax.numpy as jnp, chebax
+import jax
+jax.config.update("jax_enable_x64", True)   # before building instances: tables
+                                            # materialize in the active precision
+import jax.numpy as jnp
+import chebax
 
-jv = chebax.besselj(2.5)              # any real order in [0, 10]; cached, table-backed
-jv(x), jax.grad(jv)(x)                # values and dJ/dx, jit/vmap-safe
+jv = chebax.besselj(2.5)                    # any real order in [0, 10]; cached
+x = jnp.linspace(0.1, 30.0, 200)
+jv(x), jax.vmap(jax.grad(jv))(x)            # values and dJ/dx, jit/vmap-safe
 
-chebax.besselk_fn(nu, x)              # nu as a traced scalar: jax.grad w.r.t. the ORDER
-chebax.betainc_fn(a, b, x)            # dI/da, dI/db via jax.grad  (jax#38610)
-chebax.betaincinv(a, b, p)            # differentiable Beta quantile  (jax#2399)
+chebax.besselk_fn(1.7, x)                   # order as a traced scalar:
+jax.grad(chebax.besselk_fn)(1.7, 5.0)       #   jax.grad w.r.t. the ORDER
+chebax.betainc_fn(2.0, 3.0, 0.4)            # dI/da, dI/db via jax.grad (jax#38610)
+chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#2399)
 ```
 
 ## What's in
@@ -30,7 +40,7 @@ chebax.betaincinv(a, b, p)            # differentiable Beta quantile  (jax#2399)
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
 | quantiles | — | `betaincinv`, `gammaincinv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358 |
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
-| erf family | — | `dawsn`, `erfcx` | — (no params) | the two jax lacks |
+| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept for the C++ bake path |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters

@@ -21,7 +21,8 @@ itself lacks, jax#38610); the differentiable quantile toolkit `betaincinv`,
 quantiles with implicit-function-theorem gradients in every argument);
 `spherical_jn`/`spherical_yn` (n in [0, 9], via the half-integer tables); `lambertw`
 (both real branches, jax#13680); a truncated-distribution sampling example
-(`examples/truncated_sampling.py`); and bake
+(`examples/truncated_sampling.py`); `vonmises_cdf`/`vonmises_icdf` (kappa in [0, 50],
+traced concentration, the circular cdf/icdf numpyro lacks); and bake
 emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`) that turn an instance into a
 standalone pure-jax module or a self-contained C++17 header. No mpmath at use time

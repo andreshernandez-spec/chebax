@@ -13,6 +13,7 @@ from chebax._src.recipes.besselk import besselk, besselk_dnu, besselk_fn
 from chebax._src.recipes.bessely import bessely, bessely_dnu
 from chebax._src.recipes.betainc import betainc, betainc_fn
 from chebax._src.recipes.quantiles import betaincinv, gammaincinv, stdtr, stdtrit
+from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
 from chebax._src.series import ChebSeries, PiecewiseCheb
 
 __version__ = "0.1.0.dev0"
@@ -20,4 +21,5 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",
            "dawsn", "erfcx", "fit", "gammaincinv", "lambertw", "spherical_jn",
-           "spherical_yn", "stdtr", "stdtrit", "__version__"]
+           "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
+           "__version__"]

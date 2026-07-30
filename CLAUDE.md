@@ -45,9 +45,9 @@ python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 
 ```bash
 python -m pip install -e . --no-build-isolation   # once, into the open-source env
-python -m pytest -q -m "not slow"                 # quick loop, ~2.5 min (skips regen;
+python -m pytest -q -m "not slow"                 # quick loop, ~3.5 min (skips regen;
                                                   #  mpmath references are the rest)
-python -m pytest -q                               # full suite ~4 min; run before commits
+python -m pytest -q                               # full suite ~10 min; run before commits
                                                   # (bake header test skips without g++;
                                                   #  conftest enables x64; CI runs the
                                                   #  full suite on every push)
@@ -56,6 +56,7 @@ python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-t
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
+python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 

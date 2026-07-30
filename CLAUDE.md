@@ -54,6 +54,7 @@ python -m pytest -q                               # full suite ~4 min; run befor
 python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-tables
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
+python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 

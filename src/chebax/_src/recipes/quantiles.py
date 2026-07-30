@@ -28,32 +28,13 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import betainc_table as _bt
-from chebax._src.recipes.betainc import (_eval_betainc, _tensor_coefs_traced,
-                                         betainc_fn)
+from chebax._src.recipes._common import newton_bisect as _newton_bisect
+from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
+                                         tensor_coefs_traced)
 from chebax._src.series import ChebSeries
 
-
-def _newton_bisect(f_and_df, x0, lo0, hi0, iters):
-    """Safeguarded Newton for increasing f: keep [lo, hi] bracketing the root,
-    fall back to the midpoint (or doubling while hi is inf) when the Newton
-    step leaves the bracket."""
-
-    def step(_, carry):
-        x, lo, hi = carry
-        f, df = f_and_df(x)
-        lo = jnp.where(f < 0, x, lo)
-        hi = jnp.where(f < 0, hi, x)
-        xn = x - f / df
-        mid = jnp.where(jnp.isfinite(hi), 0.5 * (lo + hi), 2.0 * x + 1.0)
-        # inclusive test: a Newton step that stalls exactly at the current
-        # iterate (converged) must be accepted, or a one-sided approach whose
-        # far bound never tightened catapults a converged iterate to the
-        # midpoint of the half-open bracket
-        ok = (xn >= lo) & (xn <= hi) & jnp.isfinite(xn)
-        return jnp.where(ok, xn, mid), lo, hi
-
-    x, _, _ = jax.lax.fori_loop(0, iters, step, (x0, lo0, hi0))
-    return x
+_eval_betainc = eval_betainc
+_tensor_coefs_traced = tensor_coefs_traced
 
 
 def _ln_beta(a, b):

@@ -23,16 +23,15 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import vonmises_table as _vt
+from chebax._src.recipes._common import newton_bisect as _newton_bisect
+from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.besseli import besseli_fn
-from chebax._src.recipes.quantiles import _newton_bisect
-from chebax._src.series import ChebSeries, _chebval
+from chebax._src.series import ChebSeries
 
 
 def _h_series(kappa):
     r = jnp.sqrt(jnp.asarray(kappa))
-    tr = 2.0 * r / _vt.RMAX - 1.0
-    coefs = jax.vmap(lambda row: _chebval(tr, row, (-1.0, 1.0)))(jnp.asarray(_vt.TABLE))
-    return ChebSeries(coefs, (0.0, _vt.WMAX))
+    return ChebSeries(traced_coefs(_vt.TABLE, 0.0, _vt.RMAX, r), (0.0, _vt.WMAX))
 
 
 def vonmises_cdf(kappa, theta):

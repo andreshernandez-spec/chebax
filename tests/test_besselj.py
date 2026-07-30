@@ -15,7 +15,7 @@ import pytest
 import chebax
 from chebax._src.recipes import besselj_gen
 from chebax._src.recipes import besselj_table as tab
-from chebax._src.recipes.besselj import _digamma
+from chebax._src.recipes._common import digamma64 as _digamma
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40

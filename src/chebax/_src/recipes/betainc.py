@@ -23,6 +23,9 @@ value is the Beta density, which the tests use as an oracle.
 Endpoints are handled by hard selects (I(0) = 0, I(1) = 1 exactly, interior
 lanes see raw x); gradients at exactly 0 and 1 are masked to the interior
 formula's limits and can be infinite in exact math anyway (a < 1 or b < 1).
+
+eval_betainc and tensor_coefs_traced are internal-but-shared: the quantile
+toolkit builds betaincinv on them.
 """
 
 import functools
@@ -32,7 +35,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from chebax._src import algorithms
+from chebax._src.pytree import Recipe, register_recipe
 from chebax._src.recipes import betainc_table as _bt
+from chebax._src.recipes._common import check_range
 from chebax._src.series import ChebSeries, _chebval
 
 
@@ -50,19 +55,12 @@ def _tensor_coefs(a, b):
     return np.array(out)
 
 
-def _tensor_coefs_traced(a, b):
+def tensor_coefs_traced(a, b):
     sa, sb = _smap(a), _smap(b)
     t = jnp.asarray(_bt.TENSOR)
     va = jax.vmap(jax.vmap(lambda row: _chebval(sa, row, (-1.0, 1.0))))(
         jnp.swapaxes(t, 1, 2))                      # (NX, NB)
     return jax.vmap(lambda row: _chebval(sb, row, (-1.0, 1.0)))(va)  # (NX,)
-
-
-def _check_param(name, v):
-    v = float(v)
-    if not _bt.ALO <= v <= _bt.AHI:
-        raise ValueError(f"betainc table covers {name} in [{_bt.ALO}, {_bt.AHI}], got {v}")
-    return v
 
 
 def _log_direct(a, b, x, lser):
@@ -72,7 +70,7 @@ def _log_direct(a, b, x, lser):
     return a * jnp.log(x) + b * jnp.log1p(-x) - jnp.log(a) - lnB + lser(x)
 
 
-def _eval_betainc(a, b, x, cab, cba):
+def eval_betainc(a, b, x, cab, cba):
     x = jnp.asarray(x)
     interior = (x > 0.0) & (x < 1.0)
     xi = jnp.where(interior, x, 0.25)          # masked lanes get a safe dummy
@@ -84,41 +82,26 @@ def _eval_betainc(a, b, x, cab, cba):
     return jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
 
 
-@jax.tree_util.register_pytree_node_class
-class BetaInc:
+@register_recipe
+class BetaInc(Recipe):
     """Callable I_x(a, b) on x in [0, 1]. Build with betainc(a, b)."""
 
-    def __init__(self, a, b, cab, cba):
-        self.a = float(a)
-        self.b = float(b)
-        self.cab = cab
-        self.cba = cba
+    _static_fields = ("a", "b")
+    _series_fields = ("cab", "cba")
+
+    def _post_init(self):
+        self.a = float(self.a)
+        self.b = float(self.b)
 
     def __call__(self, x):
-        return _eval_betainc(self.a, self.b, x, self.cab, self.cba)
-
-    def astype(self, dtype):
-        return BetaInc(self.a, self.b, self.cab.astype(dtype), self.cba.astype(dtype))
-
-    def __repr__(self):
-        return f"BetaInc(a={self.a}, b={self.b}, dtype={self.cab.coef.dtype})"
-
-    def tree_flatten(self):
-        return (self.cab, self.cba), (self.a, self.b)
-
-    @classmethod
-    def tree_unflatten(cls, aux, children):
-        obj = object.__new__(cls)
-        obj.a, obj.b = aux
-        obj.cab, obj.cba = children
-        return obj
+        return eval_betainc(self.a, self.b, x, self.cab, self.cba)
 
 
 @functools.lru_cache(maxsize=None)
 def betainc(a, b):
     """I_x(a, b) for a, b in [0.1, 10]. Cached per (a, b); no mpmath."""
-    a = _check_param("a", a)
-    b = _check_param("b", b)
+    a = check_range("betainc", "a", a, _bt.ALO, _bt.AHI)
+    b = check_range("betainc", "b", b, _bt.ALO, _bt.AHI)
     return BetaInc(a, b,
                    ChebSeries(_tensor_coefs(a, b), (0.0, _bt.XSPLIT)),
                    ChebSeries(_tensor_coefs(b, a), (0.0, _bt.XSPLIT)))
@@ -132,6 +115,6 @@ def betainc_fn(a, b, x):
     point; jit constant-folds them when a, b are static."""
     a = jnp.asarray(a)
     b = jnp.asarray(b)
-    return _eval_betainc(a, b, x,
-                         ChebSeries(_tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT)),
-                         ChebSeries(_tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT)))
+    return eval_betainc(a, b, x,
+                        ChebSeries(tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT)),
+                        ChebSeries(tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT)))

@@ -13,43 +13,29 @@ which is wrong only for n = 1 where j_1'(0) = 1/3) and -inf for y_n.
 
 import functools
 
-import jax
 import jax.numpy as jnp
 
+from chebax._src.pytree import Recipe, register_recipe
 from chebax._src.recipes.besselj import besselj
 from chebax._src.recipes.bessely import bessely
 
 _NMAX = 9  # n + 1/2 must stay inside the cylindrical tables' [0, 10]
 
 
-@jax.tree_util.register_pytree_node_class
-class _Spherical:
-    def __init__(self, n, inst, limit0):
-        self.n = int(n)
-        self.inst = inst
-        self.limit0 = float(limit0)
+@register_recipe
+class _Spherical(Recipe):
+    _static_fields = ("n", "limit0")
+    _series_fields = ("inst",)
+
+    def _post_init(self):
+        self.n = int(self.n)
+        self.limit0 = float(self.limit0)
 
     def __call__(self, x):
         x = jnp.asarray(x)
         xs = jnp.where(x > 0, x, 1.0)  # masked lanes get a safe dummy
         val = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
         return jnp.where(x > 0, val, self.limit0)
-
-    def astype(self, dtype):
-        return _Spherical(self.n, self.inst.astype(dtype), self.limit0)
-
-    def __repr__(self):
-        return f"_Spherical(n={self.n}, {self.inst!r})"
-
-    def tree_flatten(self):
-        return (self.inst,), (self.n, self.limit0)
-
-    @classmethod
-    def tree_unflatten(cls, aux, children):
-        obj = object.__new__(cls)
-        obj.n, obj.limit0 = aux
-        (obj.inst,) = children
-        return obj
 
 
 def _check_n(n):
@@ -62,11 +48,11 @@ def _check_n(n):
 def spherical_jn(n):
     """j_n on x >= 0 for integer n in [0, 9]."""
     n = _check_n(n)
-    return _Spherical(n, besselj(n + 0.5), 1.0 if n == 0 else 0.0)
+    return _Spherical(n, 1.0 if n == 0 else 0.0, besselj(n + 0.5))
 
 
 @functools.lru_cache(maxsize=None)
 def spherical_yn(n):
     """y_n on x > 0 for integer n in [0, 9] (x = 0 returns -inf)."""
     n = _check_n(n)
-    return _Spherical(n, bessely(n + 0.5), -jnp.inf)
+    return _Spherical(n, -jnp.inf, bessely(n + 0.5))

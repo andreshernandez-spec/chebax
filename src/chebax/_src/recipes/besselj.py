@@ -32,62 +32,21 @@ at instantiation.
 import functools
 import math
 
-import jax
 import jax.numpy as jnp
-import numpy as np
 
-from chebax._src import algorithms
+from chebax._src.pytree import Recipe, register_recipe
 from chebax._src.recipes import besselj_table as _tab
 from chebax._src.recipes import besselj_table_ext as _ext
+from chebax._src.recipes._common import (check_range, digamma64, param_coefs,
+                                         param_coefs_der)
 from chebax._src.series import ChebSeries
 
 
-def _digamma(z):
-    """float64 psi(z) for z >= 1: recurrence up to z >= 15, then the Bernoulli
-    series through z^-12 (A&S 6.3.5 / 6.3.18). Truncation < 1e-16 there."""
-    acc = 0.0
-    while z < 15.0:
-        acc -= 1.0 / z
-        z += 1.0
-    zi = 1.0 / (z * z)
-    tail = 1 / 12 - zi * (1 / 120 - zi * (1 / 252 - zi * (1 / 240 - zi * (1 / 132 - zi * (691 / 32760)))))
-    return acc + math.log(z) - 0.5 / z - zi * tail
+class _JBase(Recipe):
+    """Shared v-derived constants and the three-region plumbing."""
 
-
-def _nu_eval(table, v):
-    """Coefficient vector at order v: Clenshaw in v across table rows."""
-    t = 2.0 * v / _tab.VMAX - 1.0
-    return np.array([algorithms.chebval(t, row) for row in table])
-
-
-def _nu_eval_der(table, v):
-    """d/dv of the coefficient vector, via chebder along the v axis."""
-    t = 2.0 * v / _tab.VMAX - 1.0
-    d = np.array([algorithms.chebval(t, algorithms.chebder(row)) for row in table])
-    return d * (2.0 / _tab.VMAX)
-
-
-def _check_order(v):
-    v = float(v)
-    if not 0.0 <= v <= _tab.VMAX:
-        raise ValueError(f"besselj table covers v in [0, {_tab.VMAX}], got {v}")
-    return v
-
-
-def _series_at(v):
-    return dict(
-        g=ChebSeries(_nu_eval(_tab.TABLE, v), (0.0, _tab.ZMAX)),
-        jm=ChebSeries(_nu_eval(_ext.TABLE_MID, v), (_ext.MID_X0, _ext.MID_X1)),
-        p=ChebSeries(_nu_eval(_ext.TABLE_P, v), (0.0, 1.0)),
-        q=ChebSeries(_nu_eval(_ext.TABLE_QS, v), (0.0, 1.0)),
-    )
-
-
-class _Constants:
-    """Shared v-derived scalars, recomputed deterministically on unflatten."""
-
-    def _init_constants(self, v):
-        self.v = float(v)
+    def _post_init(self):
+        self.v = float(self.v)
         self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
         phi = (self.v / 2 + 0.25) * math.pi
         self._cphi = math.cos(phi)
@@ -125,13 +84,12 @@ class _Constants:
         return jnp.where(x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer))
 
 
-@jax.tree_util.register_pytree_node_class
-class BesselJ(_Constants):
+@register_recipe
+class BesselJ(_JBase):
     """Callable J_v on x >= 0. Build with besselj(v)."""
 
-    def __init__(self, v, g, jm, p, q):
-        self._init_constants(v)
-        self.g, self.jm, self.p, self.q = g, jm, p, q
+    _static_fields = ("v",)
+    _series_fields = ("g", "jm", "p", "q")
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -141,32 +99,17 @@ class BesselJ(_Constants):
         outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * a + jnp.sin(xo) * b)
         return self._select(x, self._inner(x), self._mid(x), outer)
 
-    def astype(self, dtype):
-        return BesselJ(self.v, *(s.astype(dtype) for s in (self.g, self.jm, self.p, self.q)))
 
-    def __repr__(self):
-        return f"BesselJ(v={self.v}, dtype={self.g.coef.dtype})"
-
-    def tree_flatten(self):
-        return (self.g, self.jm, self.p, self.q), self.v
-
-    @classmethod
-    def tree_unflatten(cls, v, children):
-        obj = object.__new__(cls)
-        obj._init_constants(v)
-        obj.g, obj.jm, obj.p, obj.q = children
-        return obj
-
-
-@jax.tree_util.register_pytree_node_class
-class BesselJdnu(_Constants):
+@register_recipe
+class BesselJdnu(_JBase):
     """Callable dJ_v/dv on x > 0. Build with besselj_dnu(v)."""
 
-    def __init__(self, v, g, jm, p, q, gnu, jmnu, pnu, qnu):
-        self._init_constants(v)
-        self._psi = _digamma(self.v + 1.0)
-        self.g, self.jm, self.p, self.q = g, jm, p, q
-        self.gnu, self.jmnu, self.pnu, self.qnu = gnu, jmnu, pnu, qnu
+    _static_fields = ("v",)
+    _series_fields = ("g", "jm", "p", "q", "gnu", "jmnu", "pnu", "qnu")
+
+    def _post_init(self):
+        super()._post_init()
+        self._psi = digamma64(self.v + 1.0)
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -188,40 +131,31 @@ class BesselJdnu(_Constants):
         outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.cos(xo) * an + jnp.sin(xo) * bn)
         return self._select(x, inner, mid, outer)
 
-    def astype(self, dtype):
-        return BesselJdnu(self.v, *(s.astype(dtype) for s in (
-            self.g, self.jm, self.p, self.q, self.gnu, self.jmnu, self.pnu, self.qnu)))
 
-    def __repr__(self):
-        return f"BesselJdnu(v={self.v}, dtype={self.g.coef.dtype})"
-
-    def tree_flatten(self):
-        return (self.g, self.jm, self.p, self.q, self.gnu, self.jmnu, self.pnu, self.qnu), self.v
-
-    @classmethod
-    def tree_unflatten(cls, v, children):
-        obj = object.__new__(cls)
-        obj._init_constants(v)
-        obj._psi = _digamma(obj.v + 1.0)
-        obj.g, obj.jm, obj.p, obj.q, obj.gnu, obj.jmnu, obj.pnu, obj.qnu = children
-        return obj
+def _series_at(v):
+    return (
+        ChebSeries(param_coefs(_tab.TABLE, 0.0, _tab.VMAX, v), (0.0, _tab.ZMAX)),
+        ChebSeries(param_coefs(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)),
+        ChebSeries(param_coefs(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
+        ChebSeries(param_coefs(_ext.TABLE_QS, 0.0, _tab.VMAX, v), (0.0, 1.0)),
+    )
 
 
 @functools.lru_cache(maxsize=None)
 def besselj(v):
     """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath."""
-    v = _check_order(v)
-    return BesselJ(v, **_series_at(v))
+    v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
+    return BesselJ(v, *_series_at(v))
 
 
 @functools.lru_cache(maxsize=None)
 def besselj_dnu(v):
     """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient)."""
-    v = _check_order(v)
+    v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJdnu(
-        v, **_series_at(v),
-        gnu=ChebSeries(_nu_eval_der(_tab.TABLE, v), (0.0, _tab.ZMAX)),
-        jmnu=ChebSeries(_nu_eval_der(_ext.TABLE_MID, v), (_ext.MID_X0, _ext.MID_X1)),
-        pnu=ChebSeries(_nu_eval_der(_ext.TABLE_P, v), (0.0, 1.0)),
-        qnu=ChebSeries(_nu_eval_der(_ext.TABLE_QS, v), (0.0, 1.0)),
+        v, *_series_at(v),
+        ChebSeries(param_coefs_der(_tab.TABLE, 0.0, _tab.VMAX, v), (0.0, _tab.ZMAX)),
+        ChebSeries(param_coefs_der(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)),
+        ChebSeries(param_coefs_der(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
+        ChebSeries(param_coefs_der(_ext.TABLE_QS, 0.0, _tab.VMAX, v), (0.0, 1.0)),
     )

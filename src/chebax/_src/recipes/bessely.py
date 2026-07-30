@@ -1,6 +1,6 @@
 """Y_v for real v in [0, 10] on x in [1e-6, inf), from baked tables.
 
-Three regions, hard selects at 8 and 30:
+Three regions, hard selects at 5 and 30:
 
 - x in [1e-6, 5]: reduce to small order. With mu = v - floor(v) in [0, 1)
   (floor, not round: the (x/2)^mu scaling only removes the singular branch
@@ -20,41 +20,21 @@ Three regions, hard selects at 8 and 30:
 
 |Y_v| reaches ~6e67 at (v=10, x=1e-6): fine in f64, overflows f32 (astype
 is for moderate subdomains). Below XMIN = 1e-6 the input clamps. No traced-
-order variant: the recurrence depth round(v) is structural, so v cannot be
+order variant: the recurrence depth floor(v) is structural, so v cannot be
 a tracer here (use besselj/besselk/besseli for traced orders).
 """
 
 import functools
 import math
 
-import jax
 import jax.numpy as jnp
-import numpy as np
 
-from chebax._src import algorithms
+from chebax._src.pytree import Recipe, register_recipe
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes import bessely_table as _yt
-from chebax._src.recipes.besselj import _nu_eval as _j_nu_eval
-from chebax._src.recipes.besselj import _nu_eval_der as _j_nu_eval_der
+from chebax._src.recipes._common import (check_range, param_coefs,
+                                         param_coefs_der)
 from chebax._src.series import ChebSeries
-
-
-def _coefs(table, lo, hi, v):
-    tn = 2.0 * (v - lo) / (hi - lo) - 1.0
-    return np.array([algorithms.chebval(tn, row) for row in table])
-
-
-def _coefs_dnu(table, lo, hi, v):
-    tn = 2.0 * (v - lo) / (hi - lo) - 1.0
-    d = np.array([algorithms.chebval(tn, algorithms.chebder(row)) for row in table])
-    return d * (2.0 / (hi - lo))
-
-
-def _check_order(v):
-    v = float(v)
-    if not 0.0 <= v <= _yt.VMAX:
-        raise ValueError(f"bessely table covers v in [0, {_yt.VMAX}], got {v}")
-    return v
 
 
 def _split_order(v):
@@ -62,9 +42,9 @@ def _split_order(v):
     return n, v - n  # mu in [0, 1)
 
 
-class _YBase:
-    def _init_constants(self, v):
-        self.v = float(v)
+class _YBase(Recipe):
+    def _post_init(self):
+        self.v = float(self.v)
         self.n, self.mu = _split_order(self.v)
         phi = (self.v / 2 + 0.25) * math.pi
         self._cphi = math.cos(phi)
@@ -90,13 +70,12 @@ class _YBase:
         return xo, self.p(t), s * self.q(t)
 
 
-@jax.tree_util.register_pytree_node_class
+@register_recipe
 class BesselY(_YBase):
     """Callable Y_v on [1e-6, inf). Build with bessely(v)."""
 
-    def __init__(self, v, ta, tb, ymid, p, q):
-        self._init_constants(v)
-        self.ta, self.tb, self.ymid, self.p, self.q = ta, tb, ymid, p, q
+    _static_fields = ("v",)
+    _series_fields = ("ta", "tb", "ymid", "p", "q")
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -116,24 +95,8 @@ class BesselY(_YBase):
         outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.sin(xo) * a - jnp.cos(xo) * b)
         return self._select(x, inner, mid, outer)
 
-    def astype(self, dtype):
-        return BesselY(self.v, *(s.astype(dtype) for s in (self.ta, self.tb, self.ymid, self.p, self.q)))
 
-    def __repr__(self):
-        return f"BesselY(v={self.v}, dtype={self.ta.coef.dtype})"
-
-    def tree_flatten(self):
-        return (self.ta, self.tb, self.ymid, self.p, self.q), self.v
-
-    @classmethod
-    def tree_unflatten(cls, v, children):
-        obj = object.__new__(cls)
-        obj._init_constants(v)
-        obj.ta, obj.tb, obj.ymid, obj.p, obj.q = children
-        return obj
-
-
-@jax.tree_util.register_pytree_node_class
+@register_recipe
 class BesselYdnu(_YBase):
     """Callable dY_v/dv on [1e-6, inf). Build with bessely_dnu().
 
@@ -141,10 +104,9 @@ class BesselYdnu(_YBase):
     ln(x/2) prefactor term) and carry (Y, dY) through the paired recurrence
     dY_{k+1} = (2/x) Y_k + (2k/x) dY_k - dY_{k-1}."""
 
-    def __init__(self, v, ta, tb, ymid, p, q, ta_mu, tb_mu, ymid_nu, p_nu, q_nu):
-        self._init_constants(v)
-        self.ta, self.tb, self.ymid, self.p, self.q = ta, tb, ymid, p, q
-        self.ta_mu, self.tb_mu, self.ymid_nu, self.p_nu, self.q_nu = ta_mu, tb_mu, ymid_nu, p_nu, q_nu
+    _static_fields = ("v",)
+    _series_fields = ("ta", "tb", "ymid", "p", "q",
+                      "ta_mu", "tb_mu", "ymid_nu", "p_nu", "q_nu")
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -177,55 +139,35 @@ class BesselYdnu(_YBase):
         outer = jnp.sqrt(2.0 / (jnp.pi * xo)) * (jnp.sin(xo) * an - jnp.cos(xo) * bn)
         return self._select(x, inner, mid, outer)
 
-    def astype(self, dtype):
-        return BesselYdnu(self.v, *(s.astype(dtype) for s in (
-            self.ta, self.tb, self.ymid, self.p, self.q,
-            self.ta_mu, self.tb_mu, self.ymid_nu, self.p_nu, self.q_nu)))
-
-    def __repr__(self):
-        return f"BesselYdnu(v={self.v}, dtype={self.ta.coef.dtype})"
-
-    def tree_flatten(self):
-        return (self.ta, self.tb, self.ymid, self.p, self.q,
-                self.ta_mu, self.tb_mu, self.ymid_nu, self.p_nu, self.q_nu), self.v
-
-    @classmethod
-    def tree_unflatten(cls, v, children):
-        obj = object.__new__(cls)
-        obj._init_constants(v)
-        (obj.ta, obj.tb, obj.ymid, obj.p, obj.q,
-         obj.ta_mu, obj.tb_mu, obj.ymid_nu, obj.p_nu, obj.q_nu) = children
-        return obj
-
 
 def _base_series(v):
     n, mu = _split_order(v)
-    return dict(
-        ta=ChebSeries(_coefs(_yt.TABLE_A, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
-        tb=ChebSeries(_coefs(_yt.TABLE_B, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
-        ymid=ChebSeries(_coefs(_yt.TABLE_MID, 0.0, _yt.VMAX, v), (_yt.X0, _yt.X1)),
-        p=ChebSeries(_j_nu_eval(_ext.TABLE_P, v), (0.0, 1.0)),
-        q=ChebSeries(_j_nu_eval(_ext.TABLE_QS, v), (0.0, 1.0)),
+    return (
+        ChebSeries(param_coefs(_yt.TABLE_A, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
+        ChebSeries(param_coefs(_yt.TABLE_B, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
+        ChebSeries(param_coefs(_yt.TABLE_MID, 0.0, _yt.VMAX, v), (_yt.X0, _yt.X1)),
+        ChebSeries(param_coefs(_ext.TABLE_P, 0.0, _yt.VMAX, v), (0.0, 1.0)),
+        ChebSeries(param_coefs(_ext.TABLE_QS, 0.0, _yt.VMAX, v), (0.0, 1.0)),
     )
 
 
 @functools.lru_cache(maxsize=None)
 def bessely(v):
     """Y_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath."""
-    v = _check_order(v)
-    return BesselY(v, **_base_series(v))
+    v = check_range("bessely", "v", v, 0.0, _yt.VMAX)
+    return BesselY(v, *_base_series(v))
 
 
 @functools.lru_cache(maxsize=None)
 def bessely_dnu(v):
     """dY_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
-    v = _check_order(v)
+    v = check_range("bessely", "v", v, 0.0, _yt.VMAX)
     n, mu = _split_order(v)
     return BesselYdnu(
-        v, **_base_series(v),
-        ta_mu=ChebSeries(_coefs_dnu(_yt.TABLE_A, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
-        tb_mu=ChebSeries(_coefs_dnu(_yt.TABLE_B, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
-        ymid_nu=ChebSeries(_coefs_dnu(_yt.TABLE_MID, 0.0, _yt.VMAX, v), (_yt.X0, _yt.X1)),
-        p_nu=ChebSeries(_j_nu_eval_der(_ext.TABLE_P, v), (0.0, 1.0)),
-        q_nu=ChebSeries(_j_nu_eval_der(_ext.TABLE_QS, v), (0.0, 1.0)),
+        v, *_base_series(v),
+        ChebSeries(param_coefs_der(_yt.TABLE_A, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
+        ChebSeries(param_coefs_der(_yt.TABLE_B, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
+        ChebSeries(param_coefs_der(_yt.TABLE_MID, 0.0, _yt.VMAX, v), (_yt.X0, _yt.X1)),
+        ChebSeries(param_coefs_der(_ext.TABLE_P, 0.0, _yt.VMAX, v), (0.0, 1.0)),
+        ChebSeries(param_coefs_der(_ext.TABLE_QS, 0.0, _yt.VMAX, v), (0.0, 1.0)),
     )

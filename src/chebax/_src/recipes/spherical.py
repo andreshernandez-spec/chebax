@@ -13,16 +13,17 @@ which is wrong only for n = 1 where j_1'(0) = 1/3) and -inf for y_n.
 
 import functools
 
+import jax
 import jax.numpy as jnp
 
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes.besselj import besselj
 from chebax._src.recipes.bessely import bessely
 
 _NMAX = 9  # n + 1/2 must stay inside the cylindrical tables' [0, 10]
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class _Spherical(Recipe):
     _static_fields = ("n", "limit0")
     _series_fields = ("inst",)

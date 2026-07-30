@@ -27,9 +27,10 @@ a tracer here (use besselj/besselk/besseli for traced orders).
 import functools
 import math
 
+import jax
 import jax.numpy as jnp
 
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes import bessely_table as _yt
 from chebax._src.recipes._common import (check_range, param_coefs,
@@ -70,7 +71,7 @@ class _YBase(Recipe):
         return xo, self.p(t), s * self.q(t)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselY(_YBase):
     """Callable Y_v on [1e-6, inf). Build with bessely(v)."""
 
@@ -96,7 +97,7 @@ class BesselY(_YBase):
         return self._select(x, inner, mid, outer)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselYdnu(_YBase):
     """Callable dY_v/dv on [1e-6, inf). Build with bessely_dnu().
 

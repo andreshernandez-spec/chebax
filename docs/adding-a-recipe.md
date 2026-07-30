@@ -59,7 +59,8 @@ Use `_gen_common` (`nodes`, `dct`, `param_fit`, `to_f64`,
   inside factories).
 - Reconstruction: `_common.param_coefs` / `param_coefs_der` (eager, in the
   cached factory) and `_common.traced_coefs` (inside a `*_fn` variant).
-- Instances subclass `pytree.Recipe`: declare `_static_fields` (scalars,
+- Instances subclass `pytree.Recipe`, decorated with plain
+  `@jax.tree_util.register_pytree_node_class`: declare `_static_fields` (scalars,
   aux) and `_series_fields` (ChebSeries, children), constructor takes
   statics then series, `_post_init` derives cached constants.
 - Piecewise domains use hard `where` selects. Two gradient traps, both

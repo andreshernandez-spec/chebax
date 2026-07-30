@@ -35,9 +35,10 @@ traced nu the domain cannot be checked; keep nu in [0, 10] yourself.
 
 import functools
 
+import jax
 import jax.numpy as jnp
 
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
 from chebax._src.recipes._common import (check_range, param_coefs,
                                          param_coefs_der, traced_coefs)
@@ -79,7 +80,7 @@ def _eval_k_dnu(v, x, ltil, ltail, ltil_nu, ltail_nu):
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselK(Recipe):
     """Callable K_v on [1e-6, inf). Build with besselk(v)."""
 
@@ -93,7 +94,7 @@ class BesselK(Recipe):
         return _eval_k(self.v, jnp.asarray(x), self.ltil, self.ltail)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselKdnu(Recipe):
     """Callable dK_v/dv on [1e-6, inf). Build with besselk_dnu(v)."""
 

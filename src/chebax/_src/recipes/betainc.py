@@ -35,7 +35,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from chebax._src import algorithms
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes._common import check_range
 from chebax._src.series import ChebSeries, _chebval
@@ -82,7 +82,7 @@ def eval_betainc(a, b, x, cab, cba):
     return jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BetaInc(Recipe):
     """Callable I_x(a, b) on x in [0, 1]. Build with betainc(a, b)."""
 

@@ -24,7 +24,7 @@ import math
 import jax
 import jax.numpy as jnp
 
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes import besseli_table as _it
 from chebax._src.recipes._common import (check_range, digamma64, param_coefs,
                                          param_coefs_der, traced_coefs)
@@ -43,7 +43,7 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     return jnp.where(x <= _it.XS, inner, tail)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselI(Recipe):
     """Callable I_v (or e^-x I_v if scaled) on x >= 0. Build with besseli()."""
 
@@ -59,7 +59,7 @@ class BesselI(Recipe):
         return _eval_i(self.v, self._inv_gamma, jnp.asarray(x), self.lh, self.lt, self.scaled)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselIdnu(Recipe):
     """Callable dI_v/dv (or e^-x dI_v/dv if scaled). Build with besseli_dnu()."""
 

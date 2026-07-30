@@ -32,9 +32,10 @@ at instantiation.
 import functools
 import math
 
+import jax
 import jax.numpy as jnp
 
-from chebax._src.pytree import Recipe, register_recipe
+from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselj_table as _tab
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes._common import (check_range, digamma64, param_coefs,
@@ -84,7 +85,7 @@ class _JBase(Recipe):
         return jnp.where(x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer))
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselJ(_JBase):
     """Callable J_v on x >= 0. Build with besselj(v)."""
 
@@ -100,7 +101,7 @@ class BesselJ(_JBase):
         return self._select(x, self._inner(x), self._mid(x), outer)
 
 
-@register_recipe
+@jax.tree_util.register_pytree_node_class
 class BesselJdnu(_JBase):
     """Callable dJ_v/dv on x > 0. Build with besselj_dnu(v)."""
 

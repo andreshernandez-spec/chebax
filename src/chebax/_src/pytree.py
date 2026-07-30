@@ -6,14 +6,10 @@ _static_fields). Constructors take statics first, series after, in field
 order; _post_init derives cached constants (called by both __init__ and
 tree_unflatten). astype casts every series; __repr__ shows the statics and
 the coefficient dtype.
+
+Subclasses register themselves with the standard
+@jax.tree_util.register_pytree_node_class decorator at the class site.
 """
-
-import jax
-
-
-def register_recipe(cls):
-    return jax.tree_util.register_pytree_node_class(cls)
-
 
 class Recipe:
     _static_fields = ()

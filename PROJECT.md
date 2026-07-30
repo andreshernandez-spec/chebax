@@ -214,6 +214,20 @@ is noticeably faster, offer both: the unlimited `besselj(v)` and a domain-limite
 `besselj(v, domain=(a, b))` that trims to one region. The natural first customer is the
 M5 Matérn demo, where kernel inputs live in a known window.
 
+**Queued f32 work (2026-07-30, Andres):** three bake-step options, in order of value.
+(1) Degree truncation for f32: `astype(f32)` keeps the full f64 degree, roughly 2× the
+terms f32 accuracy needs (exp-02: f32 degrees are about half the f64 ones); a
+`truncate(tol)` dropping the converged tail would halve the FLOPs — benchmark under B3
+before bothering, the f32 roofline says the extra terms are free. (2) A `dtype` option
+for `bake.xsf_header` emitting `float` constants and truncated arrays for CUDA f32
+kernels. (3) An fpminimax-style polish (Sollya / LLL lattice reduction over machine
+floats, Brisebarre–Chevillard) for jointly optimized f32 coefficients: measured, naive
+downcast leaves only ~2% on the table in the Chebyshev basis (coefficient rounding is
+8e-9 of a 3.7e-7 f32 budget for J_2.5; evaluation rounding and the pow/trig floors own
+the rest), so this only becomes worthwhile if chebax ever targets correctly-rounded-
+grade f32 kernels. In the monomial basis the calculus flips — another reason the
+runtime stays Chebyshev + Clenshaw.
+
 ---
 
 ## 5. Risks

@@ -245,6 +245,14 @@ the rest), so this only becomes worthwhile if chebax ever targets correctly-roun
 grade f32 kernels. In the monomial basis the calculus flips — another reason the
 runtime stays Chebyshev + Clenshaw.
 
+**Queued betaincinv deep-tail check (2026-07-30):** found while writing the example
+notebooks. `betaincinv(2, 3, p)` matches scipy through p = 1e-20 but saturates by
+p = 1e-30 (returns 2.7e-15 where the true quantile is 4.1e-16); `gammaincinv` is
+exact to p = 1e-300. Likely the logit-space bracket or Newton initialization floors
+out. Inside the tested contract this is invisible (the two-sided bars pass), so it
+is a domain-documentation or bracket-widening fix, not a correctness bug. Diagnose
+before claiming any beta tail depth beyond 1e-20.
+
 ---
 
 ## 5. Risks

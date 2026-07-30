@@ -33,11 +33,16 @@ chebax.betaincinv(a, b, p)            # differentiable Beta quantile  (jax#2399)
 | erf family | — | `dawsn`, `erfcx` | — (no params) | the two jax lacks |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
 
-Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`), bake emitters
+Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
-modules and C++17 headers from an instance), and examples
-(`examples/matern_learn_nu.py` — learning Matérn smoothness by gradient descent;
-`examples/truncated_sampling.py` — reparameterized truncated distributions).
+modules and C++17 headers from an instance).
+
+`notebooks/` holds themed, executed walkthroughs: the Bessel family with a
+learnable Matérn kernel, differentiable quantiles, truncated and circular
+distributions in numpyro, Gaussian tails / Lambert W / binomial reliability,
+and baking. The numpyro and plotting dependencies install with
+`pip install chebax[examples]`. The same material in script form lives in
+`examples/`.
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call; per-element parameter arrays are out of scope by design.

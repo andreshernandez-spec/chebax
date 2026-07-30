@@ -75,6 +75,9 @@ README.md       orientation, quickstart, capability table
 docs/           adding-a-recipe.md (the recipe workflow), increments.md (design log)
 experiments/    reproducible measurements, incl. 03_degree_measurement.py which
                 reproduces every degree claim in the generator docstrings
+notebooks/      executed example notebooks, themed (see notebooks/README.md);
+                re-execute with nbconvert --execute --inplace after API changes;
+                numpyro/matplotlib come from the [examples] extra
 results/        captured output, checked in
 drafts/         prose for upstream (PR text, issues) — Andres rewrites and sends
 src/chebax/     the library: _src/{algorithms,series,generate,pytree}.py (core),

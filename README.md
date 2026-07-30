@@ -18,7 +18,10 @@ descent (see `examples/matern_learn_nu.py`); `besseli(v)` on x >= 0 with a
 both shape parameters as traced scalars, so jax.grad gives dI/da and dI/db (which jax
 itself lacks, jax#38610); the differentiable quantile toolkit `betaincinv`,
 `gammaincinv`, `stdtr`, `stdtrit` (jax#2399/#5350/#20358 — Beta, Gamma and Student-t
-quantiles with implicit-function-theorem gradients in every argument); and bake
+quantiles with implicit-function-theorem gradients in every argument);
+`spherical_jn`/`spherical_yn` (n in [0, 9], via the half-integer tables); `lambertw`
+(both real branches, jax#13680); a truncated-distribution sampling example
+(`examples/truncated_sampling.py`); and bake
 emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`) that turn an instance into a
 standalone pure-jax module or a self-contained C++17 header. No mpmath at use time

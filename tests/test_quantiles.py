@@ -124,6 +124,37 @@ def test_endpoints():
     assert float(chebax.gammaincinv(2.0, 1.0)) == np.inf
 
 
+def test_truncated_beta_reparameterization():
+    # the numpyro#1365-style use case: inverse-CDF sampling of a truncation,
+    # differentiable in the shape parameter. Midpoint-rule u makes the
+    # "Monte Carlo" mean a deterministic quadrature, so it can be compared
+    # tightly against the analytic truncated mean and its finite difference.
+    b, lo, hi = 3.0, 0.2, 0.7
+    u = jnp.asarray((np.arange(2000) + 0.5) / 2000)
+
+    def tmean(aa):
+        flo = chebax.betainc_fn(aa, b, lo)
+        fhi = chebax.betainc_fn(aa, b, hi)
+        return jnp.mean(chebax.betaincinv(aa, b, flo + u * (fhi - flo)))
+
+    def mp_tmean(aa):
+        aa = mp.mpf(aa)
+        pdf = lambda t: t ** (aa - 1) * (1 - t) ** (mp.mpf(b) - 1) / mp.beta(aa, b)
+        z = mp.quad(pdf, [lo, hi])
+        return mp.quad(lambda t: t * pdf(t), [lo, hi]) / z
+
+    m = float(tmean(2.0))
+    assert abs(m - float(mp_tmean(2.0))) <= 5e-7  # midpoint-rule bias O(1/N^2)
+    g = float(jax.grad(tmean)(2.0))
+    h = 1e-6
+    g_ref = (float(mp_tmean(2.0 + h)) - float(mp_tmean(2.0 - h))) / (2 * h)
+    assert abs(g - g_ref) / abs(g_ref) <= 1e-4
+    x = np.asarray(chebax.betaincinv(2.0, b, np.asarray(
+        chebax.betainc_fn(2.0, b, lo) + u * (chebax.betainc_fn(2.0, b, hi)
+                                             - chebax.betainc_fn(2.0, b, lo)))))
+    assert (x > lo).all() and (x < hi).all()
+
+
 def test_jit():
     p = jnp.asarray([0.2, 0.8])
     np.testing.assert_allclose(

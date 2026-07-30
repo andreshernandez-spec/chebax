@@ -14,11 +14,13 @@ nu as a traced jax scalar — so a Matern kernel can learn its smoothness by gra
 descent (see `examples/matern_learn_nu.py`); `besseli(v)` on x >= 0 with a
 `scaled=True` variant (scipy's ive) that stays finite past the e^x overflow, plus
 `besseli_fn`; `bessely(v)` on [1e-6, inf) completing the Bessel quartet; `dawsn` and `erfcx`
-(the erf-family members jax lacks); and bake
+(the erf-family members jax lacks); `betainc(a, b)` with `betainc_fn(a, b, x)` taking
+both shape parameters as traced scalars, so jax.grad gives dI/da and dI/db (which jax
+itself lacks, jax#38610); and bake
 emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`) that turn an instance into a
 standalone pure-jax module or a self-contained C++17 header. No mpmath at use time
-anywhere. The incomplete beta (with gradients in a and b) is prototyped and queued. Read
+anywhere. Read
 `PROJECT.md` for the plan and evidence, `CLAUDE.md` for how to work here. Grown out
 of a private research project (the `../bessel/` references in `PROJECT.md` point
 there); the two load-bearing measurements are reproduced here in `experiments/`.

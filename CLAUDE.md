@@ -55,6 +55,7 @@ python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-t
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
+python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 

@@ -19,6 +19,15 @@ from chebax._src import algorithms
 from chebax._src.series import _chebval
 
 
+def canon_float(x):
+    """Promote to the canonical float dtype (float64 under x64).
+
+    Solvers mix inputs with reconstructed float64 tables inside a fori_loop
+    carry; an explicit float32 input under x64 raised a carry dtype
+    mismatch instead of computing. One deliberate dtype for everything."""
+    return jnp.asarray(x, dtype=jnp.empty(()).dtype)
+
+
 def param_coefs(table, lo, hi, p):
     """Coefficient vector at parameter p: Clenshaw across table rows. numpy."""
     t = 2.0 * (p - lo) / (hi - lo) - 1.0

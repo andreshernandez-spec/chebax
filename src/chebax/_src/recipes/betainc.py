@@ -79,7 +79,8 @@ def eval_betainc(a, b, x, cab, cba):
     direct = jnp.exp(_log_direct(a, b, xd, cab))
     reflected = 1.0 - jnp.exp(_log_direct(b, a, yd, cba))
     core = jnp.where(xi <= _bt.XSPLIT, direct, reflected)
-    return jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
+    out = jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
 @jax.tree_util.register_pytree_node_class

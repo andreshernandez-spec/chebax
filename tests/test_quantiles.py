@@ -163,3 +163,67 @@ def test_jit():
     np.testing.assert_allclose(
         np.asarray(jax.jit(chebax.gammaincinv)(3.5, p)),
         np.asarray(chebax.gammaincinv(3.5, p)), rtol=0, atol=1e-15)
+
+
+# ---- deep tails, median behavior, and failure semantics (review 2026-07-30)
+# The pre-fix solver saturated silently: betaincinv(1,1,1e-50) returned
+# 4.8e-29 (the e^-64 depth 64 additive Newton steps can reach) and
+# gammaincinv(20,1e-20) returned 1.53 for a root at 0.865. stdtr used
+# x = nu/(nu+t^2), which rounds to 1 near t = 0 and killed all first-order
+# behavior at the median.
+
+def test_deep_tail_betaincinv():
+    mp = pytest.importorskip("mpmath")
+    mp.mp.dps = 50
+    # the contract is CDF accuracy: push the returned quantile back through
+    # the exact CDF and require the target probability to eps-ish level
+    for a, b, p in [(1.0, 1.0, 1e-50), (2.0, 3.0, 1e-30), (2.0, 3.0, 1e-100),
+                    (0.5, 0.5, 1e-100), (0.1, 10.0, 1e-20), (10.0, 0.1, 1e-12)]:
+        x = float(chebax.betaincinv(a, b, p))
+        assert x > 0.0, (a, b, p)
+        roundtrip = float(mp.betainc(a, b, 0, mp.mpf(x), regularized=True))
+        assert abs(roundtrip - p) / p <= 1e-12, (a, b, p, x, roundtrip)
+
+
+def test_deep_tail_gammaincinv():
+    sps = pytest.importorskip("scipy.special")
+    for a, p in [(20.0, 1e-20), (5.0, 1e-100), (0.5, 1e-30), (2.0, 1e-300)]:
+        x = float(chebax.gammaincinv(a, p))
+        ref = float(sps.gammaincinv(a, p))
+        assert abs(x - ref) / ref <= 1e-12, (a, p, x, ref)
+    # a quantile below the smallest positive float64 returns 0, not garbage
+    assert float(chebax.gammaincinv(0.5, 1e-300)) == 0.0
+    assert float(chebax.betaincinv(0.1, 0.1, 1e-300)) == 0.0
+
+
+def test_stdtr_median_first_order():
+    # x = nu/(nu+t^2) rounds to 1 near t = 0 (the old form returned exactly
+    # 0.5); the complementary orientation resolves F - 1/2 = t*pdf(0) down
+    # to the representation limit, half an ulp of 0.5
+    assert abs(float(chebax.stdtr(4.0, 1e-8)) - (0.5 + 1e-8 * 0.375)) <= 6e-17
+    assert abs(float(jax.grad(lambda t: chebax.stdtr(4.0, t))(0.0)) - 0.375) <= 1e-15
+    assert float(chebax.stdtrit(4.0, 0.5)) == 0.0
+    g = float(jax.grad(lambda p: chebax.stdtrit(4.0, p))(0.5))
+    assert abs(g - 8.0 / 3.0) <= 1e-13
+
+
+def test_quantile_endpoints_and_nan():
+    assert float(chebax.stdtrit(4.0, 0.0)) == -np.inf
+    assert float(chebax.stdtrit(4.0, 1.0)) == np.inf
+    for v in [chebax.betaincinv(2.0, 3.0, jnp.nan),
+              chebax.betaincinv(2.0, 3.0, -0.5),
+              chebax.betaincinv(2.0, 3.0, 1.5),
+              chebax.gammaincinv(2.0, jnp.nan),
+              chebax.stdtr(4.0, jnp.nan),
+              chebax.stdtrit(4.0, jnp.nan),
+              chebax.betainc_fn(2.0, 3.0, jnp.nan)]:
+        assert np.isnan(float(v))
+
+
+def test_float32_inputs_promote():
+    # x64-on plus explicit float32 arguments used to crash the solver with
+    # a loop-carry dtype mismatch; now they promote to the canonical dtype
+    x = chebax.betaincinv(2.0, 3.0, jnp.float32(0.3))
+    assert abs(float(x) - float(chebax.betaincinv(2.0, 3.0, 0.3))) <= 1e-6
+    t = chebax.stdtrit(4.0, jnp.float32(0.9))
+    assert abs(float(t) - float(chebax.stdtrit(4.0, 0.9))) <= 1e-5

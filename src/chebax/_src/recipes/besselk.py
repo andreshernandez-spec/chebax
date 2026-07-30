@@ -20,7 +20,10 @@ wider log range.
 
 Below XMIN = 1e-6 the input is clamped (values freeze, gradients vanish);
 extend the table via the generator if smaller x is ever needed. dK/dv is 0
-at v = 0 by evenness (K_{-v} = K_v).
+at v = 0 by evenness (K_{-v} = K_v). Near the underflow edge (x beyond
+~600, K below ~1e-260) relative accuracy of gradients becomes platform
+dependent: backends that flush subnormals (XLA CPU) lose small correction
+terms like the 1/(2x) piece of dK/dx once products dip under 1e-308.
 
 besselk(v)/besselk_dnu(v) mirror the besselj API (v fixed at instantiation,
 cached, no mpmath). besselk_fn(nu, x) additionally takes nu as a traced jax

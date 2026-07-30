@@ -118,5 +118,6 @@ def test_table_regenerates_bit_for_bit():
     regen = besselj_gen.generate_table()
     assert regen.shape == tab.TABLE.shape
     assert np.array_equal(regen, tab.TABLE)
+    # the mpmath version in META is informational; the array equality above is
+    # the real guard (arrays proved bit-stable across mpmath 1.4.0 -> 1.4.1)
     assert tab.META["dps"] == besselj_gen.DPS
-    assert tab.META["mpmath"] == mp.__version__

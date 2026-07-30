@@ -4,7 +4,7 @@ do not edit. Regenerate with:  python -m chebax._src.recipes.erf_gen
 
 import numpy as np
 
-META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'nc_erfcx': 40, 'nt_erfcx': 16, 'xs': 6.0, 'dps': 40, 'mpmath': '1.4.0'}
+META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'nc_erfcx': 40, 'nt_erfcx': 16, 'xs': 6.0, 'dps': 40, 'mpmath': '1.4.1'}
 XS = 6.0
 
 DAWSN_E = np.array([

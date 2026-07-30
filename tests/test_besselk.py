@@ -23,9 +23,13 @@ mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
 NUS = [0.03, 0.5, 0.999, 1.0, 1.001, 1.7, 2.0, 3.0, 5.5, 7.77, 9.97]
+# grid stops at 600: near the underflow edge (x ~ 690, K ~ 1e-305) platforms
+# that flush subnormals (XLA CPU) lose small correction terms - e.g. the
+# 1/(2x) term of dK/dx underflows in the product K/(2x) - so relative
+# accuracy there is platform-dependent by nature
 XK = np.sort(np.concatenate([
     np.logspace(-6, np.log10(8.0), 20), [8.0, 8.0001],
-    np.logspace(np.log10(8.2), np.log10(700.0), 12),
+    np.logspace(np.log10(8.2), np.log10(600.0), 12),
 ]))
 
 

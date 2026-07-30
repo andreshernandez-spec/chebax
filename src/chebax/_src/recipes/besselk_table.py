@@ -4,7 +4,7 @@ do not edit. Regenerate with:  python -m chebax._src.recipes.besselk_gen
 
 import numpy as np
 
-META = {'nu_in': 80, 'nv_in': 56, 'nt_tail': 24, 'nv_tail': 32, 'xmin': 1e-06, 'xs': 8.0, 'vsplit': 1.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.0'}
+META = {'nu_in': 80, 'nv_in': 56, 'nt_tail': 24, 'nv_tail': 32, 'xmin': 1e-06, 'xs': 8.0, 'vsplit': 1.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
 XMIN = 1e-06
 XS = 8.0
 VSPLIT = 1.0

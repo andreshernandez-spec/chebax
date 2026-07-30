@@ -4,7 +4,7 @@ do not edit. Regenerate with:  python -m chebax._src.recipes.bessely_gen
 
 import numpy as np
 
-META = {'nu': 96, 'nm': 48, 'nx_mid': 68, 'nv_mid': 48, 'xmin': 1e-06, 'x0': 5.0, 'x1': 30.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.0'}
+META = {'nu': 96, 'nm': 48, 'nx_mid': 68, 'nv_mid': 48, 'xmin': 1e-06, 'x0': 5.0, 'x1': 30.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
 XMIN = 1e-06
 X0 = 5.0
 X1 = 30.0

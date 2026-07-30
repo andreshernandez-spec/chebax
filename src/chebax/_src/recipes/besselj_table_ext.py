@@ -5,7 +5,7 @@ python -m chebax._src.recipes.besselj_gen
 
 import numpy as np
 
-META = {'nx_mid': 42, 'nt_out': 12, 'nv': 64, 'mid': (8.0, 30.0), 'xs': 30.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.0'}
+META = {'nx_mid': 42, 'nt_out': 12, 'nv': 64, 'mid': (8.0, 30.0), 'xs': 30.0, 'vmax': 10.0, 'dps': 40, 'mpmath': '1.4.1'}
 MID_X0 = 8.0
 MID_X1 = 30.0
 XS = 30.0

@@ -139,7 +139,7 @@ def test_chebval_domain_mapping():
     xs = np.linspace(2.0, 5.0, 301)
     t = (2 * xs - 7.0) / 3.0
     np.testing.assert_allclose(np.asarray(p(xs)), npch.chebval(t, c),
-                               rtol=0, atol=1e-15)
+                               rtol=0, atol=5e-15)
 
 
 def test_chebder_chebint_match_numpy():

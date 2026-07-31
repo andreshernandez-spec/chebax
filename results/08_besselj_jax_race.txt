@@ -1,0 +1,25 @@
+jax 0.11.0 on cuda:0, N = 16777216, reps = 25 (medians)
+
+bessel_jn(v=2) abs err vs scipy at x = [0.5, 5.0, 15.0, 25.0, 35.0, 50.0, 75.0, 100.0]:
+  n_iter= 50:  3.5e-18  1.4e-16  4.9e-17  1.6e-13  4.1e-07  4.4e-03  4.0e-02  1.5e+00
+  n_iter=100:  3.5e-18  1.5e-16  1.4e-16  8.3e-17  2.8e-17  6.2e-17  1.6e-09  1.9e-02
+  n_iter=200:      nan  2.8e-17  1.3e-16  5.6e-17  0.0e+00  6.9e-18  2.1e-17  2.2e-16
+bessel_jn(v=2) nan onset at small x = [1e-06, 0.0001, 0.001, 0.01, 0.03, 0.1]:
+  n_iter= 50: nan  ok  ok  ok  ok  ok
+  n_iter=100: nan nan nan nan nan  ok
+  n_iter=200: nan nan nan nan nan nan
+  (a validity WINDOW narrowing from both sides: large n_iter
+   overflows the backward recurrence at small x, small n_iter
+   is wrong at large x; no single call covers [1e-6, 100])
+
+distribution          v n_iter    N     jax64  chebax64  ratio     jax32  chebax32  ratio  max|diff| (f64)
+----------------------------------------------------------------------------------------------------------
+x~U(1e-3,20)          2     50 2^24  303.32ms   40.67ms   7.5x  128.25ms   35.16ms   3.6x  1.7e-15
+x~U(1e-3,8) (inner)   2     50 2^24  303.40ms   40.66ms   7.5x  128.24ms   35.15ms   3.6x  1.7e-15
+x~U(8,30)   (mid)     2    100 2^22  151.45ms   10.49ms  14.4x   65.27ms    9.22ms   7.1x  7.9e-16
+x~U(0.2,50) (wide)    2    100 2^22  151.49ms   10.46ms  14.5x   65.29ms    9.15ms   7.1x  1.6e-15
+x~U(1e-3,20)          9     50 2^24  303.41ms   50.37ms   6.0x  128.32ms   35.42ms   3.6x  5.8e-16
+
+bessel_jn's one call yields the whole ladder J_0..J_v (charged
+here to the single order raced); chebax serves one real order per
+table instance, any order in [0, 10], no n_iter to choose.

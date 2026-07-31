@@ -5,7 +5,7 @@
 registers JAX lowerings for the pytensor scalar ops that otherwise need
 tfp-nightly on the JAX backend (pm.sample with nuts_sampler="numpyro" or
 "blackjax"), and gives betainc gradients with respect to its shape
-parameters. Importing this module is the entire API; it does nothing
+parameters. Needs pytensor >= 3.2, which itself needs python >= 3.12. Importing this module is the entire API; it does nothing
 else. pytensor is imported here and only here (the chebax runtime proper
 stays jax + numpy).
 

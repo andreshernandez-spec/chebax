@@ -15,7 +15,11 @@ This file is how to work here.
   numbers: besselj f64 4.5–6.0× vs cephes::jv (0.4× on pure-outer), f32 35× the f64,
   on an RTX 3080 Laptop (`../bessel/experiments/07`); narrow-domain 2.5–3.0×
   (`experiments/04`); igamma headroom 18–54× f64 against a mock (`experiments/05`,
-  a cost model, not an implementation — say so when citing). Consumer-GPU fp64 is
+  a cost model, not an implementation — say so when citing); betainc race
+  (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
+  f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
+  CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
+  from 2^20 up. Consumer-GPU fp64 is
   compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
   analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's

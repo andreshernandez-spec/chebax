@@ -207,25 +207,29 @@ chebax.bake.xsf_header(jv, "cyl_bessel_j_2p5.h")
 | M5 | Second family: `besselk` by direct tabulation (the Matérn story), including ∂K/∂ν. **DONE 2026-07-29 — the "general library" gate is passed.** Design: log-tables. Inner (x ∈ [1e-6, 8]): L̃ = ln[(x/2)^ν K_ν] in u = ln x — the log kills 15 decades of dynamic range, the factored (x/2)^ν carries the branch exponent, and ν splits into two instantiation-time panels ([0,1], [1,10]) around the Γ-pole cancellation feature of width ~1/\|ln x\| near ν=0 (measured: unsplit needs ν-degree >96, panels need 45). Tail (x > 8): Lt = ln[√(2x/π) eˣ K_ν] in t = 8/x, with exp(−x) kept as its own correctly-rounded factor. Direct tabulation makes integer orders ordinary points, retiring risk S3 (tested at exactly 1.0, 2.0, 3.0). New capability: `besselk_fn(nu, x)` takes ν as a **traced** scalar (reconstruction inside the computation), realizing the call-time-uniform-ν relaxation — `jax.grad` works with respect to ν. The f64 floor is again the pow term, ε·ν·\|ln(x/2)\| ≈ 3e-14 in the (10, 1e-6) corner. | Measured worst over 11 orders (incl. integers and panel edge 0.999/1.0/1.001), pointwise relative: values 1.2e-14, dK/dx 1.1e-14, dK/dν 3.3e-13 incl. the traced path (bars 5e-14 / 5e-14 / 1e-12); ∂K/∂ν at ν=0 vanishes to 7e-15 (evenness); clamp below 1e-6 and underflow past x≈746 graceful; tables regenerate bit-for-bit; **the Matérn demo (`examples/matern_learn_nu.py`) recovers (ν, ℓ, σ²) = (1.7, 0.9, 1.3) to six decimals by Adam from a cold start, and the test version converges against mpmath-computed targets** — gradient-based learning of Matérn smoothness, which no mainstream ML library offers. |
 | M6 | Breadth, docs, packaging (ongoing). **Seven recipe increments delivered 2026-07-29/30** — besseli, bessely, dawsn/erfcx, betainc, the quantile toolkit, spherical/truncated-sampling/lambertw, von Mises — plus a review-hardening pass (shared machinery, pytree base, unified emitter, degree harness). The full per-increment design log (measurements, traps, calibrated bars) lives in `docs/increments.md`; the workflow they established in `docs/adding-a-recipe.md`. Fresnel and Wright Bessel remain open. PyPI releases are Andres's action, never autonomous. | — |
 
-**Performance claims remain gated on bessel B3** (real-GPU measurement). chebax's
-accuracy and gradient claims stand alone; its speed claims do not exist until B3.
+**Performance claims: B3 measured 2026-07-31** (`../bessel/experiments/07`, RTX 3080
+Laptop, 16.8M points). chebax may now claim, with the measurement cited: besselj f64
+is **4.5–6.0× faster than NVRTC-compiled cephes::jv** on mixed/inner/mid/log-wide
+input distributions (0.4× on pure-outer, where cephes takes one short path); f32 runs
+35× the f64 (~97 GB/s, near-bandwidth). Honest scope: on consumer GPUs fp64 is
+compute-bound at the 1:64 ratio, so the roofline "free polynomial" story is
+fp32-everywhere / fp64-datacenter; datacenter fp64 numbers remain analytical until
+measured there. Never claim "memory-bound" for f64 on GeForce-class parts.
 
-**Queued benchmark (2026-07-29, Andres):** when GPU measurements start (B3), also race
-the three-region select `besselj` against a single-region fit on a user-declared narrow
-domain (zero selects, one short polynomial — a third the arithmetic). If the narrow form
-is noticeably faster, offer both: the unlimited `besselj(v)` and a domain-limited
-`besselj(v, domain=(a, b))` that trims to one region. The natural first customer is the
-M5 Matérn demo, where kernel inputs live in a known window.
+**Narrow-domain race — measured 2026-07-31** (`experiments/04`, was queued 2026-07-29):
+the single-region inner evaluation beats the full three-region select besselj **2.5×
+(f64) / 3.0× (f32)** on x ~ U(0, 8), matching the a-third-the-arithmetic prediction.
+Verdict: worth offering. **Queued build:** a domain-limited `besselj(v, domain=(a, b))`
+that trims to the covering region(s); first customer the Matérn demo.
 
-**Queued gammainc work (2026-07-30, Andres; GPU busy ~10 h from queuing):** two items,
-strictly ordered. (1) **Benchmark first**: XLA's `igamma` is two `while` loops in the
-lowered HLO (verified) — Cephes series + continued fraction, whole-array re-execution
-until the worst element converges, fusion-barrier, plus a third looped series on the
-gradient path. Race it on the 3080 against a mock fixed-degree kernel (betainc-runtime
-class) over representative (a, x) distributions, and record iteration-count statistics.
-Analytical headroom is the 10–100× class, not percent; the benchmark sizes the prize.
-Note `gammaincinv` compounds any win ~40× (each solver step currently pays both
-loops). (2) **Build second, if the prize is real**: a Y-class two-region recipe —
+**gammainc work (2026-07-30, Andres): part (1) benchmark DONE 2026-07-31**
+(`experiments/05`): XLA's looped `igamma` vs a mock fixed-degree kernel
+(betainc-runtime op profile, degree 27) on 16.8M points: **18–54× (f64), 6–16×
+(f32)**, worst at a=0.5 (the continued fraction runs to 70 trips for the whole
+array) and a=100 (series to 93). Iteration statistics recorded in
+`results/05_igamma_race.txt`. The 10–100×-class analytical headroom is confirmed at
+its lower half; `gammaincinv` compounds any win ~40×. **The prize is real: part (2)
+below is now justified and queued.** (2) **Build**: a Y-class two-region recipe —
 moderate a via log-tables of the Kummer part M = ₁F₁(1; a+1; x) (the betainc pattern),
 large a via Temme's uniform representation P ≈ ½erfc(−η√(a/2)) + R(1/a, η), which
 covers a → ∞ through the 1/a variable with erfc XLA-native. Same fits-both-orders

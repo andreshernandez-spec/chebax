@@ -1,0 +1,12 @@
+jax 0.11.0 on cuda:0, N = 16777216, mock degree 27
+distribution            igamma64   mock64  ratio  igamma32   mock32  ratio  iter med/p99/max (series | CF)
+----------------------------------------------------------------------------------------------------------
+a=3.5,  x~U(0,20)       335.66ms  16.65ms  20.2x   75.08ms  11.92ms   6.3x   20/27/27 | 10/20/24
+a=3.5,  x~Gamma(3.5)    341.88ms  16.60ms  20.6x   78.76ms  11.93ms   6.6x   21/27/27 | 17/22/25
+a=20,   x~Gamma(20)     299.74ms  16.59ms  18.1x  111.40ms  11.95ms   9.3x   42/48/48 | 17/19/20
+a=100,  x~Gamma(100)    569.69ms  16.64ms  34.2x  194.83ms  12.02ms  16.2x   84/92/93 | 33/39/41
+a=0.5,  x~Gamma(0.5)    902.84ms  16.65ms  54.2x  147.81ms  11.98ms  12.3x   10/19/19 | 45/60/70
+
+The mock's values are meaningless; its COST is the betainc-class op
+profile. XLA's while loops run the whole array to the worst element's
+trip count; the max column is what every lane pays.

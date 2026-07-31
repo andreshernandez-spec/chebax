@@ -1,0 +1,3 @@
+jax 0.11.0 on cuda:0, N = 16777216
+f64: full   49.56 ms   narrow   19.60 ms   -> 2.53x
+f32: full    1.23 ms   narrow    0.41 ms   -> 2.97x

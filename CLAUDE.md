@@ -11,9 +11,13 @@ This file is how to work here.
 
 ## Project-specific rules
 
-- **No performance claims until bessel B3 runs.** chebax claims accuracy and gradients.
-  Speed language ("fast", "N×") stays out of code, docs, and drafts until
-  `../bessel/PROJECT.md` B3 produces a measured number to cite.
+- **Performance claims cite B3 (measured 2026-07-31) or nothing.** The citable
+  numbers: besselj f64 4.5–6.0× vs cephes::jv (0.4× on pure-outer), f32 35× the f64,
+  on an RTX 3080 Laptop (`../bessel/experiments/07`); narrow-domain 2.5–3.0×
+  (`experiments/04`); igamma headroom 18–54× f64 against a mock (`experiments/05`,
+  a cost model, not an implementation — say so when citing). Consumer-GPU fp64 is
+  compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
+  analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's
   docstring: sup-normalized for oscillatory J (relative accuracy at zeros is a known
   impossibility, `../bessel/PROJECT.md` §4 q4), modulus-relative (err/√(J²+Y²)) for Y,

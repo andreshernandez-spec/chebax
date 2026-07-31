@@ -17,7 +17,7 @@ jobs:
             extras: "gen,test"      # pytensor>=3.2 needs python>=3.12
           - python-version: "3.13"
             jax-pin: "jax"          # latest resolution
-            extras: "gen,test,pytensor"
+            extras: "gen,test,pytensor,numpyro"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

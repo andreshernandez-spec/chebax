@@ -22,6 +22,7 @@ Repository = "https://github.com/andreshernandez-spec/chebax"
 gen = ["mpmath>=1.4.1,<1.5"]
 test = ["pytest", "scipy"]
 examples = ["matplotlib", "numpyro"]
+numpyro = ["numpyro>=0.15"]
 pytensor = ["pytensor>=3.2"]
 
 [tool.setuptools.packages.find]

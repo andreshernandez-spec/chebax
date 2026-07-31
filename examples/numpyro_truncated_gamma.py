@@ -1,24 +1,16 @@
-"""Truncated Gamma and Beta distributions for numpyro, today, from user code.
+"""Truncated Gamma and Beta in numpyro: chebax.numpyro in action.
 
-numpyro's truncated-distribution machinery covers location-scale families;
-Gamma and Beta need the inverse-CDF path (numpyro#969, PR numpyro#1187),
-which stalled on igammainv not existing in jax (jax#5350).
-chebax.gammaincinv and chebax.betaincinv fill exactly that hole, so the
-two classes below implement the full numpyro Distribution contract:
-reparameterized sampling by inverse CDF, log_prob with the truncation
-normalizer, cdf/icdf, and gradients through everything, including the
-shape parameters. NUTS on a latent concentration works: the Gamma
-normalizer differentiates through jax's own gammainc (native a-gradient),
-the Beta normalizer through chebax.betainc_fn.
-
-The chebax contract applies: shape parameters are uniform per call
-(scalars, or one value per traced latent), so these classes serve scalar
-or per-group shapes, not batched shape arrays. For Beta, shapes must lie
-in chebax's (a, b) box [0.1, 10]^2. Rates, bounds and evaluation points
-are unrestricted arrays. Per-group shapes go through chebax.pergroup.
+numpyro's truncated-distribution machinery covers location-scale
+families; Gamma and Beta need the inverse-CDF path (numpyro#969, PR
+numpyro#1187), which stalled on igammainv not existing in jax
+(jax#5350). chebax.numpyro ships ready-made TruncatedGamma,
+TruncatedBeta and TruncatedStudentT classes built on chebax's
+differentiable quantiles (see that module's docstring for the domain
+contracts). This demo verifies them against scipy and runs NUTS with
+LATENT shape parameters on truncated data.
 
 Run:  python examples/numpyro_truncated_gamma.py   (~1 min on CPU)
-Needs: pip install chebax[examples] (numpyro), scipy for the checks.
+Needs: pip install chebax[numpyro] scipy
 """
 
 import numpy as np
@@ -28,135 +20,12 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jax import lax, random  # noqa: E402
-from jax.scipy.special import betaln, gammainc, gammaln  # noqa: E402
+from jax import random  # noqa: E402
 
 import numpyro  # noqa: E402
 import numpyro.distributions as dist  # noqa: E402
-from numpyro.distributions import constraints  # noqa: E402
-from numpyro.distributions.util import promote_shapes, validate_sample  # noqa: E402
 
-import chebax  # noqa: E402
-
-
-class TruncatedGamma(dist.Distribution):
-    """Gamma(concentration, rate) truncated to [low, high].
-
-    concentration must be uniform per call (a scalar or one traced
-    latent); rate, low, high broadcast freely. high may be inf.
-    """
-
-    arg_constraints = {
-        "concentration": constraints.positive,
-        "rate": constraints.positive,
-        "low": constraints.nonnegative,
-        "high": constraints.positive,
-    }
-    reparametrized_params = ["concentration", "rate", "low", "high"]
-
-    def __init__(self, concentration, rate=1.0, *, low=0.0, high=jnp.inf,
-                 validate_args=None):
-        self.concentration = jnp.asarray(concentration)
-        self.rate, self.low, self.high = promote_shapes(
-            jnp.asarray(rate), jnp.asarray(low), jnp.asarray(high))
-        batch_shape = lax.broadcast_shapes(
-            jnp.shape(concentration), jnp.shape(rate), jnp.shape(low),
-            jnp.shape(high))
-        super().__init__(batch_shape=batch_shape, validate_args=validate_args)
-
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return constraints.interval(self.low, self.high)
-
-    def _bounds(self):
-        flo = gammainc(self.concentration, self.rate * self.low)
-        # high = inf means no upper truncation; keep the argument finite
-        # so the unused branch cannot poison gradients
-        finite = jnp.isfinite(self.high)
-        xhi = jnp.where(finite, self.rate * self.high, 1.0)
-        fhi = jnp.where(finite, gammainc(self.concentration, xhi), 1.0)
-        return flo, fhi
-
-    def sample(self, key, sample_shape=()):
-        u = random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
-
-    def icdf(self, q):
-        flo, fhi = self._bounds()
-        return chebax.gammaincinv(self.concentration,
-                                  flo + q * (fhi - flo)) / self.rate
-
-    def cdf(self, value):
-        flo, fhi = self._bounds()
-        f = gammainc(self.concentration, self.rate * value)
-        return jnp.clip((f - flo) / (fhi - flo), 0.0, 1.0)
-
-    @validate_sample
-    def log_prob(self, value):
-        flo, fhi = self._bounds()
-        c = self.concentration
-        base = (c * jnp.log(self.rate) + (c - 1.0) * jnp.log(value)
-                - self.rate * value - gammaln(c))
-        return base - jnp.log(fhi - flo)
-
-
-class TruncatedBeta(dist.Distribution):
-    """Beta(concentration1, concentration0) truncated to [low, high].
-
-    Both concentrations must be uniform per call and inside chebax's
-    (a, b) box [0.1, 10]^2 (tables back the normalizer's gradient and
-    the inverse CDF); low, high broadcast freely.
-    """
-
-    arg_constraints = {
-        "concentration1": constraints.positive,
-        "concentration0": constraints.positive,
-        "low": constraints.unit_interval,
-        "high": constraints.unit_interval,
-    }
-    reparametrized_params = ["concentration1", "concentration0", "low", "high"]
-
-    def __init__(self, concentration1, concentration0, *, low=0.0, high=1.0,
-                 validate_args=None):
-        self.concentration1 = jnp.asarray(concentration1)
-        self.concentration0 = jnp.asarray(concentration0)
-        self.low, self.high = promote_shapes(jnp.asarray(low),
-                                             jnp.asarray(high))
-        batch_shape = lax.broadcast_shapes(
-            jnp.shape(concentration1), jnp.shape(concentration0),
-            jnp.shape(low), jnp.shape(high))
-        super().__init__(batch_shape=batch_shape, validate_args=validate_args)
-
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return constraints.interval(self.low, self.high)
-
-    def _bounds(self):
-        a, b = self.concentration1, self.concentration0
-        return (chebax.betainc_fn(a, b, self.low),
-                chebax.betainc_fn(a, b, self.high))
-
-    def sample(self, key, sample_shape=()):
-        u = random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
-
-    def icdf(self, q):
-        flo, fhi = self._bounds()
-        return chebax.betaincinv(self.concentration1, self.concentration0,
-                                 flo + q * (fhi - flo))
-
-    def cdf(self, value):
-        flo, fhi = self._bounds()
-        f = chebax.betainc_fn(self.concentration1, self.concentration0, value)
-        return jnp.clip((f - flo) / (fhi - flo), 0.0, 1.0)
-
-    @validate_sample
-    def log_prob(self, value):
-        flo, fhi = self._bounds()
-        a, b = self.concentration1, self.concentration0
-        base = ((a - 1.0) * jnp.log(value) + (b - 1.0) * jnp.log1p(-value)
-                - betaln(a, b))
-        return base - jnp.log(fhi - flo)
+from chebax.numpyro import TruncatedBeta, TruncatedGamma  # noqa: E402
 
 
 def check_against_scipy():

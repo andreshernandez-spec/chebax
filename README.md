@@ -58,6 +58,15 @@ latent scalar shape sample instead of raising. Shape parameters must be
 scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
 return nan, never silently wrong numbers.
 
+For numpyro users: `from chebax.numpyro import TruncatedGamma, TruncatedBeta,
+TruncatedStudentT` (installs with `pip install chebax[numpyro]`) gives the
+truncated distributions numpyro's location-scale machinery cannot cover
+(numpyro#969, numpyro#1365): full Distribution classes with reparameterized
+inverse-CDF sampling (`has_rsample`), truncation-normalized `log_prob`, and
+gradients through every parameter including the shapes, so NUTS and SVI work
+with a latent concentration or df. Shape parameters are uniform per call;
+domain boxes are in the module docstring.
+
 `notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
 the Bessel family with a learnable Matérn kernel, differentiable quantiles,
 truncated and circular distributions in numpyro, Gaussian tails / Lambert W /
@@ -65,8 +74,8 @@ binomial reliability, copulas, and baking. The numpyro and plotting
 dependencies install with `pip install chebax[examples]`. `examples/` holds
 plain scripts: a few of the notebook workflows in copy-paste form, plus
 integration examples with no notebook counterpart (a GIG distribution for
-efax, learned Matérn smoothness, truncated sampling, truncated Gamma and
-Beta distribution classes for numpyro).
+efax, learned Matérn smoothness, truncated sampling, `chebax.numpyro` with
+latent shape parameters under NUTS).
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call; per-element parameter arrays are out of scope by design.

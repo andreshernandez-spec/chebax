@@ -250,3 +250,27 @@ element's trip count. experiments/05 re-run with the real recipe:
 and the real kernel evaluates both region branches (~2x the mock cost),
 exactly as the cost model predicted. Bakes generically (test_bake);
 a = 1 gives P = 1 - e^-x as a built-in exactness check.
+
+## 14 — chebax.numpyro, the truncated distribution module (2026-07-31)
+
+`from chebax.numpyro import TruncatedGamma, TruncatedBeta,
+TruncatedStudentT`: the opt-in numpyro integration, mirroring
+chebax.pytensor's isolation (submodule never imported by the package
+__init__, numpyro behind a friendly-ImportError guard, [numpyro] extra,
+tested only on the latest CI job). Unlike the pytensor module it has no
+import side effects; it just defines three Distribution classes. Born
+from the 2026-07-31 examples/notebooks review: the inverse-CDF
+truncation pattern F^{-1}(F(lo) + u (F(hi) - F(lo))) was hand-rolled
+seven times across truncated_sampling.py, notebook 03 (twice, once in a
+class whose docstring said "safe to copy into real models") and the
+numpyro example's classes. The classes implement the full contract:
+has_rsample with pathwise gradients in every parameter including the
+shapes, truncation-normalized log_prob (-inf outside support), cdf/icdf,
+dependent interval support, eager bounds check when bounds are concrete.
+Domains inherited from the tables and stated in the docstrings: Beta
+shapes in [0.1, 10]^2, StudentT df in [0.2, 20], Gamma concentration
+any positive (solves through jax's own gammainc). Shape parameters
+uniform per call; per-group via chebax.pergroup. Notebook 03 and the
+numpyro example now consume the module instead of defining classes;
+wiring tests in tests/test_numpyro_module.py (scipy oracle, KS against
+own cdf, pathwise vs finite differences, NUTS smoke with a latent df).

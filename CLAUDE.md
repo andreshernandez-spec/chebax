@@ -19,7 +19,11 @@ This file is how to work here.
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
-  from 2^20 up. Consumer-GPU fp64 is
+  from 2^20 up; per-group crossover (`experiments/07`, f64, vmap over equal
+  groups): reconstruction overhead ≤ 1.07× vs the uniform floor for
+  n/group ≥ 16k (betainc, N = 2^24), besselk ≤ 1.08× down to n/group = 1024,
+  and vs jax's betainc the per-group path wins every measured cell, worst 7.3×
+  (16384 groups of 64), 44–98× at MCMC scale (4 groups). Consumer-GPU fp64 is
   compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
   analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's

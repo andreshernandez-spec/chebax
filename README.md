@@ -64,7 +64,8 @@ binomial reliability, copulas, and baking. The numpyro and plotting
 dependencies install with `pip install chebax[examples]`. `examples/` holds
 plain scripts: a few of the notebook workflows in copy-paste form, plus
 integration examples with no notebook counterpart (a GIG distribution for
-efax, learned Matérn smoothness, truncated sampling).
+efax, learned Matérn smoothness, truncated sampling, truncated Gamma and
+Beta distribution classes for numpyro).
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call; per-element parameter arrays are out of scope by design.

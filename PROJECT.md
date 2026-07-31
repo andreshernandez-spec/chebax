@@ -282,6 +282,8 @@ compute at 2^24 and does not change any conclusion. Design consequence: plain
 thin grouping convenience (static `group_idx` → reshape/segment + vmap), not
 new arithmetic; a gather-based variant would only matter for G ≥ 4096 with
 tiny groups, which is the per-element regime that stays out of scope.
+DELIVERED 2026-07-31: `chebax.pergroup(fn, group_idx, num_groups=None)`,
+increment 12 in `docs/increments.md`, tests in `tests/test_pergroup.py`.
 
 **Queued low-rank table compression (2026-07-30, Andres; sequenced with the f32
 bake work, FLOP payoffs gated on B3):** Chebfun2-style separated representation

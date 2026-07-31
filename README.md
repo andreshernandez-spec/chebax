@@ -68,6 +68,9 @@ efax, learned Matérn smoothness, truncated sampling).
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call; per-element parameter arrays are out of scope by design.
+The middle ground is `chebax.pergroup(fn, group_idx)`: a static integer array
+assigns each element to a group, each group gets its own (traceable) parameter
+set — one group per chain, mixture component, or plate level.
 Accuracy is validated against mpmath at 40 dps — measured worst cases and the
 per-family error metrics are in each test file's docstring; tables regenerate
 bit-for-bit from checked-in generators.

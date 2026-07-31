@@ -14,8 +14,11 @@ This file is how to work here.
 - **Performance claims cite B3 (measured 2026-07-31) or nothing.** The citable
   numbers: besselj f64 4.5–6.0× vs cephes::jv (0.4× on pure-outer), f32 35× the f64,
   on an RTX 3080 Laptop (`../bessel/experiments/07`); narrow-domain 2.5–3.0×
-  (`experiments/04`); igamma headroom 18–54× f64 against a mock (`experiments/05`,
-  a cost model, not an implementation — say so when citing); betainc race
+  (`experiments/04`); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
+  the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
+  for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane
+  trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
+  still the only number for a outside the box — say which when citing; betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
@@ -75,6 +78,7 @@ python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-t
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
+python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```

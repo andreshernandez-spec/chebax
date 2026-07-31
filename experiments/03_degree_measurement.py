@@ -124,6 +124,28 @@ def betainc():
            fit_axis(lambda b: lnF(mp.mpf("0.1"), b, mp.mpf("0.5")), 28, 0.1, 10), [20, 24])
 
 
+def gammainc():
+    L = lambda a, x: mp.log(mp.hyp1f1(1, a + 1, x))
+
+    def T(a, t):
+        x = mp.mpf(8) / t
+        return mp.log(mp.gammainc(a, x, mp.inf)) + x + (1 - a) * mp.log(x)
+
+    print("gammainc: L and T degrees (claims: L x <= 23, a <= 53; "
+          "T t <= 20, a <= 20)")
+    for a in [0.1, 1.0, 10.0]:
+        report(f"L x-dir a={a}", fit_axis(lambda x: L(mp.mpf(a), x), 32, 0, 8), [23, 26])
+    # the a-direction worst sits at the x -> 0 edge, where L ~ x/(a+1)
+    # and the pole at a = -1 sets the Bernstein ellipse
+    for x in ["0.01", "8.0"]:
+        report(f"L a-dir x={x}",
+               fit_axis(lambda a: L(a, mp.mpf(x)), 68, 0.1, 10), [53, 58])
+    for a in [0.1, 10.0]:
+        report(f"T t-dir a={a}", fit_axis(lambda t: T(mp.mpf(a), t), 28, 0, 1), [20, 24])
+    report("T a-dir t=1",
+           fit_axis(lambda a: T(a, mp.mpf(1)), 32, 0.1, 10), [20, 24])
+
+
 def vonmises():
     def H(kappa, w):
         th = mp.sqrt(w)
@@ -154,8 +176,8 @@ def erf():
 
 
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
-            "bessely": bessely, "betainc": betainc, "vonmises": vonmises,
-            "erf": erf}
+            "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
+            "vonmises": vonmises, "erf": erf}
 
 if __name__ == "__main__":
     picks = sys.argv[1:] or list(FAMILIES)

@@ -112,6 +112,7 @@ BAKEABLE = [
     ("besseli", lambda: chebax.besseli(2.5, scaled=True), np.linspace(0.0, 100.0, 20)),
     ("bessely", lambda: chebax.bessely(1.5), np.logspace(-5, 3, 20)),
     ("betainc", lambda: chebax.betainc(2.0, 3.0), np.linspace(0.0, 1.0, 21)),
+    ("gammainc", lambda: chebax.gammainc(2.5), np.linspace(0.0, 50.0, 21)),
     ("spherical", lambda: __import__("chebax").spherical_jn(2), np.linspace(0.1, 40.0, 20)),
 ]
 

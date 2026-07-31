@@ -9,7 +9,8 @@ from chebax._src.recipes.erf_family import dawsn, erfcx
 from chebax._src.recipes.lambertw import lambertw
 from chebax._src.recipes.spherical import spherical_jn, spherical_yn
 from chebax._src.recipes.besselj import besselj, besselj_dnu
-from chebax._src.recipes.besselk import besselk, besselk_dnu, besselk_fn
+from chebax._src.recipes.besselk import (besselk, besselk_dnu, besselk_fn,
+                                         log_besselk_fn)
 from chebax._src.recipes.bessely import bessely, bessely_dnu
 from chebax._src.recipes.betainc import betainc, betainc_fn
 from chebax._src.recipes.quantiles import betaincinv, gammaincinv, stdtr, stdtrit
@@ -24,6 +25,7 @@ except Exception:  # not installed (e.g. running from a source checkout)
     __version__ = "0+unknown"
 __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn",
            "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
+           "log_besselk_fn",
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",
            "dawsn", "erfcx", "fit", "gammaincinv", "lambertw", "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",

@@ -159,3 +159,19 @@ raise NotImplementedError (`fori_loop` → for-loop is the natural v2). The
 two hand-written besselj templates are deleted; the emitter runs at dev
 time only, so jax-internal drift fails loudly at regeneration without
 invalidating committed artifacts.
+
+## 10 — log_besselk_fn (2026-07-30)
+
+`ln K_nu` exposed straight from the log tables that besselk already stores:
+inner `Ltil(ln x) - nu ln(x/2)`, tail `Lt(8/x) + (1/2) ln(pi/(2x)) - x`. No
+new tables, no new floors. The point is the underflow ceiling: besselk_fn
+returns K itself and hits 0 past x ~ 746, while the log form is valid for
+arbitrarily large x (the tail variable 8/x -> 0 is an ordinary point).
+Motivated by GIG-class log-normalizers (examples/efax_gig.py), which need
+ln K_p and its order derivative inside jax AD; same shape as TFP's
+log_bessel_kve, which has no order gradient. Measured vs mpmath (60 dps),
+errors normalized by
+max(1, |ref|), grid nu in [0.03, 9.97] x in [1e-6, 1e8] including both
+seams and the old underflow edge: value 1.4e-15, d/dnu 2.9e-15,
+d/dx 1.5e-15 (bars 1e-14 / 2e-14 / 1e-14). Traced-nu contract identical to
+besselk_fn (uniform per call, [0, 10] unchecked under trace).

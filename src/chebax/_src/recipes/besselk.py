@@ -131,6 +131,14 @@ def _besselk_dnu_cached(v, _tag):
     )
 
 
+def _traced_series(nu):
+    c_lo = traced_coefs(_kt.TABLE_IN_LO, 0.0, _kt.VSPLIT, nu)
+    c_hi = traced_coefs(_kt.TABLE_IN_HI, _kt.VSPLIT, _kt.VMAX, nu)
+    c_in = jnp.where(nu <= _kt.VSPLIT, c_lo, c_hi)
+    c_tl = traced_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, nu)
+    return (ChebSeries(c_in, (_kt.U0, _kt.U1)), ChebSeries(c_tl, (0.0, 1.0)))
+
+
 def besselk_fn(nu, x):
     """K_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
 
@@ -139,13 +147,28 @@ def besselk_fn(nu, x):
     point; jit constant-folds it when nu is static.
     """
     nu = jnp.asarray(nu)
-    c_lo = traced_coefs(_kt.TABLE_IN_LO, 0.0, _kt.VSPLIT, nu)
-    c_hi = traced_coefs(_kt.TABLE_IN_HI, _kt.VSPLIT, _kt.VMAX, nu)
-    c_in = jnp.where(nu <= _kt.VSPLIT, c_lo, c_hi)
-    c_tl = traced_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, nu)
-    return _eval_k(nu, jnp.asarray(x),
-                   ChebSeries(c_in, (_kt.U0, _kt.U1)),
-                   ChebSeries(c_tl, (0.0, 1.0)))
+    ltil, ltail = _traced_series(nu)
+    return _eval_k(nu, jnp.asarray(x), ltil, ltail)
+
+
+def log_besselk_fn(nu, x):
+    """ln K_nu(x), same contract as besselk_fn but with no underflow ceiling.
+
+    besselk_fn returns K itself, which underflows to 0 past x ~ 746. The
+    tables store ln K, so the log evaluates directly: valid for arbitrarily
+    large x (ln K ~ -x), differentiable in nu and x, nu uniform per call in
+    [0, 10]. This is the log_kve shape that entropy and log-likelihood
+    pipelines want (e.g. a GIG log-normalizer needs ln K_p and its order
+    derivative).
+    """
+    nu = jnp.asarray(nu)
+    x = jnp.asarray(x)
+    ltil, ltail = _traced_series(nu)
+    xi = _xin(x)
+    inner = ltil(jnp.log(xi)) - nu * jnp.log(xi / 2)
+    xo = _xout(x)
+    tail = ltail(_kt.XS / xo) + 0.5 * jnp.log(jnp.pi / (2 * xo)) - xo
+    return jnp.where(x <= _kt.XS, inner, tail)
 
 
 def besselk(v):

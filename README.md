@@ -35,7 +35,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | `besselj` | `besselj(v)` | — | `besselj_dnu(v)` | x ≥ 0, validated to 1e4 |
 | `bessely` | `bessely(v)` | — (structural) | `bessely_dnu(v)` | x ≥ 1e-6 |
 | `besseli` | `besseli(v, scaled=)` | `besseli_fn` | `besseli_dnu(v, scaled=)` | `scaled` = scipy's ive |
-| `besselk` | `besselk(v)` | `besselk_fn` | `besselk_dnu(v)` | x ≥ 1e-6; Matérn demo |
+| `besselk` | `besselk(v)` | `besselk_fn`, `log_besselk_fn` | `besselk_dnu(v)` | x ≥ 1e-6; Matérn demo; the log form has no underflow ceiling |
 | `betainc` | `betainc(a, b)` | `betainc_fn` | via `grad` of `_fn` | (a, b) ∈ [0.1, 10]² |
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
 | quantiles | — | `betaincinv`, `gammaincinv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358 |

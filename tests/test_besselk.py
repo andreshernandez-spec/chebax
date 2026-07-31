@@ -139,6 +139,95 @@ def test_matern_learns_nu():
     assert abs(float(jnp.exp(theta[2])) - sig2_t) <= 1e-3
 
 
+def test_log_besselk():
+    # ln K straight from the log tables: no underflow ceiling, so the grid
+    # extends far past besselk's x ~ 746 limit. Errors normalized by
+    # max(1, |ref|); measured worst over this grid: value 1.4e-15,
+    # d/dnu 2.9e-15, d/dx 1.5e-15. Bars ~4x: 1e-14 / 2e-14 / 1e-14.
+    xs = [1e-6, 0.01, 1.0, 7.9, 8.0, 8.1, 50.0, 600.0, 746.0, 1e4, 1e8]
+    for v in [0.03, 0.5, 1.0, 1.7, 5.5, 9.97]:
+        for x in xs:
+            ref = float(mp.log(mp.besselk(mp.mpf(v), mp.mpf(x))))
+            got = float(chebax.log_besselk_fn(v, x))
+            assert abs(got - ref) / max(1.0, abs(ref)) <= 1e-14, (v, x)
+    for v in [0.5, 1.7, 9.97]:
+        for x in [0.01, 8.0, 600.0, 1e6]:
+            dn = float(mp.diff(lambda t: mp.log(mp.besselk(t, mp.mpf(x))), mp.mpf(v)))
+            gn = float(jax.grad(chebax.log_besselk_fn, 0)(v, x))
+            assert abs(gn - dn) / max(1.0, abs(dn)) <= 2e-14, (v, x)
+            dx = float(mp.diff(lambda t: mp.log(mp.besselk(mp.mpf(v), t)), mp.mpf(x)))
+            gx = float(jax.grad(chebax.log_besselk_fn, 1)(v, x))
+            assert abs(gx - dx) / max(1.0, abs(dx)) <= 1e-14, (v, x)
+
+
+def _gig_log_normalizer(p, a, b):
+    # A(p, a, b) = ln 2 + (p/2) ln(b/a) + ln K_p(sqrt(ab)); the GIG
+    # exponential-family log-normalizer (see examples/). K_{-p} = K_p.
+    z = jnp.sqrt(a * b)
+    return (jnp.log(2.0) + 0.5 * p * (jnp.log(b) - jnp.log(a))
+            + chebax.log_besselk_fn(jnp.abs(p), z))
+
+
+def test_gig_log_normalizer_grads():
+    # value and all three parameter gradients vs mpmath (mp.diff), errors
+    # normalized by max(1, |ref|). Measured worst over this grid: A 2.3e-15,
+    # dA/dp 8.6e-16, dA/da 4.9e-16, dA/db 3.1e-14 (the small-z corner, where
+    # E[1/x] is large). Bars ~4x: value 1e-14, gradients 2e-13.
+    def a_mp(p, a, b):
+        return (mp.log(2) + p / 2 * (mp.log(b) - mp.log(a))
+                + mp.log(mp.besselk(p, mp.sqrt(a * b))))
+
+    grad = jax.grad(_gig_log_normalizer, (0, 1, 2))
+    pts = [(2.5, 1.5, 3.0), (0.3, 4.0, 0.5), (7.5, 2.0, 2.0),
+           (2.5, 0.01, 0.01), (2.5, 50.0, 40.0), (9.5, 1.0, 1.0),
+           (1.0, 1.0, 1.0), (0.05, 2.0, 2.0)]
+    for p, a, b in pts:
+        ref = a_mp(mp.mpf(p), mp.mpf(a), mp.mpf(b))
+        refs = [mp.diff(lambda t: a_mp(t, mp.mpf(a), mp.mpf(b)), mp.mpf(p)),
+                mp.diff(lambda t: a_mp(mp.mpf(p), t, mp.mpf(b)), mp.mpf(a)),
+                mp.diff(lambda t: a_mp(mp.mpf(p), mp.mpf(a), t), mp.mpf(b))]
+        val = float(_gig_log_normalizer(p, a, b))
+        assert abs(val - float(ref)) / max(1.0, abs(float(ref))) <= 1e-14, (p, a, b)
+        for gi, ri in zip(grad(p, a, b), refs):
+            assert abs(float(gi) - float(ri)) / max(1.0, abs(float(ri))) <= 2e-13, (p, a, b)
+
+
+def test_gig_exp_to_nat_newton():
+    # the mean-to-natural conversion, which needs d ln K/dp inside Newton:
+    # recover (p, a, b) from exact mean statistics (E[ln x], E[x], E[1/x]) by
+    # Newton in (p, ln a, ln b), Jacobian via jax.jacfwd through besselk_fn
+    def a_nat(eta):
+        return _gig_log_normalizer(eta[0] + 1.0, -2.0 * eta[1], -2.0 * eta[2])
+
+    mean_stats = jax.jit(jax.grad(a_nat))
+    p_t, a_t, b_t = 2.5, 1.5, 3.0
+    mu = mean_stats(jnp.array([p_t - 1.0, -0.5 * a_t, -0.5 * b_t]))
+
+    def residual(theta):
+        p, la, lb = theta
+        eta = jnp.array([p - 1.0, -0.5 * jnp.exp(la), -0.5 * jnp.exp(lb)])
+        return mean_stats(eta) - mu
+
+    jac = jax.jit(jax.jacfwd(residual))
+    theta = jnp.array([1.0, 0.0, 0.0])
+    for _ in range(20):
+        r = residual(theta)
+        if float(jnp.linalg.norm(r)) < 1e-12:
+            break
+        step = jnp.linalg.solve(jac(theta), r)
+        t, rn = 1.0, float(jnp.linalg.norm(r))
+        while t > 1e-8:
+            r1 = residual(theta - t * step)
+            if bool(jnp.all(jnp.isfinite(r1))) and float(jnp.linalg.norm(r1)) < rn:
+                break
+            t *= 0.5
+        theta = theta - t * step
+    assert float(jnp.linalg.norm(residual(theta))) <= 1e-10
+    assert abs(float(theta[0]) - p_t) <= 1e-8
+    assert abs(float(jnp.exp(theta[1])) - a_t) <= 1e-8
+    assert abs(float(jnp.exp(theta[2])) - b_t) <= 1e-8
+
+
 @pytest.mark.slow
 def test_tables_regenerate_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath

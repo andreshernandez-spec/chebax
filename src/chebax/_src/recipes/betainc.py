@@ -37,7 +37,7 @@ import numpy as np
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
-from chebax._src.recipes._common import check_range
+from chebax._src.recipes._common import canon_tag, check_range
 from chebax._src.series import ChebSeries, _chebval
 
 
@@ -98,9 +98,8 @@ class BetaInc(Recipe):
         return eval_betainc(self.a, self.b, x, self.cab, self.cba)
 
 
-@functools.lru_cache(maxsize=None)
-def betainc(a, b):
-    """I_x(a, b) for a, b in [0.1, 10]. Cached per (a, b); no mpmath."""
+@functools.lru_cache(maxsize=128)
+def _betainc_cached(a, b, _tag):
     a = check_range("betainc", "a", a, _bt.ALO, _bt.AHI)
     b = check_range("betainc", "b", b, _bt.ALO, _bt.AHI)
     return BetaInc(a, b,
@@ -119,3 +118,11 @@ def betainc_fn(a, b, x):
     return eval_betainc(a, b, x,
                         ChebSeries(tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT)),
                         ChebSeries(tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT)))
+
+
+def betainc(a, b):
+    """I_x(a, b) for a, b in [0.1, 10]. Cached per (a, b); no mpmath.
+
+    a, b may be python numbers or concrete jax scalars; the bounded cache
+    is keyed per x64 mode."""
+    return _betainc_cached(float(a), float(b), canon_tag())

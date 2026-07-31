@@ -40,7 +40,7 @@ import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
-from chebax._src.recipes._common import (check_range, param_coefs,
+from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.series import ChebSeries
 
@@ -109,9 +109,8 @@ class BesselKdnu(Recipe):
                            self.ltil_nu, self.ltail_nu)
 
 
-@functools.lru_cache(maxsize=None)
-def besselk(v):
-    """K_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath."""
+@functools.lru_cache(maxsize=128)
+def _besselk_cached(v, _tag):
     v = check_range("besselk", "v", v, 0.0, _kt.VMAX)
     table, lo, hi = _panel(v)
     return BesselK(v,
@@ -119,9 +118,8 @@ def besselk(v):
                    ChebSeries(param_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, v), (0.0, 1.0)))
 
 
-@functools.lru_cache(maxsize=None)
-def besselk_dnu(v):
-    """dK_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
+@functools.lru_cache(maxsize=128)
+def _besselk_dnu_cached(v, _tag):
     v = check_range("besselk", "v", v, 0.0, _kt.VMAX)
     table, lo, hi = _panel(v)
     return BesselKdnu(
@@ -148,3 +146,16 @@ def besselk_fn(nu, x):
     return _eval_k(nu, jnp.asarray(x),
                    ChebSeries(c_in, (_kt.U0, _kt.U1)),
                    ChebSeries(c_tl, (0.0, 1.0)))
+
+
+def besselk(v):
+    """K_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath.
+
+    v may be a python number or a concrete jax scalar; the bounded cache
+    is keyed per x64 mode."""
+    return _besselk_cached(float(v), canon_tag())
+
+
+def besselk_dnu(v):
+    """dK_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
+    return _besselk_dnu_cached(float(v), canon_tag())

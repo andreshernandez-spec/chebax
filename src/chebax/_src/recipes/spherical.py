@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
+from chebax._src.recipes._common import canon_tag
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes import bessely_table as _yt
 from chebax._src.recipes.besselj import besselj
@@ -75,15 +76,21 @@ def _check_n(n):
     return int(n)
 
 
-@functools.lru_cache(maxsize=None)
-def spherical_jn(n):
-    """j_n on x >= 0 for integer n in [0, 9]. Exact values and gradients at 0."""
-    n = _check_n(n)
+@functools.lru_cache(maxsize=128)
+def _spherical_jn_cached(n, _tag):
     return _SphericalJ(n, besselj(n + 0.5))
 
 
-@functools.lru_cache(maxsize=None)
+def spherical_jn(n):
+    """j_n on x >= 0 for integer n in [0, 9]. Exact values and gradients at 0."""
+    return _spherical_jn_cached(_check_n(n), canon_tag())
+
+
+@functools.lru_cache(maxsize=128)
+def _spherical_yn_cached(n, _tag):
+    return _SphericalY(n, bessely(n + 0.5))
+
+
 def spherical_yn(n):
     """y_n for integer n in [0, 9]; x clamps at 1e-6, x <= 0 returns -inf."""
-    n = _check_n(n)
-    return _SphericalY(n, bessely(n + 0.5))
+    return _spherical_yn_cached(_check_n(n), canon_tag())

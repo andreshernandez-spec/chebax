@@ -19,6 +19,12 @@ from chebax._src import algorithms
 from chebax._src.series import _chebval
 
 
+def canon_tag():
+    """Cache-key tag for the canonical float dtype: factory instances built
+    under different x64 settings must not share a cache slot."""
+    return str(jnp.empty(()).dtype)
+
+
 def canon_float(x):
     """Promote to the canonical float dtype (float64 under x64).
 

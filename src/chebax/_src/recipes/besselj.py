@@ -38,8 +38,8 @@ import jax.numpy as jnp
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselj_table as _tab
 from chebax._src.recipes import besselj_table_ext as _ext
-from chebax._src.recipes._common import (check_range, digamma64, param_coefs,
-                                         param_coefs_der)
+from chebax._src.recipes._common import (canon_tag, check_range, digamma64,
+                                         param_coefs, param_coefs_der)
 from chebax._src.series import ChebSeries
 
 
@@ -145,16 +145,22 @@ def _series_at(v):
     )
 
 
-@functools.lru_cache(maxsize=None)
-def besselj(v):
-    """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath."""
+@functools.lru_cache(maxsize=128)
+def _besselj_cached(v, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJ(v, *_series_at(v))
 
 
-@functools.lru_cache(maxsize=None)
-def besselj_dnu(v):
-    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient)."""
+def besselj(v):
+    """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath.
+
+    v may be a python number or a concrete jax scalar; the bounded cache
+    is keyed per x64 mode."""
+    return _besselj_cached(float(v), canon_tag())
+
+
+@functools.lru_cache(maxsize=128)
+def _besselj_dnu_cached(v, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJdnu(
         v, *_series_at(v),
@@ -163,3 +169,8 @@ def besselj_dnu(v):
         ChebSeries(param_coefs_der(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
         ChebSeries(param_coefs_der(_ext.TABLE_QS, 0.0, _tab.VMAX, v), (0.0, 1.0)),
     )
+
+
+def besselj_dnu(v):
+    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient)."""
+    return _besselj_dnu_cached(float(v), canon_tag())

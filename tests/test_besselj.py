@@ -122,3 +122,31 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     for name in ("besselj_table.py", "besselj_table_ext.py"):
         packaged = pathlib.Path(tab.__file__).with_name(name).read_text()
         assert (tmp_path / name).read_text() == packaged, name
+
+
+def test_factory_accepts_jax_scalars_and_bounds_cache():
+    # eager jax scalar orders used to raise (unhashable) before normalization
+    a = chebax.besselj(jnp.asarray(2.5))
+    b = chebax.besselj(2.5)
+    assert a is b
+    from chebax._src.recipes.besselj import _besselj_cached
+    assert _besselj_cached.cache_info().maxsize == 128
+
+
+def test_factory_cache_keyed_per_x64_mode():
+    # instances built before an x64 flip must not be served after it
+    code = (
+        "import jax, numpy as np, chebax\n"
+        "a = chebax.besselj(2.5)\n"
+        "assert np.asarray(a.g.coef).dtype == np.float32, np.asarray(a.g.coef).dtype\n"
+        "jax.config.update('jax_enable_x64', True)\n"
+        "b = chebax.besselj(2.5)\n"
+        "assert np.asarray(b.g.coef).dtype == np.float64, np.asarray(b.g.coef).dtype\n"
+        "print('ok')\n")
+    import os
+    import subprocess
+    import sys
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, env=env)
+    assert out.returncode == 0, out.stderr[-1500:]

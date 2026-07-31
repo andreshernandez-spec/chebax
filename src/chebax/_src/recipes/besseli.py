@@ -26,7 +26,7 @@ import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besseli_table as _it
-from chebax._src.recipes._common import (check_range, digamma64, param_coefs,
+from chebax._src.recipes._common import (canon_tag, check_range, digamma64, param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.recipes.besselk import besselk, besselk_fn
 from chebax._src.series import ChebSeries
@@ -112,9 +112,8 @@ class BesselIdnu(Recipe):
         return val * jnp.where(x <= _it.XS, inner_term, tail_term)
 
 
-@functools.lru_cache(maxsize=None)
-def besseli(v, scaled=False):
-    """I_v on x >= 0 for real v in [0, 10] (e^-x I_v if scaled). Cached."""
+@functools.lru_cache(maxsize=128)
+def _besseli_cached(v, scaled, _tag):
     v = check_range("besseli", "v", v, 0.0, _it.VMAX)
     return BesselI(v, scaled,
                    ChebSeries(param_coefs(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
@@ -142,12 +141,8 @@ class _BesselIdnu0(Recipe):
         return -(k * jnp.exp(-x)) if self.scaled else -k
 
 
-@functools.lru_cache(maxsize=None)
-def besseli_dnu(v, scaled=False):
-    """dI_v/dv on x > 0 for real v in [0, 10] (times e^-x if scaled).
-
-    v = 0 uses the exact identity dI_v/dv|_0 = -K_0(x) (clamped below
-    x = 1e-6 with the K table)."""
+@functools.lru_cache(maxsize=128)
+def _besseli_dnu_cached(v, scaled, _tag):
     v = check_range("besseli", "v", v, 0.0, _it.VMAX)
     if v == 0.0:
         return _BesselIdnu0(scaled, besselk(0.0))
@@ -196,3 +191,19 @@ def besseli_fn(nu, x, scaled=False):
     Uses exp(gammaln) for the traced 1/Gamma(nu+1). The nu gradient at
     nu = 0 is the exact -K_0(x) (clamped below x = 1e-6 with the K table)."""
     return _besseli_fn(jnp.asarray(nu), jnp.asarray(x), bool(scaled))
+
+
+def besseli(v, scaled=False):
+    """I_v on x >= 0 for real v in [0, 10] (e^-x I_v if scaled). Cached.
+
+    v may be a python number or a concrete jax scalar; the bounded cache
+    is keyed per x64 mode."""
+    return _besseli_cached(float(v), bool(scaled), canon_tag())
+
+
+def besseli_dnu(v, scaled=False):
+    """dI_v/dv on x > 0 for real v in [0, 10] (times e^-x if scaled).
+
+    v = 0 uses the exact identity dI_v/dv|_0 = -K_0(x) (clamped below
+    x = 1e-6 with the K table)."""
+    return _besseli_dnu_cached(float(v), bool(scaled), canon_tag())

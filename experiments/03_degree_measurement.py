@@ -132,11 +132,15 @@ def vonmises():
         return (F - mp.mpf(1) / 2 - th / (2 * mp.pi)) / th
 
     W = float(mp.pi ** 2)
-    print("vonmises: H degrees (claims: w ~92 at kappa=50, r ~68)")
+    # 128 probe nodes: the original 80-node r probe was self-truncating
+    # (its "last coefficient above 1e-15" was the last available one),
+    # review 2026-07-30 finding 23. Measured: w needs 90, r needs 87.
+    print("vonmises: H degrees (claims: w <= 90 at kappa=50, r <= 87 at w=9)")
     for k in [10.0, 50.0]:
-        report(f"w-dir kappa={k}", fit_axis(lambda w: H(mp.mpf(k), w), 104, 1e-10, W), [92, 100])
-    report("r-dir w=0.01",
-           fit_axis(lambda r: H(r * r, mp.mpf("0.01")), 80, 0, float(mp.sqrt(50))), [68, 76])
+        report(f"w-dir kappa={k}", fit_axis(lambda w: H(mp.mpf(k), w), 128, 1e-10, W), [90, 100])
+    for wv in ["0.01", "9.0"]:
+        report(f"r-dir w={wv}",
+               fit_axis(lambda r: H(r * r, mp.mpf(wv)), 128, 0, float(mp.sqrt(50))), [87, 95])
 
 
 def erf():

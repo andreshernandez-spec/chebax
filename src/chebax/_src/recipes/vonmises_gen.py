@@ -10,12 +10,14 @@ G = theta * H(theta^2) with H even-in-theta, smooth, and tabulated on
 w = theta^2 in [0, pi^2]. The kappa -> inf boundary layer of width
 ~1/sqrt(kappa) sits at the LEFT endpoint of the w-interval, where
 Chebyshev nodes cluster; the second axis is r = sqrt(kappa) on
-[0, sqrt(50)], which keeps the layer's motion uniform (measured degrees:
-w ~92 at kappa=50, r ~68; raw kappa needed >64; reproduce via
-experiments/03_degree_measurement.py). Samples come from mp.quad of the
-defining integral at 40 dps.
+[0, sqrt(50)], which keeps the layer's motion uniform. Measured degrees
+at 128 probe nodes (the original 80-node r probe was self-truncating,
+review 2026-07-30 finding 23): w needs 90 at kappa = 50, r needs 87
+(worst slice w = 9); raw kappa needed >64. Node counts carry ~20% margin
+over those. Reproduce via experiments/03_degree_measurement.py. Samples
+come from mp.quad of the defining integral at 40 dps.
 
-Regenerate with:  python -m chebax._src.recipes.vonmises_gen  (~5 min)
+Regenerate with:  python -m chebax._src.recipes.vonmises_gen  (~10 min)
 """
 
 import math
@@ -25,8 +27,8 @@ from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
                                              to_f64, table_path, write_table_module)
 
 KMAX_VM = 50.0
-NW_VM = 104
-NK_VM = 80
+NW_VM = 112   # w-degree 111; worst measured 90 at kappa = 50
+NK_VM = 108   # r-degree 107; worst measured 87 at w = 9
 
 
 def generate_table():

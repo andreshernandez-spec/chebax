@@ -46,10 +46,11 @@ betainc: ln F degrees (claims: x <= 19, a <= 58, b <= 20)
   a-dir b=10 x=0.5: last>1e-15 at k=46  a[58]=3.2e-19  a[64]=5.8e-21
   b-dir a=0.1 x=0.5: last>1e-15 at k=20  a[20]=1.7e-15  a[24]=1.2e-18
 == vonmises ==
-vonmises: H degrees (claims: w ~92 at kappa=50, r ~68)
-  w-dir kappa=10.0: last>1e-15 at k=46  a[92]=4.4e-40  a[100]=1.2e-40
-  w-dir kappa=50.0: last>1e-15 at k=90  a[92]=3.1e-16  a[100]=1.8e-18
-  r-dir w=0.01: last>1e-15 at k=79  a[68]=8.0e-14  a[76]=3.6e-15
+vonmises: H degrees (claims: w <= 90 at kappa=50, r <= 87 at w=9)
+  w-dir kappa=10.0: last>1e-15 at k=46  a[90]=5.6e-39  a[100]=2.7e-40
+  w-dir kappa=50.0: last>1e-15 at k=90  a[90]=1.1e-15  a[100]=1.8e-18
+  r-dir w=0.01: last>1e-15 at k=81  a[87]=8.0e-17  a[95]=5.8e-18
+  r-dir w=9.0: last>1e-15 at k=87  a[87]=1.2e-15  a[95]=1.9e-17
 == erf ==
 erf family (claims: dawsn E 37 / G 10, erfcx C 32 / H 9; seam 6)
   dawsn E z-dir: last>1e-15 at k=37  a[38]=6.0e-16  a[42]=1.1e-18

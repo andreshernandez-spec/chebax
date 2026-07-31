@@ -112,8 +112,11 @@ Structure: F = ½ + θ/2π + θ·H(θ²; κ) with H from a 104×80 table in
 (w = θ², r = √κ) on κ ∈ [0, 50] — the dawsn move makes oddness and the
 θ = 0 gradient exact, puts the κ→∞ boundary layer (width ~1/√κ) at the
 w-endpoint where Chebyshev clusters, and the √κ axis keeps the layer's
-motion uniform (measured: raw κ didn't converge by 64, r needs 68; w needs
-92 at κ = 50). Samples from mp.quad of the defining integral.
+motion uniform (measured: raw κ didn't converge by 64; correction
+2026-07-30, review finding 23: the original 80-node r probe was
+self-truncating; remeasured at 128 nodes, r needs 87 and w needs 90, and
+the table was upsized 104×80 → 112×108 for ~20% margin). Samples from
+mp.quad of the defining integral.
 `vonmises_cdf(kappa, theta)` is traced in κ (learnable concentration);
 dF/dθ = the density (test oracle, 1e-12); dF/dκ vs mp.diff 1e-11;
 `vonmises_icdf` reuses the safeguarded solver + IFT jvp, with I₀(κ)

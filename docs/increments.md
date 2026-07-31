@@ -175,3 +175,27 @@ max(1, |ref|), grid nu in [0.03, 9.97] x in [1e-6, 1e8] including both
 seams and the old underflow edge: value 1.4e-15, d/dnu 2.9e-15,
 d/dx 1.5e-15 (bars 1e-14 / 2e-14 / 1e-14). Traced-nu contract identical to
 besselk_fn (uniform per call, [0, 10] unchecked under trace).
+
+## 11 — chebax.pytensor, the opt-in pymc/JAX dispatch module (2026-07-31)
+
+`import chebax.pytensor` registers `jax_funcify` lowerings for the seven
+scalar ops pytensor otherwise routes through tfp-nightly on the JAX
+backend, plus a grad-enabled BetaInc. Design points: per-class
+singledispatch registration silently replaces pytensor's tfp stubs (no
+upstream change needed); Erfcx/Erfcinv are pure jax (native erfcx; ndtri
+composition), so the pm.Truncated-Normal breakage class needs no tables
+at all; BetaInc keeps jax's own values on every domain and adds a
+custom_jvp whose a/b partials come from forward mode through
+`betainc_fn`, nan outside the [0.1, 10]^2 box; Ive/Kve/inverse-CDF ops
+guard on trace-time parameter SHAPE (scalar -> chebax, batched -> tfp
+fallback or a NotImplementedError naming this module) and on runtime
+parameter VALUES (nan outside table domains, never silent extrapolation).
+Kve goes through `log_besselk_fn` so it stays finite at any x. Verified
+end to end with pymc 6.2 and no tfp installed: pm.Truncated Normal under
+nuts_sampler="numpyro" (the pymc#7980 class), and a censored StudentT
+with a LATENT dof, which stock jax rejects on the betainc gradient.
+Wiring tests in tests/test_pytensor_plugin.py (jax_funcify-then-jax.grad,
+the numpyro path, plus one mode="JAX" end-to-end); accuracy stays owned
+by the per-recipe suites. pytensor imports only inside the module: the
+core runtime rule (jax + numpy) is untouched, `pip install
+chebax[pytensor]` pins the floor.

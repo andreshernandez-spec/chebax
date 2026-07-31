@@ -47,6 +47,16 @@ Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
 modules and C++17 headers from an instance).
 
+For pymc users: `import chebax.pytensor` (installs with
+`pip install chebax[pytensor]`) registers JAX-backend lowerings for the
+pytensor ops that otherwise need tfp-nightly under
+`pm.sample(nuts_sampler="numpyro"|"blackjax")` — betaincinv, gammaincinv,
+gammainccinv, erfcx, erfcinv, ive, kve — and adds betainc gradients in its
+shape parameters, so censored or truncated StudentT/Beta likelihoods with a
+latent scalar shape sample instead of raising. Shape parameters must be
+scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
+return nan, never silently wrong numbers.
+
 `notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
 the Bessel family with a learnable Matérn kernel, differentiable quantiles,
 truncated and circular distributions in numpyro, Gaussian tails / Lambert W /

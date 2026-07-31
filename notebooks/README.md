@@ -10,6 +10,7 @@ pip install chebax[examples]     # adds matplotlib and numpyro
 
 | Notebook | Theme |
 |---|---|
+| [00_chebyshev_fundamentals](00_chebyshev_fundamentals.ipynb) | why Chebyshev nodes work: Runge's phenomenon, near-minimax interpolation, geometric convergence to the float64 floor, and `fit` approximating an arbitrary recipe-free target (J_3.1 + K_2.5) with analytical-looking derivatives |
 | [01_bessel_family_tour](01_bessel_family_tour.ipynb) | J, Y, I, K and spherical j: values, gradients in x and in the order, ending with a Matern kernel whose smoothness nu is learned by gradient descent |
 | [02_differentiable_quantiles](02_differentiable_quantiles.ipynb) | betaincinv, gammaincinv, stdtr/stdtrit (jax#2399, jax#5350, jax#20358): tail resolution, gradients in the shape parameters, reparameterized sampling, chi-square quantiles at real dof |
 | [03_numpyro_truncated_and_circular](03_numpyro_truncated_and_circular.ipynb) | a truncated Student-t distribution for numpyro (numpyro#1365) fitted with NUTS, and von Mises CDF/quantile with pathwise gradients in kappa |

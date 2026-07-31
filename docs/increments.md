@@ -199,3 +199,24 @@ the numpyro path, plus one mode="JAX" end-to-end); accuracy stays owned
 by the per-recipe suites. pytensor imports only inside the module: the
 core runtime rule (jax + numpy) is untouched, `pip install
 chebax[pytensor]` pins the floor.
+
+## 12 — pergroup, the per-group parameter wrapper (2026-07-31)
+
+`chebax.pergroup(fn, group_idx, num_groups=None)` relaxes uniform-per-call
+to per-group: a STATIC integer array assigns every element to one of G
+groups, each group gets its own traceable parameter set, and the wrapped
+function is jit/grad/vmap-compatible. Built only after
+`experiments/07_pergroup_crossover.py` measured that plain vmap over
+groups already serves the regime (reconstruction overhead within a few
+percent of the uniform floor for n/group >= 16k; vs jax's betainc the
+per-group path won every measured cell, worst 7.3x, 44-98x at MCMC
+scale), so the wrapper is index bookkeeping around vmap, not new
+arithmetic: numpy at wrap time sorts elements by group, pads each row
+with the group's own first element (padding never leaves fn's domain and
+is never read back), and gathers results back to the input shape. Empty
+groups are allowed (pass num_groups) and contribute zero gradient.
+Ragged groups cost padding: the padded matrix is (G, max group size).
+Contract tested as exactness against the elementwise uniform path at
+5e-15 relative (tests/test_pergroup.py); accuracy stays owned by the
+per-recipe suites, cost by experiments/07. Per-element parameters stay
+out of scope (PROJECT.md scope boundary).

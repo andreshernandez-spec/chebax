@@ -15,6 +15,7 @@ from chebax._src.recipes.bessely import bessely, bessely_dnu
 from chebax._src.recipes.betainc import betainc, betainc_fn
 from chebax._src.recipes.quantiles import betaincinv, gammaincinv, stdtr, stdtrit
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
+from chebax._src.pergroup import pergroup
 from chebax._src.series import ChebSeries, PiecewiseCheb
 
 # single-sourced from pyproject.toml via package metadata
@@ -27,7 +28,8 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
            "log_besselk_fn",
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",
-           "dawsn", "erfcx", "fit", "gammaincinv", "lambertw", "spherical_jn",
+           "dawsn", "erfcx", "fit", "gammaincinv", "lambertw", "pergroup",
+           "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
            "__version__"]
 

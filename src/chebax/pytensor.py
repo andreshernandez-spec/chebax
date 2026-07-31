@@ -67,7 +67,13 @@ def _tfp_fallback(op, name, shapes):
 
 @jax_funcify.register(Erfcx)
 def _jax_funcify_Erfcx(op, **kwargs):
-    return jax.scipy.special.erfcx
+    if hasattr(jax.scipy.special, "erfcx"):
+        return jax.scipy.special.erfcx
+    # jax < 0.11 has no native erfcx; keep pytensor's tfp behavior there
+    def erfcx_fallback(x):
+        return _tfp_fallback(op, "erfcx", (jnp.shape(x),))(x)
+
+    return erfcx_fallback
 
 
 @jax_funcify.register(Erfcinv)

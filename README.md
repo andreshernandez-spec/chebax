@@ -47,12 +47,14 @@ Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
 modules and C++17 headers from an instance).
 
-`notebooks/` holds themed, executed walkthroughs: the Bessel family with a
-learnable Matérn kernel, differentiable quantiles, truncated and circular
-distributions in numpyro, Gaussian tails / Lambert W / binomial reliability,
-and baking. The numpyro and plotting dependencies install with
-`pip install chebax[examples]`. The same material in script form lives in
-`examples/`.
+`notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
+the Bessel family with a learnable Matérn kernel, differentiable quantiles,
+truncated and circular distributions in numpyro, Gaussian tails / Lambert W /
+binomial reliability, copulas, and baking. The numpyro and plotting
+dependencies install with `pip install chebax[examples]`. `examples/` holds
+plain scripts: a few of the notebook workflows in copy-paste form, plus
+integration examples with no notebook counterpart (a GIG distribution for
+efax, learned Matérn smoothness, truncated sampling).
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call; per-element parameter arrays are out of scope by design.

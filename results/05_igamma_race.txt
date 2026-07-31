@@ -1,12 +1,14 @@
 jax 0.11.0 on cuda:0, N = 16777216, mock degree 27
-distribution            igamma64   mock64  ratio  igamma32   mock32  ratio  iter med/p99/max (series | CF)
-----------------------------------------------------------------------------------------------------------
-a=3.5,  x~U(0,20)       335.66ms  16.65ms  20.2x   75.08ms  11.92ms   6.3x   20/27/27 | 10/20/24
-a=3.5,  x~Gamma(3.5)    341.88ms  16.60ms  20.6x   78.76ms  11.93ms   6.6x   21/27/27 | 17/22/25
-a=20,   x~Gamma(20)     299.74ms  16.59ms  18.1x  111.40ms  11.95ms   9.3x   42/48/48 | 17/19/20
-a=100,  x~Gamma(100)    569.69ms  16.64ms  34.2x  194.83ms  12.02ms  16.2x   84/92/93 | 33/39/41
-a=0.5,  x~Gamma(0.5)    902.84ms  16.65ms  54.2x  147.81ms  11.98ms  12.3x   10/19/19 | 45/60/70
+distribution            igamma64   mock64  ratio  chebax64  ratio  chebax32  ratio  max|diff|  iter med/p99/max (series | CF)
+-----------------------------------------------------------------------------------------------------------------------------
+a=3.5,  x~U(0,20)       335.65ms  16.81ms  20.0x   33.53ms  10.0x   25.17ms   3.0x  2.9e-15   20/27/27 | 10/20/24
+a=3.5,  x~Gamma(3.5)    342.65ms  16.79ms  20.4x   33.57ms  10.2x   25.35ms   3.1x  3.0e-15   21/27/27 | 17/22/25
+a=20,   x~Gamma(20)     300.41ms  16.87ms  17.8x       -       -        -       -         -   42/48/48 | 17/19/20
+a=100,  x~Gamma(100)    570.64ms  16.83ms  33.9x       -       -        -       -         -   84/92/93 | 33/39/41
+a=0.5,  x~Gamma(0.5)    902.86ms  16.83ms  53.6x   33.62ms  26.9x   25.37ms   5.8x  3.7e-15   10/19/19 | 45/60/70
 
 The mock's values are meaningless; its COST is the betainc-class op
-profile. XLA's while loops run the whole array to the worst element's
-trip count; the max column is what every lane pays.
+profile. chebax columns are the REAL recipe (values raced too, see
+max|diff|), only where a is inside its [0.1, 10] box. XLA's while
+loops run the whole array to the worst element's trip count; the max
+column is what every lane pays.

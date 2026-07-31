@@ -1,0 +1,156 @@
+"""Regularized incomplete gamma P(a, x) and Q = 1 - P for a in [0.1, 10],
+x in [0, inf), from baked log-tables.
+
+Two regions, one hard select at x = XS = 8:
+
+- x in [0, 8]:  P = exp(a ln x - x - lnGamma(a+1) + L(a, x)), where
+                L = ln 1F1(1; a+1; x) is tabulated directly in x (entire,
+                no transform needed); the x^a branch point and P's dynamic
+                range live in the exactly-computed prefactor.
+- x > 8:        Q = exp((a-1) ln x - x - lnGamma(a) + T(a, 8/x)), where
+                T = ln[Gamma(a, x) x^(1-a) e^x]. exp(-x) is its own
+                correctly-rounded factor, so accuracy does not decay with
+                x; Q underflows to 0 gracefully past x ~ 700.
+
+Each function is direct on the side where it is small (P below the
+transition, Q in the tail) and 1-minus-the-other on the side where it is
+~1: P and Q are absolutely accurate everywhere (the CDF contract) and
+relatively accurate where they decay, except that Q loses relative (not
+absolute) accuracy in the wedge x just below 8 with a small, where Q can
+reach ~1e-6 before the tail region takes over. x <= 0 returns the CDF
+limit (P = 0, Q = 1); nan propagates.
+
+gammainc(a)/gammaincc(a) are eager cached instances (numpy
+reconstruction). gammainc_fn(a, x)/gammaincc_fn(a, x) take a as a traced
+scalar (uniform per call, inside [0.1, 10], unchecked under trace):
+jax.grad works with respect to a through the table's parameter axis and
+gammaln - one polynomial evaluation, where jax's own igamma_grad_a runs a
+third lockstep looped series. dP/dx is AD through the formula; its exact
+value is the Gamma density, which the tests use as an oracle.
+
+Unlike jax.scipy.special.gammainc (two whole-array while loops run to the
+worst element's trip count, a fusion barrier), evaluation here is
+branchless fixed-degree polynomials; experiments/05 measured the op
+profile's headroom at 18-54x f64 on GPU before this recipe existed.
+"""
+
+import functools
+
+import jax
+import jax.numpy as jnp
+
+from chebax._src.pytree import Recipe
+from chebax._src.recipes import gammainc_table as _gt
+from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
+                                         traced_coefs)
+from chebax._src.series import ChebSeries
+
+
+def _eval_logs(a, x, lser, ltail):
+    """(ln P inner, ln Q tail), masked lanes fed finite dummies."""
+    pos = x > 0.0
+    xd = jnp.where(pos & (x <= _gt.XS), x, 1.0)
+    lp_in = (a * jnp.log(xd) - xd - jax.scipy.special.gammaln(a + 1.0)
+             + lser(xd))
+    xo = jnp.where(x > _gt.XS, x, 2.0 * _gt.XS)
+    lq_tl = ((a - 1.0) * jnp.log(xo) - xo - jax.scipy.special.gammaln(a)
+             + ltail(_gt.XS / xo))
+    return lp_in, lq_tl
+
+
+def eval_gammainc(a, x, lser, ltail, lower):
+    x = jnp.asarray(x)
+    lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+    if lower:
+        core = jnp.where(x <= _gt.XS, jnp.exp(lp_in), 1.0 - jnp.exp(lq_tl))
+        out = jnp.where(x > 0.0, core, 0.0)
+    else:
+        core = jnp.where(x <= _gt.XS, 1.0 - jnp.exp(lp_in), jnp.exp(lq_tl))
+        out = jnp.where(x > 0.0, core, 1.0)
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+
+@jax.tree_util.register_pytree_node_class
+class GammaIncP(Recipe):
+    """Callable P(a, x) on x in [0, inf). Build with gammainc(a)."""
+
+    _static_fields = ("a",)
+    _series_fields = ("lser", "ltail")
+
+    def _post_init(self):
+        self.a = float(self.a)
+
+    def __call__(self, x):
+        return eval_gammainc(self.a, x, self.lser, self.ltail, lower=True)
+
+
+@jax.tree_util.register_pytree_node_class
+class GammaIncQ(Recipe):
+    """Callable Q(a, x) on x in [0, inf). Build with gammaincc(a)."""
+
+    _static_fields = ("a",)
+    _series_fields = ("lser", "ltail")
+
+    def _post_init(self):
+        self.a = float(self.a)
+
+    def __call__(self, x):
+        return eval_gammainc(self.a, x, self.lser, self.ltail, lower=False)
+
+
+def _series_at(a):
+    return (ChebSeries(param_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a),
+                       (0.0, _gt.XS)),
+            ChebSeries(param_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a),
+                       (0.0, 1.0)))
+
+
+@functools.lru_cache(maxsize=128)
+def _gammainc_cached(a, _tag):
+    a = check_range("gammainc", "a", a, _gt.ALO, _gt.AHI)
+    return GammaIncP(a, *_series_at(a))
+
+
+@functools.lru_cache(maxsize=128)
+def _gammaincc_cached(a, _tag):
+    a = check_range("gammaincc", "a", a, _gt.ALO, _gt.AHI)
+    return GammaIncQ(a, *_series_at(a))
+
+
+def _traced_series(a):
+    return (ChebSeries(traced_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a),
+                       (0.0, _gt.XS)),
+            ChebSeries(traced_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a),
+                       (0.0, 1.0)))
+
+
+def gammainc_fn(a, x):
+    """P(a, x) with a a (traceable) scalar, differentiable in both arguments.
+
+    a must be uniform per call and inside [0.1, 10] (unchecked under
+    trace). Reconstruction costs two table contractions per call, not per
+    point; jit constant-folds them when a is static."""
+    a = jnp.asarray(a)
+    lser, ltail = _traced_series(a)
+    return eval_gammainc(a, jnp.asarray(x), lser, ltail, lower=True)
+
+
+def gammaincc_fn(a, x):
+    """Q(a, x) = 1 - P(a, x), same contract as gammainc_fn; relatively
+    accurate for x >= 8 (the tail is computed directly, not as 1 - P)."""
+    a = jnp.asarray(a)
+    lser, ltail = _traced_series(a)
+    return eval_gammainc(a, jnp.asarray(x), lser, ltail, lower=False)
+
+
+def gammainc(a):
+    """P(a, x) on [0, inf) for a in [0.1, 10]. Cached per a; no mpmath.
+
+    a may be a python number or a concrete jax scalar; the bounded cache
+    is keyed per x64 mode."""
+    return _gammainc_cached(float(a), canon_tag())
+
+
+def gammaincc(a):
+    """Q(a, x) = 1 - P(a, x) on [0, inf) for a in [0.1, 10]. Cached per a."""
+    return _gammaincc_cached(float(a), canon_tag())

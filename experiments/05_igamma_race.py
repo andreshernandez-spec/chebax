@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-"""Race XLA's iterative igamma against a mock fixed-degree kernel; count its
-iterations.
+"""Race XLA's iterative igamma against a mock fixed-degree kernel AND the
+real chebax recipe; count XLA's iterations.
 
 WHAT THIS MEASURES
 ------------------
-The queued PROJECT.md gammainc benchmark, part (1) of two: size the prize
-before building the recipe. XLA lowers jax.scipy.special.gammainc to two
-while loops (Cephes power series for x < a+1, continued fraction beyond),
-re-executing the WHOLE array each trip until the worst element converges,
-and the loops are fusion barriers. The competitor here is a MOCK with the
-op profile of a betainc-runtime-class fixed-degree kernel: exp + log
-prefactors plus one degree-27 Clenshaw on a mapped argument. Its VALUES ARE
-MEANINGLESS; only its cost is representative (same primitive mix as
-chebax's betainc eval). Timed on device-resident arrays, interleaved reps,
-medians, f64 and f32.
+The queued PROJECT.md gammainc benchmark, both parts. XLA lowers
+jax.scipy.special.gammainc to two while loops (Cephes power series for
+x < a+1, continued fraction beyond), re-executing the WHOLE array each
+trip until the worst element converges, and the loops are fusion
+barriers. Two competitors:
+
+- mock: the op profile of a betainc-runtime-class fixed-degree kernel
+  (exp + log prefactors plus one degree-27 Clenshaw). Its VALUES ARE
+  MEANINGLESS; only its cost is representative. This was part (1),
+  sizing the prize before the recipe existed.
+- chebax: the REAL gammainc recipe (chebax.gammainc_fn), values and all,
+  with a max|diff| agreement column against jax at f64. Raced only on
+  rows with a inside its [0.1, 10] table box; out-of-box rows keep the
+  mock as the cost model.
 
 Iteration statistics come from a host-side numpy transcription of the two
 Cephes loops (the same technique as bessel experiments/01): per-element
@@ -22,10 +26,10 @@ while loop.
 
 WHAT IT DOES NOT MEASURE
 ------------------------
-Accuracy of anything (the mock is a cost model, not an implementation);
-whether a real Kummer/Temme recipe reaches gammainc accuracy at degree ~27
-(that is part (2), gated on this prize being real); gradient-path costs
-(jax's igamma_grad_a adds a third looped series; noted, not timed).
+Accuracy contracts (tests own those; the agreement column only guards
+against racing wrong values); a > 10 with a real kernel (mock only);
+gradient-path costs (jax's igamma_grad_a adds a third looped series,
+chebax's a-gradient is one more polynomial; noted, not timed).
 
 Run:  python experiments/05_igamma_race.py   (~1 min, needs GPU)
 """
@@ -130,6 +134,8 @@ def main():
         ser = t * b1 - b2 + coefs[0]
         return jnp.exp(a * jnp.log(x) - x - jax.scipy.special.gammaln(a) + ser)
 
+    import chebax
+
     dists = [
         ("a=3.5,  x~U(0,20)", 3.5, lambda r: r.uniform(1e-6, 20.0, N)),
         ("a=3.5,  x~Gamma(3.5)", 3.5, lambda r: r.gamma(3.5, 1.0, N)),
@@ -139,21 +145,23 @@ def main():
     ]
 
     hdr = (f"{'distribution':22s} {'igamma64':>9s} {'mock64':>8s} {'ratio':>6s}"
-           f" {'igamma32':>9s} {'mock32':>8s} {'ratio':>6s}"
-           f"  iter med/p99/max (series | CF)")
+           f" {'chebax64':>9s} {'ratio':>6s} {'chebax32':>9s} {'ratio':>6s}"
+           f"  max|diff|  iter med/p99/max (series | CF)")
     print(hdr)
     print("-" * len(hdr))
 
     for name, a, sampler in dists:
         x_host = sampler(rng)
+        in_box = 0.1 <= a <= 10.0
         row = [f"{name:22s}"]
+        agree = None
         for dt in (jnp.float64, jnp.float32):
             x = jnp.asarray(x_host, dt)
             av = jnp.asarray(a, dt)
             ig = jax.jit(lambda xx, aa=av: jax.scipy.special.gammainc(aa, xx))
             mk = jax.jit(lambda xx, aa=av: mock(aa, xx))
-            yi = [None]
-            ym = [None]
+            fns = {}
+            yi, ym, yc = [None], [None], [None]
 
             def li():
                 yi[0] = ig(x)
@@ -161,20 +169,38 @@ def main():
             def lm():
                 ym[0] = mk(x)
 
-            t = bench({"ig": (li, lambda: yi[0].block_until_ready()),
-                       "mk": (lm, lambda: ym[0].block_until_ready())})
-            row.append(f"{t['ig'] * 1e3:7.2f}ms {t['mk'] * 1e3:6.2f}ms "
-                       f"{t['ig'] / t['mk']:5.1f}x")
+            fns = {"ig": (li, lambda: yi[0].block_until_ready()),
+                   "mk": (lm, lambda: ym[0].block_until_ready())}
+            if in_box:
+                cb = jax.jit(lambda xx, aa=av: chebax.gammainc_fn(aa, xx))
+
+                def lc():
+                    yc[0] = cb(x)
+
+                fns["cb"] = (lc, lambda: yc[0].block_until_ready())
+            t = bench(fns)
+            if dt == jnp.float64:
+                row.append(f"{t['ig'] * 1e3:7.2f}ms {t['mk'] * 1e3:6.2f}ms "
+                           f"{t['ig'] / t['mk']:5.1f}x")
+            if in_box:
+                row.append(f"{t['cb'] * 1e3:7.2f}ms {t['ig'] / t['cb']:5.1f}x")
+                if dt == jnp.float64:
+                    agree = float(jnp.max(jnp.abs(yi[0] - yc[0])))
+            else:
+                row.append(f"{'-':>7s}   {'-':>5s} ")
         sub = np.random.default_rng(1).choice(x_host, 200_000, replace=False)
         ns, nc = cephes_trip_counts(np.full(sub.shape, a), sub)
         stat = lambda v: (f"{np.median(v):.0f}/{np.percentile(v, 99):.0f}/{v.max():.0f}"
                           if v.size else "-")
+        row.append(f" {agree:.1e}" if agree is not None else f" {'-':>7s}")
         row.append(f"  {stat(ns)} | {stat(nc)}")
         print(" ".join(row))
 
     print("\nThe mock's values are meaningless; its COST is the betainc-class op"
-          "\nprofile. XLA's while loops run the whole array to the worst element's"
-          "\ntrip count; the max column is what every lane pays.")
+          "\nprofile. chebax columns are the REAL recipe (values raced too, see"
+          "\nmax|diff|), only where a is inside its [0.1, 10] box. XLA's while"
+          "\nloops run the whole array to the worst element's trip count; the max"
+          "\ncolumn is what every lane pays.")
 
 
 if __name__ == "__main__":

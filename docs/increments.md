@@ -220,3 +220,33 @@ Contract tested as exactness against the elementwise uniform path at
 5e-15 relative (tests/test_pergroup.py); accuracy stays owned by the
 per-recipe suites, cost by experiments/07. Per-element parameters stay
 out of scope (PROJECT.md scope boundary).
+
+## 13 — gammainc, the incomplete gamma pair (2026-07-31)
+
+`gammainc(a)` / `gammaincc(a)` factories and `gammainc_fn` /
+`gammaincc_fn` traced variants: P(a, x) and Q = 1 - P for a in
+[0.1, 10], x in [0, inf), from two log-tables (the besselk move applied
+to a CDF). Inner x in [0, 8] tabulates L = ln 1F1(1; a+1; x) (DLMF
+8.5.1), entire in x so no transform is needed; the x^a branch point and
+the dynamic range live in the exact prefactor exp(a ln x - x -
+lnGamma(a+1)). Tail tabulates T = ln[Gamma(a,x) x^(1-a) e^x] in
+t = 8/x, the divergent-asymptotic-series endpoint handled the same way
+as besselk's tail. Measured degrees (experiments/03): L 23 in x, 53 in
+a (the x -> 0 edge, where L ~ x/(a+1) puts the a = -1 pole 1.1 from the
+domain and sets the ellipse); T 20 in both. Q is direct (relative
+accuracy) for x > 8, P below the transition; each is 1-minus-the-other
+where it is ~1, so both meet the absolute CDF contract everywhere
+(measured 4.8e-15 worst) and stay relatively accurate where they decay,
+with the one honest hole noted in the runtime docstring (Q relative,
+x just under 8 at small a). dP/dx floors split at the saturated wedge:
+relative 3.9e-13 where density >= 1e-4 P, absolute 1.5e-16 where the AD
+bracket cancels (eps P/density is unavoidable there). dP/da and dQ/da
+3-4e-15 vs mp.diff through the traced path, one polynomial where jax
+runs the igamma_grad_a looped series. Motivation is jax#28547-class:
+jax's gammainc is two whole-array while loops run to the worst
+element's trip count. experiments/05 re-run with the real recipe:
+10-27x f64 vs jax's gammainc on GPU for in-box a (agreement <= 3.7e-15),
+3.0-5.8x f32; the earlier 18-54x was the single-Clenshaw mock ceiling,
+and the real kernel evaluates both region branches (~2x the mock cost),
+exactly as the cost model predicted. Bakes generically (test_bake);
+a = 1 gives P = 1 - e^-x as a built-in exactness check.

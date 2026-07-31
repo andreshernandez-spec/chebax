@@ -227,3 +227,16 @@ def test_float32_inputs_promote():
     assert abs(float(x) - float(chebax.betaincinv(2.0, 3.0, 0.3))) <= 1e-6
     t = chebax.stdtrit(4.0, jnp.float32(0.9))
     assert abs(float(t) - float(chebax.stdtrit(4.0, 0.9))) <= 1e-5
+
+
+def test_gammaincinv_second_derivatives():
+    # jax's igamma_grad_a has no JVP; the _dPda wrapper supplies the exact
+    # x-derivative, so hessians in p and mixed a-p derivatives work. The
+    # pure a-a second derivative needs d2P/da2 and raises with a clear
+    # message instead of an internal jax error.
+    d2 = float(jax.hessian(lambda p: chebax.gammaincinv(2.0, p))(0.3))
+    assert abs(d2 - 0.661368) <= 1e-4
+    dm = float(jax.grad(jax.grad(chebax.gammaincinv, argnums=1), argnums=0)(2.0, 0.3))
+    assert abs(dm - 1.092278) <= 1e-4
+    with pytest.raises(NotImplementedError, match="d2P/da2"):
+        jax.hessian(lambda a: chebax.gammaincinv(a, 0.3))(2.0)

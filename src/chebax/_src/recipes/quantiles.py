@@ -64,6 +64,37 @@ def _ln_beta(a, b):
 
 
 @jax.custom_jvp
+def _dPda(a, x):
+    """dP(a, x)/da (regularized lower gamma), differentiable in x.
+
+    jax's igamma_grad_a primitive has no JVP of its own, which made
+    gammaincinv only once differentiable even in p (the second derivative
+    reaches this term through x*(p)). The x direction has the closed form
+    d/dx dP/da = pdf(a, x) * (ln x - psi(a)); the a direction (d2P/da2)
+    has no closed form here and raises."""
+    return jax.lax.igamma_grad_a(a, x)
+
+
+def _dPda_jvp(primals, tangents):
+    a, x = primals
+    da, dx = tangents
+    g = _dPda(a, x)
+    zero = jax.custom_derivatives.SymbolicZero
+    if not isinstance(da, zero):
+        raise NotImplementedError(
+            "second derivative of gammaincinv with respect to a needs d2P/da2, "
+            "which neither jax nor chebax provides")
+    if isinstance(dx, zero):
+        return g, jnp.zeros_like(g)
+    pdf = jnp.exp((a - 1.0) * jnp.log(x) - x - jax.scipy.special.gammaln(a))
+    d = pdf * (jnp.log(x) - jax.scipy.special.digamma(a)) * dx
+    return g, d
+
+
+_dPda.defjvp(_dPda_jvp, symbolic_zeros=True)
+
+
+@jax.custom_jvp
 def betaincinv(a, b, p):
     """Inverse of betainc in x: the Beta(a, b) quantile function.
 
@@ -147,9 +178,9 @@ def gammaincinv(a, p):
     Quantiles below the smallest positive float64 return 0.0; a solve that
     fails its CDF-residual check returns nan instead of a wrong value.
 
-    Once differentiable in a: the a-gradient routes through jax's
-    igamma_grad_a primitive, which has no JVP rule of its own, so second
-    derivatives with respect to a raise inside jax."""
+    Second derivatives in p and mixed p-a derivatives work (dP/da is
+    wrapped with its exact x-derivative); a pure second derivative in a
+    needs d2P/da2, which is unavailable and raises with a clear message."""
     a = _canon(a)
     p = _canon(p)
     interior = (p > 0.0) & (p < 1.0)
@@ -186,18 +217,27 @@ def gammaincinv(a, p):
     return jnp.where(oob, jnp.nan, x)
 
 
-@gammaincinv.defjvp
 def _gammaincinv_jvp(primals, tangents):
     a, p = primals
     da, dp = tangents
+    zero = jax.custom_derivatives.SymbolicZero
     x = gammaincinv(a, p)
     interior = jnp.isfinite(x) & (x > 0.0)
     xs = jnp.where(interior, x, 1.0)
     pdf = jnp.exp((_canon(a) - 1) * jnp.log(xs) - xs
                   - jax.scipy.special.gammaln(_canon(a)))
-    _, d_cdf = jax.jvp(lambda aa: jax.scipy.special.gammainc(aa, xs), (a,), (da,))
-    dx = (_canon(dp) - d_cdf) / pdf
+    # dP/da through the differentiable wrapper: second derivatives in p and
+    # mixed p-a work; only d2/da2 remains unsupported (see _dPda). Symbolic
+    # zeros matter here: a materialized 0 tangent would still route the
+    # outer derivative through _dPda's a direction.
+    num = _canon(dp) if not isinstance(dp, zero) else 0.0
+    if not isinstance(da, zero):
+        num = num - _dPda(_canon(a), xs) * _canon(da)
+    dx = num / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
+
+
+gammaincinv.defjvp(_gammaincinv_jvp, symbolic_zeros=True)
 
 
 def _t_logpdf(nu, t):

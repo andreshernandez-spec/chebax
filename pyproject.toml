@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +7,11 @@ name = "chebax"
 version = "0.1.0.dev0"
 description = "Differentiable Chebyshev approximants for special functions, aimed at JAX and GPUs"
 readme = "README.md"
-license = { text = "BSD-3-Clause" }
+license = "BSD-3-Clause"
 authors = [{ name = "Andres Hernandez", email = "andres.hernandez.deml@gmail.com" }]
 requires-python = ">=3.11"
-dependencies = ["jax>=0.4.30", "numpy>=1.26"]
+# jax floor = the oldest version the full suite passes on (CI pins a job to it)
+dependencies = ["jax>=0.5.3", "numpy>=1.26"]
 
 [project.urls]
 Repository = "https://github.com/andreshernandez-spec/chebax"
@@ -19,7 +20,7 @@ Repository = "https://github.com/andreshernandez-spec/chebax"
 # tables record the mpmath version that built them; regeneration is verified
 # byte for byte, so the build dependency is pinned to the recorded minor
 gen = ["mpmath>=1.4.1,<1.5"]
-test = ["pytest"]
+test = ["pytest", "scipy"]
 examples = ["matplotlib", "numpyro"]
 
 [tool.setuptools.packages.find]

@@ -1,4 +1,4 @@
-"""Reparameterized sampling of truncated Beta and Student-t distributions.
+"""Reparameterized sampling of truncated Gamma, Beta and Student-t distributions.
 
 The pattern numpyro's truncated-distribution machinery needs (see
 numpyro#1365 and the truncated-distributions tutorial): with a
@@ -35,6 +35,15 @@ def truncated_t_sample(nu, lo, hi, u):
     return chebax.stdtrit(nu, flo + u * (fhi - flo))
 
 
+def truncated_gamma_sample(a, lo, hi, u):
+    # Gamma(a, 1); a rate only rescales x and the bounds, so the unit-rate
+    # case carries the general one. The CDF is jax's own gammainc; the
+    # quantile is chebax's, with gradients in a on both.
+    flo = jax.scipy.special.gammainc(a, lo)
+    fhi = jax.scipy.special.gammainc(a, hi)
+    return chebax.gammaincinv(a, flo + u * (fhi - flo))
+
+
 def main():
     key = jax.random.PRNGKey(0)
     u = jax.random.uniform(key, (20000,))
@@ -52,6 +61,13 @@ def main():
     grad_nu = jax.grad(lambda n: truncated_t_sample(n, tlo, thi, u).mean())(nu)
     print(f"truncated StudentT(nu={nu}) on [{tlo},{thi}]: mean {float(t.mean()):.6f}, "
           f"d E[t]/d nu: {float(grad_nu):+.6f}")
+
+    a, glo, ghi = 3.5, 1.0, 4.0
+    g = truncated_gamma_sample(a, glo, ghi, u)
+    grad_a = jax.grad(lambda aa: truncated_gamma_sample(aa, glo, ghi, u).mean())(a)
+    print(f"truncated Gamma(a={a}) on [{glo},{ghi}]: mean {float(g.mean()):.6f}, "
+          f"all inside: {bool(((g > glo) & (g < ghi)).all())}, "
+          f"d E[x]/da: {float(grad_a):+.6f}")
 
 
 if __name__ == "__main__":

@@ -155,6 +155,38 @@ def test_truncated_beta_reparameterization():
     assert (x > lo).all() and (x < hi).all()
 
 
+def test_truncated_gamma_reparameterization():
+    # same construction as the beta test, for the truncated-Gamma use case
+    # (numpyro's stalled truncated-Gamma support is blocked on exactly this
+    # quantile): CDF from jax's gammainc, quantile from chebax, midpoint u
+    # makes the mean a quadrature against mp.quad references.
+    lo, hi = 1.0, 4.0
+    u = jnp.asarray((np.arange(2000) + 0.5) / 2000)
+
+    def tmean(aa):
+        flo = jax.scipy.special.gammainc(aa, lo)
+        fhi = jax.scipy.special.gammainc(aa, hi)
+        return jnp.mean(chebax.gammaincinv(aa, flo + u * (fhi - flo)))
+
+    def mp_tmean(aa):
+        aa = mp.mpf(aa)
+        pdf = lambda t: t ** (aa - 1) * mp.e ** (-t) / mp.gamma(aa)
+        z = mp.quad(pdf, [lo, hi])
+        return mp.quad(lambda t: t * pdf(t), [lo, hi]) / z
+
+    m = float(tmean(3.5))
+    assert abs(m - float(mp_tmean(3.5))) <= 5e-7  # midpoint-rule bias O(1/N^2)
+    g = float(jax.grad(tmean)(3.5))
+    h = 1e-6
+    g_ref = (float(mp_tmean(3.5 + h)) - float(mp_tmean(3.5 - h))) / (2 * h)
+    assert abs(g - g_ref) / abs(g_ref) <= 1e-4
+    x = np.asarray(chebax.gammaincinv(3.5, np.asarray(
+        jax.scipy.special.gammainc(3.5, lo) + u * (
+            jax.scipy.special.gammainc(3.5, hi)
+            - jax.scipy.special.gammainc(3.5, lo)))))
+    assert (x > lo).all() and (x < hi).all()
+
+
 def test_jit():
     p = jnp.asarray([0.2, 0.8])
     np.testing.assert_allclose(

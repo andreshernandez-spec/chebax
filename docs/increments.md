@@ -274,3 +274,40 @@ uniform per call; per-group via chebax.pergroup. Notebook 03 and the
 numpyro example now consume the module instead of defining classes;
 wiring tests in tests/test_numpyro_module.py (scipy oracle, KS against
 own cdf, pathwise vs finite differences, NUTS smoke with a latent df).
+## 15 — log-CDF exposures: log_betainc_fn, log_gammainc_fn, log_gammaincc_fn (2026-07-31)
+
+The log_besselk_fn move applied to the CDF recipes, prompted by the
+2026-07-31 review: notebook 07's censored-Beta likelihood computes
+log(betainc_fn(...)), which underflows when the censored mass is tiny,
+while the tables hold the log all along. Each function is the direct
+table log on the side where the function is small (betainc lower tail
+x <= 1/2, unbounded below, ln I ~ a ln x; gammainc lower tail x <= 8;
+gammaincc upper tail x > 8, ln Q ~ -x with no underflow ceiling past
+Q's x ~ 700) and log1p(-exp(.)) on the far side, where the error is
+the value path's absolute floor divided by the function value
+(measured 12-23 eps over I or Q; fine where the value is O(1), not a
+deep-tail path - the docstrings say which call serves which tail, e.g.
+deep upper Beta tail = log_betainc_fn(b, a, 1 - x)). Measured floors:
+direct zones 8e-15 / 1.1e-14 of max(1, |ln|) down to x = 1e-100
+(ln ~ -2300) and out to x = 1e4 (ln Q ~ -1e4); shape gradients 3e-15
+(betainc) / 7e-13 (gammaincc) vs mp.diff through the traced path.
+Traced-only functions like log_besselk_fn; no factories, no new
+tables, no generator changes.
+
+## 16 — besseli_ratio, chi2inv, and the endpoint contract (2026-07-31)
+
+Three smaller outcomes of the same review. besseli_ratio(nu, x) =
+I_{nu+1}(x)/I_nu(x) via the scaled forms so the e^x factors cancel
+(notebook 03 hand-rolled this for the von Mises mean resultant A(kappa)
+= besseli_ratio(0, kappa); vMF uses nu = d/2 - 1): nu in [0, 9],
+measured 3.1e-15 relative worst on x in [1e-8, 5000], both gradients
+against mp.diff, exact 0 at x = 0 by hard select. chi2inv(k, p) =
+2 gammaincinv(k/2, p), the chi-squared quantile at real dof notebook 02
+assembled by hand; gammaincinv owns the accuracy, scipy is the wiring
+oracle. Endpoint audit: the review flagged six-plus defensive
+jnp.clip(p, eps, 1-eps) sites in the notebooks before the inverse CDFs;
+measured, the inverses were ALREADY exact at the endpoints (betaincinv
+0/1, gammaincinv 0/inf, stdtrit -inf/inf, nan propagation, masked zero
+gradients), so the clips guard downstream log-densities, not the
+inverses. Nothing to fix; the behavior is now locked as a contract in
+tests/test_quantiles.py::test_endpoint_contract so it cannot regress.

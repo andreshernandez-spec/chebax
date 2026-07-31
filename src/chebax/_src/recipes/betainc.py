@@ -120,6 +120,37 @@ def betainc_fn(a, b, x):
                         ChebSeries(tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT)))
 
 
+def log_betainc_fn(a, b, x):
+    """ln I_x(a, b), same contract as betainc_fn but with no underflow
+    floor in the lower tail.
+
+    For x <= 1/2 the tables already hold the log (betainc_fn exponentiates
+    it), so ln I evaluates directly: valid to arbitrarily negative values
+    (ln I ~ a ln x as x -> 0), differentiable in a, b and x, shapes
+    uniform per call in [0.1, 10]^2. For x > 1/2 the reflection gives
+    ln(1 - exp(.)) via log1p: absolutely accurate in I, so the error in
+    ln I is ~eps/I there - fine where I is O(1), NOT a deep-tail path.
+    Both deep tails at full log accuracy: lower tail directly (x <= 1/2),
+    upper tail ln(1 - I_x(a, b)) = log_betainc_fn(b, a, 1 - x), where
+    1 - x is exact in f64 for x >= 1/2. x <= 0 returns -inf, x >= 1
+    returns 0. This is the log-CDF a censored likelihood wants when the
+    censored mass is tiny (log(betainc_fn(...)) underflows first)."""
+    a = jnp.asarray(a)
+    b = jnp.asarray(b)
+    x = jnp.asarray(x)
+    cab = ChebSeries(tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT))
+    cba = ChebSeries(tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT))
+    interior = (x > 0.0) & (x < 1.0)
+    xi = jnp.where(interior, x, 0.25)
+    xd = jnp.where(xi <= _bt.XSPLIT, xi, 0.25)
+    yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)
+    direct = _log_direct(a, b, xd, cab)
+    refl = jnp.log1p(-jnp.exp(_log_direct(b, a, yd, cba)))
+    core = jnp.where(xi <= _bt.XSPLIT, direct, refl)
+    out = jnp.where(x <= 0.0, -jnp.inf, jnp.where(x >= 1.0, 0.0, core))
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
+
+
 def betainc(a, b):
     """I_x(a, b) for a, b in [0.1, 10]. Cached per (a, b); no mpmath.
 

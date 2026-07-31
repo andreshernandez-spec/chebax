@@ -143,6 +143,44 @@ def gammaincc_fn(a, x):
     return eval_gammainc(a, jnp.asarray(x), lser, ltail, lower=False)
 
 
+def log_gammainc_fn(a, x):
+    """ln P(a, x), same contract as gammainc_fn but with no underflow
+    floor in the lower tail.
+
+    For x <= 8 the tables already hold the log; ln P evaluates directly
+    (ln P ~ a ln x as x -> 0, arbitrarily negative). For x > 8 it is
+    log1p(-exp(ln Q)): absolutely accurate in P, error in ln P is
+    ~eps Q/P, small everywhere there since Q <= 0.3 in the box. x <= 0
+    returns -inf."""
+    a = jnp.asarray(a)
+    x = jnp.asarray(x)
+    lser, ltail = _traced_series(a)
+    lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+    core = jnp.where(x <= _gt.XS, lp_in, jnp.log1p(-jnp.exp(lq_tl)))
+    out = jnp.where(x > 0.0, core, -jnp.inf)
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+
+def log_gammaincc_fn(a, x):
+    """ln Q(a, x), same contract as gammaincc_fn but with no underflow
+    ceiling in the tail.
+
+    For x > 8 the tables already hold the log; ln Q evaluates directly
+    (ln Q ~ -x, valid for arbitrarily large x where Q itself underflows
+    past x ~ 700). For x <= 8 it is log1p(-exp(ln P)): absolutely
+    accurate in Q, so the error in ln Q is ~eps/Q in the wedge x -> 8 at
+    small a where Q reaches ~1e-6 (the same wedge gammaincc_fn's
+    docstring notes). x <= 0 returns 0. This is the log survival
+    function a deeply-censored likelihood wants."""
+    a = jnp.asarray(a)
+    x = jnp.asarray(x)
+    lser, ltail = _traced_series(a)
+    lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+    core = jnp.where(x <= _gt.XS, jnp.log1p(-jnp.exp(lp_in)), lq_tl)
+    out = jnp.where(x > 0.0, core, 0.0)
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+
 def gammainc(a):
     """P(a, x) on [0, inf) for a in [0.1, 10]. Cached per a; no mpmath.
 

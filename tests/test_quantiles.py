@@ -272,3 +272,42 @@ def test_gammaincinv_second_derivatives():
     assert abs(dm - 1.092278) <= 1e-4
     with pytest.raises(NotImplementedError, match="d2P/da2"):
         jax.hessian(lambda a: chebax.gammaincinv(a, 0.3))(2.0)
+
+
+def test_chi2inv():
+    # a 2x-rescaled gammaincinv (which owns the accuracy contract);
+    # scipy here is a wiring oracle at its own ~1e-10 accuracy
+    from scipy import stats
+    ps = np.array([1e-8, 0.05, 0.5, 0.95, 1 - 1e-8])
+    for k in [0.7, 3.0, 11.5]:
+        got = np.asarray(chebax.chi2inv(k, jnp.asarray(ps)))
+        ref = stats.chi2.ppf(ps, k)
+        assert np.max(np.abs(got - ref) / ref) <= 1e-9, k
+    gk = float(jax.grad(chebax.chi2inv, argnums=0)(3.0, 0.5))
+    h = 1e-6
+    fd = (stats.chi2.ppf(0.5, 3.0 + h) - stats.chi2.ppf(0.5, 3.0 - h)) / (2 * h)
+    assert abs(gk - fd) <= 1e-7
+    assert float(chebax.chi2inv(3.0, 0.0)) == 0.0
+    assert np.isposinf(float(chebax.chi2inv(3.0, 1.0)))
+
+
+def test_endpoint_contract():
+    # Exact values at p = 0 and p = 1, nan propagation, and zero masked
+    # gradients at the endpoints are the CONTRACT (audited 2026-07-31:
+    # already true; locked here so it cannot regress). Downstream code
+    # need not clip p away from the endpoints for the inverses
+    # themselves; clip only to protect downstream log-densities.
+    assert float(chebax.betaincinv(2.0, 3.0, 0.0)) == 0.0
+    assert float(chebax.betaincinv(2.0, 3.0, 1.0)) == 1.0
+    assert float(chebax.gammaincinv(2.5, 0.0)) == 0.0
+    assert np.isposinf(float(chebax.gammaincinv(2.5, 1.0)))
+    assert np.isneginf(float(chebax.stdtrit(4.0, 0.0)))
+    assert np.isposinf(float(chebax.stdtrit(4.0, 1.0)))
+    for f in (lambda p: chebax.betaincinv(2.0, 3.0, p),
+              lambda p: chebax.gammaincinv(2.5, p),
+              lambda p: chebax.stdtrit(4.0, p)):
+        assert np.isnan(float(f(np.nan)))
+        assert float(jax.grad(f)(0.0)) == 0.0
+    # shape gradients at the endpoints are masked to zero, not nan
+    assert float(jax.grad(lambda a: chebax.betaincinv(a, 3.0, 0.0))(2.0)) == 0.0
+    assert float(jax.grad(lambda a: chebax.gammaincinv(a, 1.0))(2.5)) == 0.0

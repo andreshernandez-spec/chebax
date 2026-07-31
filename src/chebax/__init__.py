@@ -4,7 +4,8 @@ Full float64 accuracy needs jax's x64 mode (jax.config.update("jax_enable_x64", 
 """
 
 from chebax._src.generate import fit
-from chebax._src.recipes.besseli import besseli, besseli_dnu, besseli_fn
+from chebax._src.recipes.besseli import (besseli, besseli_dnu, besseli_fn,
+                                          besseli_ratio)
 from chebax._src.recipes.erf_family import dawsn, erfcx
 from chebax._src.recipes.lambertw import lambertw
 from chebax._src.recipes.spherical import spherical_jn, spherical_yn
@@ -12,10 +13,12 @@ from chebax._src.recipes.besselj import besselj, besselj_dnu
 from chebax._src.recipes.besselk import (besselk, besselk_dnu, besselk_fn,
                                          log_besselk_fn)
 from chebax._src.recipes.bessely import bessely, bessely_dnu
-from chebax._src.recipes.betainc import betainc, betainc_fn
+from chebax._src.recipes.betainc import betainc, betainc_fn, log_betainc_fn
 from chebax._src.recipes.gammainc import (gammainc, gammainc_fn, gammaincc,
-                                          gammaincc_fn)
-from chebax._src.recipes.quantiles import betaincinv, gammaincinv, stdtr, stdtrit
+                                          gammaincc_fn, log_gammainc_fn,
+                                          log_gammaincc_fn)
+from chebax._src.recipes.quantiles import (betaincinv, chi2inv,
+                                           gammaincinv, stdtr, stdtrit)
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
 from chebax._src.pergroup import pergroup
 from chebax._src.series import ChebSeries, PiecewiseCheb
@@ -27,11 +30,12 @@ try:
 except Exception:  # not installed (e.g. running from a source checkout)
     __version__ = "0+unknown"
 __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn",
-           "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
+           "besseli_ratio", "besselj", "besselj_dnu", "besselk", "besselk_dnu", "besselk_fn",
            "log_besselk_fn",
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",
-           "dawsn", "erfcx", "fit", "gammainc", "gammainc_fn", "gammaincc",
-           "gammaincc_fn", "gammaincinv", "lambertw", "pergroup",
+           "chi2inv", "dawsn", "erfcx", "fit", "gammainc", "gammainc_fn", "gammaincc",
+           "gammaincc_fn", "gammaincinv", "lambertw", "log_betainc_fn",
+           "log_gammainc_fn", "log_gammaincc_fn", "pergroup",
            "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
            "__version__"]

@@ -207,3 +207,25 @@ def besseli_dnu(v, scaled=False):
     v = 0 uses the exact identity dI_v/dv|_0 = -K_0(x) (clamped below
     x = 1e-6 with the K table)."""
     return _besseli_dnu_cached(float(v), bool(scaled), canon_tag())
+
+
+def besseli_ratio(nu, x):
+    """I_{nu+1}(x) / I_nu(x), the Bessel ratio of circular statistics.
+
+    A(kappa) = besseli_ratio(0.0, kappa) is the von Mises mean resultant
+    length; the vMF version uses nu = d/2 - 1. Computed as the ratio of
+    the scaled besseli_fn values so the e^x factors cancel and the ratio
+    stays finite at any x. nu must be uniform per call and inside [0, 9]
+    (nu + 1 rides the same [0, 10] tables; unchecked under trace);
+    x >= 0. The ratio is 0 at x = 0 and increases toward 1 as x -> inf.
+    Hard select at the origin: x <= 1e-30 returns 0 exactly (true value
+    < 5e-31, and the numerator's (x/2)^(nu+1) would underflow at large
+    nu anyway); the gradient masked there is 0, true slope
+    1/(2(nu+1))."""
+    nu = jnp.asarray(nu)
+    x = jnp.asarray(x)
+    xd = jnp.where(x > 1e-30, x, 1.0)
+    r = (besseli_fn(nu + 1.0, xd, scaled=True)
+         / besseli_fn(nu, xd, scaled=True))
+    out = jnp.where(x > 1e-30, r, 0.0)
+    return jnp.where(jnp.isnan(x) | jnp.isnan(nu), jnp.nan, out)

@@ -101,3 +101,45 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     betainc_gen.main(tmp_path)
     assert (tmp_path / "betainc_table.py").read_text() == pathlib.Path(bt.__file__).read_text()
     assert bt.META["dps"] == betainc_gen.DPS
+
+
+def test_log_betainc():
+    # Direct zone (x <= 1/2): error / max(1, |ln I|) measured worst
+    # 8.1e-15 over the pairs below, grid down to x = 1e-100 (ln I ~ -2280;
+    # betainc_fn itself underflows below I ~ 1e-308). Reflected zone
+    # (x > 1/2): ln of an absolutely-accurate value, error is the value
+    # path's absolute floor over I (measured 23 eps / I worst); the bar
+    # carries the value bar 2e-14 divided by I. d ln I/da vs mp.diff measured
+    # 3.1e-15. Bars ~4x.
+    xl = np.concatenate([[1e-100, 1e-30, 1e-10, 1e-4], np.linspace(0.01, 0.5, 8)])
+    xr = np.linspace(0.51, 0.999, 8)
+    for a, b in [(0.15, 0.15), (2.0, 3.0), (9.9, 0.15), (9.9, 9.9), (0.15, 9.9)]:
+        ref = np.array([float(mp.log(mp.betainc(mp.mpf(a), mp.mpf(b), 0,
+                                                mp.mpf(x), regularized=True)))
+                        for x in xl])
+        got = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xl)))
+        assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) <= 4e-14
+        refr = np.array([float(mp.log(mp.betainc(mp.mpf(a), mp.mpf(b), 0,
+                                                 mp.mpf(x), regularized=True)))
+                         for x in xr])
+        gotr = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xr)))
+        bar = 4e-14 * np.maximum(1.0, np.abs(refr)) + 2e-14 / np.exp(refr)
+        assert np.all(np.abs(gotr - refr) <= bar), (a, b)
+    # endpoints, nan, and agreement with the linear form where it lives
+    assert np.isneginf(float(chebax.log_betainc_fn(2.0, 3.0, 0.0)))
+    assert float(chebax.log_betainc_fn(2.0, 3.0, 1.0)) == 0.0
+    assert np.isnan(float(chebax.log_betainc_fn(2.0, 3.0, np.nan)))
+    xs = np.linspace(0.05, 0.95, 9)
+    lin = np.asarray(chebax.betainc_fn(2.0, 3.0, jnp.asarray(xs)))
+    np.testing.assert_allclose(np.exp(np.asarray(
+        chebax.log_betainc_fn(2.0, 3.0, jnp.asarray(xs)))), lin, rtol=1e-13)
+    # shape gradient through the traced path
+    xg = np.array([1e-4, 0.05, 0.3, 0.49])
+    for a, b in [(0.15, 9.9), (2.0, 3.0), (9.9, 0.15)]:
+        da = np.array([float(mp.diff(lambda t: mp.log(mp.betainc(
+            t, mp.mpf(b), 0, mp.mpf(x), regularized=True)), mp.mpf(a)))
+            for x in xg])
+        gda = np.asarray(jax.vmap(jax.grad(chebax.log_betainc_fn, argnums=0),
+                                  in_axes=(None, None, 0))(
+            jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)))
+        assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 1.5e-14

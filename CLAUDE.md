@@ -13,7 +13,14 @@ This file is how to work here.
 
 - **Performance claims cite B3 (measured 2026-07-31) or nothing.** The citable
   numbers: besselj f64 4.5–6.0× vs cephes::jv (0.4× on pure-outer), f32 35× the f64,
-  on an RTX 3080 Laptop (`../bessel/experiments/07`); narrow-domain 2.5–3.0×
+  on an RTX 3080 Laptop (`../bessel/experiments/07`); besselj DIRECT vs jax's own
+  `bessel_jn` (`experiments/08`, integer order only, agreement ≤ 1.7e-15): f64
+  7.4–7.5× at v=2 and 6.0× at v=9 on n_iter=50's valid window, 14.4–14.5× where
+  the x-range forces n_iter=100 (those rows at N=2^22: bessel_jn's memory scales
+  with n_iter·N, a 13 GiB attempt OOMs at 2^24), f32 3.6–7.1×; bessel_jn is
+  integer-order only and valid on an n_iter-dependent x-window that narrows from
+  both sides (nans below ~1e-4 at n_iter=50, below ~0.1 at n_iter=100) — cite
+  the window when citing the ratio; narrow-domain 2.5–3.0×
   (`experiments/04`); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
   the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
   for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane

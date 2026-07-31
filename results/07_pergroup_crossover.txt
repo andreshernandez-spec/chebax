@@ -1,0 +1,78 @@
+jax 0.11.0 on cuda:0, reps = 15 (medians)
+
+betainc, N = 2^20, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       1  1048576   0.216ms   0.183ms    0.85x 253.133ms 1381.2x
+       4   262144   0.195ms   1.650ms    8.45x 255.291ms  154.7x
+      16    65536   0.209ms   1.659ms    7.95x 255.885ms  154.2x
+      64    16384   0.256ms   1.823ms    7.13x 256.120ms  140.5x
+     256     4096   0.217ms   2.250ms   10.39x 256.050ms  113.8x
+    1024     1024   0.245ms   3.947ms   16.11x 255.929ms   64.8x
+    4096      256   0.193ms   9.946ms   51.53x 256.124ms   25.8x
+   16384       64   0.280ms  35.217ms  125.72x 256.414ms    7.3x
+  max|jax - pergroup| (f64, first row): 2.0e-14
+
+besselk, N = 2^20, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead
+       1  1048576   0.090ms   0.090ms    1.00x
+       4   262144   0.156ms   2.866ms   18.35x
+      16    65536   0.200ms   2.922ms   14.63x
+      64    16384   0.359ms   3.126ms    8.70x
+     256     4096   0.133ms   2.854ms   21.42x
+    1024     1024   0.155ms   3.171ms   20.50x
+    4096      256   0.123ms   3.899ms   31.76x
+   16384       64   0.228ms   6.653ms   29.19x
+
+betainc, N = 2^24, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       1 16777216  41.116ms  41.078ms    1.00x 4726.166ms  115.1x
+       4  4194304  40.956ms  41.124ms    1.00x 4739.263ms  115.2x
+      16  1048576  41.270ms  41.831ms    1.01x 4739.954ms  113.3x
+      64   262144  40.847ms  41.269ms    1.01x 4742.225ms  114.9x
+     256    65536  40.908ms  41.761ms    1.02x 4743.531ms  113.6x
+    1024    16384  40.894ms  43.682ms    1.07x 4744.985ms  108.6x
+    4096     4096  40.927ms  49.885ms    1.22x 4761.708ms   95.5x
+   16384     1024  40.869ms  74.561ms    1.82x 4746.512ms   63.7x
+  max|jax - pergroup| (f64, first row): 2.0e-14
+
+besselk, N = 2^24, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead
+       1 16777216  58.407ms  58.378ms    1.00x
+       4  4194304  58.421ms  58.746ms    1.01x
+      16  1048576  58.121ms  58.470ms    1.01x
+      64   262144  58.497ms  58.937ms    1.01x
+     256    65536  58.343ms  59.458ms    1.02x
+    1024    16384  58.375ms  59.727ms    1.02x
+    4096     4096  58.534ms  61.034ms    1.04x
+   16384     1024  58.546ms  63.340ms    1.08x
+
+betainc MCMC scale, N = 2^10, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4      256   0.073ms   0.146ms    1.99x  14.320ms   98.4x
+  max|jax - pergroup| (f64, first row): 2.3e-14
+
+betainc MCMC scale, N = 2^13, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4     2048   0.108ms   0.272ms    2.52x  13.689ms   50.4x
+  max|jax - pergroup| (f64, first row): 2.4e-14
+
+betainc MCMC scale, N = 2^16, f64, GPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4    16384   0.075ms   0.305ms    4.04x  25.713ms   84.4x
+  max|jax - pergroup| (f64, first row): 2.5e-14
+
+betainc MCMC scale, N = 2^10, f64, CPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4      256   0.094ms   0.227ms    2.41x  14.690ms   64.7x
+  max|jax - pergroup| (f64, first row): 2.3e-14
+
+betainc MCMC scale, N = 2^13, f64, CPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4     2048   0.192ms   0.331ms    1.72x  14.532ms   43.9x
+  max|jax - pergroup| (f64, first row): 2.4e-14
+
+betainc MCMC scale, N = 2^16, f64, CPU  (overhead = pergroup/uniform)
+       G  n/group   uniform  pergroup overhead       jax  jax/pg
+       4    16384   0.197ms   0.478ms    2.42x  26.132ms   54.6x
+  max|jax - pergroup| (f64, first row): 2.5e-14
+

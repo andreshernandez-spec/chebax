@@ -25,13 +25,15 @@ spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name 
 publishing action and stays Andres's.
 
 **Status:** live. Public at https://github.com/andreshernandez-spec/chebax;
-name claimed on PyPI with a `0.1.0.dev0` placeholder. M0–M5 done and M6 running (seven
-recipe increments delivered; design log in `docs/increments.md`). Open: Fresnel and
-Wright Bessel breadth, the GPU benchmark docket (B3 + queued races below), upstream
-drafts. Parent evidence lives in `../bessel/` (Track B); this project generalizes B1
-into a library.
+0.2.0 released on PyPI 2026-07-31 (0.1.0 the same day; releases are tagged and
+uploaded by Andres). M0–M5 done and M6 running (eleven increments delivered,
+including the `chebax.pytensor` dispatch module; design log in
+`docs/increments.md`). Open: the per-group crossover measurement and API
+(queued below), the numpyro truncated-Gamma revival, upstream outreach
+(local notes in `drafts/`). Parent evidence lives in `../bessel/` (Track B);
+this project generalizes B1 into a library.
 **Owner:** Andres
-**Last verified:** 2026-07-30, experiments run locally (see `results/`); upstream
+**Last verified:** 2026-07-31, experiments run locally (see `results/`); upstream
 references checked against the clones pinned in `../bessel/PROJECT.md`
 (xsf @ `ac62f926`, jax @ `f8e48d5`).
 
@@ -265,6 +267,21 @@ group where reconstruction overhead disappears before any API is designed or
 claimed. The per-element contract (one parameter per point, scipy's
 `jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
 wrapper changes its arithmetic.
+
+MEASURED 2026-07-31 (`experiments/07_pergroup_crossover.py`, RTX 3080 Laptop,
+f64, plain vmap over equal groups): reconstruction overhead vs chebax's own
+uniform floor is ≤ 1.07x for n/group ≥ 16k and 1.2x at n/group = 4096
+(betainc at N = 2^24); besselk stays ≤ 1.08x down to n/group = 1024. Against
+jax's native betainc the per-group path wins EVERY measured cell: worst case
+7.3x (G = 16384 groups of 64), typically 60–155x, and 44–98x at MCMC scale
+(G = 4 chains, n/group 256–16k, GPU and CPU; absolute cost 0.15–0.5 ms per
+call vs jax's 14–26 ms). At N = 2^20 the vmapped lowering pays a flat
+1.5–3 ms that the launch-bound uniform path does not; it vanishes into the
+compute at 2^24 and does not change any conclusion. Design consequence: plain
+`vmap` already serves the hierarchical regime (G ≤ ~1024), so the API is a
+thin grouping convenience (static `group_idx` → reshape/segment + vmap), not
+new arithmetic; a gather-based variant would only matter for G ≥ 4096 with
+tiny groups, which is the per-element regime that stays out of scope.
 
 **Queued low-rank table compression (2026-07-30, Andres; sequenced with the f32
 bake work, FLOP payoffs gated on B3):** Chebfun2-style separated representation

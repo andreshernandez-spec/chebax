@@ -91,7 +91,10 @@ notebooks/      executed example notebooks, themed (see notebooks/README.md);
                 re-execute with nbconvert --execute --inplace after API changes;
                 numpyro/matplotlib come from the [examples] extra
 results/        captured output, checked in
-drafts/         prose for upstream (PR text, issues) — Andres rewrites and sends
+drafts/         prose for upstream (PR text, issues) — Andres rewrites and
+                sends. LOCAL ONLY: never committed (kept out via
+                .git/info/exclude, purged from history 2026-07-31); outreach
+                strategy does not belong in a public library repo
 src/chebax/     the library: _src/{algorithms,series,generate,pytree}.py (core),
                 _src/recipes/ (per-family gen + baked table + runtime, with
                 _common.py and _gen_common.py as the shared machinery), bake/

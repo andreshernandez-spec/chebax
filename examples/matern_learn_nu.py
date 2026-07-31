@@ -4,9 +4,9 @@ The Matern kernel is
 
     k(r) = sig2 * 2^(1-nu)/Gamma(nu) * z^nu * K_nu(z),   z = sqrt(2 nu) r / ell
 
-and learning nu by gradient needs dK_nu/dnu, which no mainstream ML library
-provides. chebax.besselk_fn takes nu as a traced jax scalar, so the whole
-kernel is differentiable in (nu, ell, sig2) with plain jax.grad.
+and learning nu by gradient needs dK_nu/dnu, a derivative in the ORDER of
+the Bessel function. chebax.besselk_fn takes nu as a traced jax scalar, so
+the whole kernel is differentiable in (nu, ell, sig2) with plain jax.grad.
 
 This demo synthesizes noiseless kernel values at (nu=1.7, ell=0.9,
 sig2=1.3), then recovers all three parameters from a different starting

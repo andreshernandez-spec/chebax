@@ -1,4 +1,4 @@
-"""dawsn and erfcx: the error-function family members jax lacks.
+"""dawsn and erfcx (recent jax ships both; kept for the C++ bake path).
 
 Parameter-free, so these are plain functions, not factories. Both use one
 hard select at |x| = 6.

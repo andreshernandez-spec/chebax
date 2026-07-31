@@ -37,7 +37,9 @@ is structural.
 
 ## 3 — dawsn and erfcx (2026-07-29)
 
-The two erf-family members jax lacks (erf/erfc/erfinv are XLA-native).
+The erf-family members beyond XLA-native erf/erfc/erfinv. (Correction
+2026-07-30: recent jax ships dawsn and erfcx too; the draw here is the
+C++ bake path and the uniform recipe form.)
 Parameter-free plain functions: dawsn as x·E(x²) (oddness and the x = 0
 gradient exact by construction) with tail G((6/x)²)/x; erfcx fitted on
 [0, 6] with tail and the negative-x reflection 2e^{x²} − erfcx(−x)

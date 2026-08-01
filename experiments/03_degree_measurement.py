@@ -146,6 +146,20 @@ def gammainc():
            fit_axis(lambda a: T(a, mp.mpf(1)), 32, 0.1, 10), [20, 24])
 
 
+def stdtr():
+    L = lambda a, b, x: mp.log(mp.hyp2f1(a + b, 1, a + 1, x))
+    h = mp.mpf(1) / 2
+    print("stdtr slices: L at a or b = 1/2 (claims: A x 18/53 b 21/35; "
+          "B x 18/18 param 53/45)")
+    for blo, bhi in [(0.1, 10), (10, 100)]:
+        report(f"A x-dir b={bhi}", fit_axis(lambda x: L(h, mp.mpf(bhi), x), 68, 0, 0.5), [53, 60])
+        report(f"A b-dir [{blo},{bhi}]",
+               fit_axis(lambda b: L(h, b, mp.mpf("0.5")), 48, blo, bhi), [35, 40])
+        report(f"B x-dir a={bhi}", fit_axis(lambda x: L(mp.mpf(bhi), h, x), 68, 0, 0.5), [18, 22])
+        report(f"B a-dir [{blo},{bhi}]",
+               fit_axis(lambda a: L(a, h, mp.mpf("0.5")), 72, blo, bhi), [53, 58])
+
+
 def vonmises():
     def H(kappa, w):
         th = mp.sqrt(w)
@@ -176,7 +190,7 @@ def erf():
 
 
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
-            "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
+            "bessely": bessely, "betainc": betainc, "gammainc": gammainc, "stdtr": stdtr,
             "vonmises": vonmises, "erf": erf}
 
 if __name__ == "__main__":

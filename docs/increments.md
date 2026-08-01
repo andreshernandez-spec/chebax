@@ -392,3 +392,23 @@ is identified by short-range behavior, so the demo pairs every base
 point with a close neighbor), and drafts/gpjax-general-matern.md
 citing the maintainer's own blocker statement in gpjax#482 (no
 AI-contribution policy found; checked 2026-08-01).
+
+## 21 — stdtr slice tables: Student-t to nu = 200 (2026-08-01)
+
+The cheap discovery from the box-widening feasibility study
+(experiments/11): stdtr/stdtrit evaluate betainc only at (1/2, nu/2)
+and (nu/2, 1/2), so two 2-D slices of the same kernel replace the 3-D
+tensor on that path entirely. Four tables (two orientations x two raw-b
+panels split at 10, shared x-node count so the panel select acts
+elementwise), ~13k coefficients vs the ~650k a full widening needs -
+CI regen stays affordable (~4 min). The solver core was extracted
+series-agnostic (_betaincinv_core) so betaincinv (3-D tensor) and
+stdtrit (slices) share the logit-space Newton verbatim; stdtr's range
+goes from [0.2, 20] to [0.2, 200] with the old range's accuracy
+preserved (existing tests pass unchanged on the new path). Measured:
+absolute worst 4.6e-14 at nu = 199.9 (2.4e-15 at nu <= 20), roundtrip
+2.8e-15, d/dnu at nu = 150 matching mp.diff to 7 digits. Downstream:
+chebax.numpyro's TruncatedStudentT df range is updated; the robit and
+t-copula notebooks' nu priors could now widen (not re-executed here).
+The general (a, b) box widening stays queued on the CI-policy decision;
+this increment removes its most demanded consumer.

@@ -1,0 +1,22 @@
+2-D tables: SVD epsilon-ranks and dense/compressed cost models
+  besselj TABLE            (25, 64)  rank1e-15  10 (flop-model x 1.8, store x 1.8)  rank1e-7   7 (x 2.6)
+  besselk IN_LO            (80, 56)  rank1e-15  20 (flop-model x 1.6, store x 1.6)  rank1e-7  10 (x 3.3)
+  besselk IN_HI            (80, 56)  rank1e-15  21 (flop-model x 1.6, store x 1.6)  rank1e-7   9 (x 3.7)
+  besselk TAIL             (24, 32)  rank1e-15   9 (flop-model x 1.5, store x 1.5)  rank1e-7   4 (x 3.4)
+  besseli IN               (72, 64)  rank1e-15  16 (flop-model x 2.1, store x 2.1)  rank1e-7   7 (x 4.8)
+  besseli TAIL             (48, 32)  rank1e-15  12 (flop-model x 1.6, store x 1.6)  rank1e-7   5 (x 3.8)
+  bessely A                (96, 48)  rank1e-15  20 (flop-model x 1.6, store x 1.6)  rank1e-7  11 (x 2.9)
+  bessely B                (96, 48)  rank1e-15  15 (flop-model x 2.1, store x 2.1)  rank1e-7   8 (x 4.0)
+  bessely MID              (68, 48)  rank1e-15  20 (flop-model x 1.4, store x 1.4)  rank1e-7  12 (x 2.3)
+  gammainc IN              (32, 68)  rank1e-15  19 (flop-model x 1.1, store x 1.1)  rank1e-7   8 (x 2.7)
+  gammainc TAIL            (26, 30)  rank1e-15  11 (flop-model x 1.3, store x 1.3)  rank1e-7   5 (x 2.8)
+  vonmises TABLE         (112, 108)  rank1e-15  25 (flop-model x 2.2, store x 2.2)  rank1e-7  12 (x 4.6)
+
+3-D tensor: mode unfoldings (Tucker/HOSVD core shape)
+  betainc TENSOR         (24, 72, 28)  Tucker@1e-15 (18, 21, 18)  store x 5.2  (core 6804 + factors 2448 vs dense 48384)
+  betainc TENSOR         (24, 72, 28)  Tucker@1e-7 (8, 10, 9)  store x25.7  (core 720 + factors 1164 vs dense 48384)
+
+The flop model is per INSTANTIATION (once per call), so 2-D
+compression mostly buys smaller baked artifacts and a lower
+per-group crossover; the betainc tensor and any future 3-D+
+recipe are where the storage ratio changes what is feasible.

@@ -28,7 +28,8 @@ This file is how to work here.
   still the only number for a outside the box — say which when citing; gammaincinv
   solver rewire (`experiments/09`, same solver, residual swapped): 6.3–23.4× f64
   for uniform p at a in {9.9, 3.5, 0.5}, 1.4× on pure deep-tail p (jax's series
-  branch is cheap there), path agreement ≤ 2.2e-12; betainc race
+  branch is cheap there), path agreement ≤ 2.2e-12, and the JVP's dP/da term
+  4.0–15.3× vs igamma_grad_a (agreement ≤ 1.4e-14); betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N

@@ -353,3 +353,19 @@ references only); half-integer closed forms (1/2, 3/2, 5/2) as
 independent oracles; dk/dl checked against the exact identity
 -(r/l) dk/dr; pergroup-compatible (one nu per group tested). This is
 the prerequisite for the GPJax general-Matern play in the adoption map.
+
+## 19 — the JVP's dP/da term on the recipe tables (2026-08-01)
+
+The follow-up increment 17 left gated on measurement: gammaincinv's
+custom_jvp computed dP/da with jax's igamma_grad_a, a third looped
+whole-array series. In-box it now dispatches (the same lax.cond
+pattern) to the a-directional JVP through the gammainc tables - one
+polynomial. Measured on the term in isolation (experiments/09, re-run):
+15.3x at a = 0.5, 5.3x at 3.5, 4.0x at 9.9, agreement <= 1.4e-14.
+Derivative semantics preserved exactly: mixed p-a and second-p
+derivatives work on every path, and the pure d2/da2 raise keeps its
+message (the cond traces both branches under an a-tangent, so the
+fallback's NotImplementedError fires regardless of the box - which
+also means the recipe path cannot silently enable in-box d2/da2; doing
+that properly is future work if anyone asks). Out-of-box gradients
+unchanged via the fallback.

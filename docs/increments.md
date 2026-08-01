@@ -332,3 +332,24 @@ chebax.numpyro's TruncatedGamma sampling, truncated_sampling.py. The
 custom_jvp's dP/da still uses jax's igamma_grad_a (evaluated once at
 the solution, not per iteration); replacing it in-box is a possible
 follow-up if gradient-path profiling warrants.
+
+## 18 — matern, the correlation with learnable smoothness (2026-07-31)
+
+`chebax.matern(nu, r, lengthscale=1.0)`: the unit-variance Matern
+correlation 2^(1-nu)/Gamma(nu) z^nu K_nu(z), z = sqrt(2 nu) r / l, with
+nu traced through besselk_fn - the ingredient for GP kernels with
+smoothness learned by gradient, which no mainstream GP stack offers.
+Extracted from the review's strongest duplication signal: notebook 01
+and examples/matern_learn_nu.py carried the identical function,
+including the r = 0 gradient trap (hard select with safe-dummy masking
+so log(0) cannot poison gradients) every user would re-derive. Signal
+variance is deliberately not a parameter (multiply the result); both
+consumers now call the library (notebook re-executed, example recovers
+(nu, ell, sig2) to 6 digits unchanged). Measured (test docstring):
+values 1.3e-14 relative worst over nu in [0.05, 9.97]; d/dnu 8e-13 vs
+mp.diff with an explicit step (lesson recorded: a float64-truncating
+reference under mp.diff produces eps/h quantization noise - full-mpf
+references only); half-integer closed forms (1/2, 3/2, 5/2) as
+independent oracles; dk/dl checked against the exact identity
+-(r/l) dk/dr; pergroup-compatible (one nu per group tested). This is
+the prerequisite for the GPJax general-Matern play in the adoption map.

@@ -8,6 +8,7 @@ from chebax._src.recipes.besseli import (besseli, besseli_dnu, besseli_fn,
                                           besseli_ratio)
 from chebax._src.recipes.erf_family import dawsn, erfcx
 from chebax._src.recipes.lambertw import lambertw
+from chebax._src.recipes.matern import matern
 from chebax._src.recipes.spherical import spherical_jn, spherical_yn
 from chebax._src.recipes.besselj import besselj, besselj_dnu
 from chebax._src.recipes.besselk import (besselk, besselk_dnu, besselk_fn,
@@ -35,6 +36,7 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "bessely", "bessely_dnu", "betainc", "betainc_fn", "betaincinv",
            "chi2inv", "dawsn", "erfcx", "fit", "gammainc", "gammainc_fn", "gammaincc",
            "gammaincc_fn", "gammaincinv", "lambertw", "log_betainc_fn",
+           "matern",
            "log_gammainc_fn", "log_gammaincc_fn", "pergroup",
            "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",

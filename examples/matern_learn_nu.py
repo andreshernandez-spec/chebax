@@ -5,8 +5,9 @@ The Matern kernel is
     k(r) = sig2 * 2^(1-nu)/Gamma(nu) * z^nu * K_nu(z),   z = sqrt(2 nu) r / ell
 
 and learning nu by gradient needs dK_nu/dnu, a derivative in the ORDER of
-the Bessel function. chebax.besselk_fn takes nu as a traced jax scalar, so
-the whole kernel is differentiable in (nu, ell, sig2) with plain jax.grad.
+the Bessel function. chebax.matern packages exactly this (unit variance,
+r = 0 diagonal exact), so the whole kernel is differentiable in
+(nu, ell, sig2) with plain jax.grad.
 
 This demo synthesizes noiseless kernel values at (nu=1.7, ell=0.9,
 sig2=1.3), then recovers all three parameters from a different starting
@@ -24,15 +25,7 @@ import chebax  # noqa: E402
 
 
 def matern(r, nu, ell, sig2):
-    # r = 0 (every covariance diagonal) is exact: the formula's z^nu K_nu(z)
-    # limit is handled by the select, and masked lanes see a safe dummy so
-    # log(0) cannot poison gradients. Radii below ~1e-6 ell/sqrt(2 nu) sit
-    # on besselk's clamp and read as k(that radius), still ~sig2.
-    rs = jnp.where(r > 0, r, 1.0)
-    z = jnp.sqrt(2.0 * nu) * rs / ell
-    log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
-    k = sig2 * jnp.exp(log_c + nu * jnp.log(z)) * chebax.besselk_fn(nu, z)
-    return jnp.where(r > 0, k, sig2)
+    return sig2 * chebax.matern(nu, r, ell)
 
 
 def main():

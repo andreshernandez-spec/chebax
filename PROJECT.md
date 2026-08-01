@@ -284,6 +284,23 @@ tiny groups, which is the per-element regime that stays out of scope.
 DELIVERED 2026-07-31: `chebax.pergroup(fn, group_idx, num_groups=None)`,
 increment 12 in `docs/increments.md`, tests in `tests/test_pergroup.py`.
 
+**Queued betainc box widening (2026-08-01, feasibility measured in
+`experiments/11_betainc_widening_feasibility.py`; design decision is
+Andres's):** degree growth beyond [0.1, 10]^2 is tractable but not free.
+Measured: the a-axis carries the pole structure (raw degree 129-175 over
+[0.1, 100], log-a 40-95, per-panel raw ~50); b is mild (26-63, log WORSE);
+x grows 19 -> 62 at sharp interior transitions. Priced options: 2x2 panels
+at [0.1, 100]^2 ~650k coefficients (~13x table, ~1 h generation); single
+[0.1, 50]^2 log-a tensor ~252k. Both break the CI bit-for-bit regen budget,
+so widening waits on a policy call (slice-regen in CI + full regen manual,
+or parallel generation) and pairs naturally with Tucker storage
+(experiments/10: betainc-class tensors are where compression pays). The
+reflection needs BOTH parameter orientations, so a one-sided strip is not
+cheaper than half the full job. Separately discovered and NOT blocked:
+stdtr/stdtrit evaluate betainc at a = 1/2 exactly, so a dedicated fixed-a
+slice table for b in [10, 100] (~4.6k coefficients) extends StudentT to
+nu = 200 at a thousandth of the widening cost.
+
 **Queued low-rank table compression (2026-07-30, Andres; sequenced with the f32
 bake work, FLOP payoffs gated on B3):** Chebfun2-style separated representation
 c(ν,k) ≈ Σ_j σ_j u_j(ν) v_j(k) (Townsend & Trefethen 2013; Hashemi & Trefethen

@@ -15,7 +15,7 @@ The chebax contract applies: shape parameters are uniform per call (a
 scalar or one traced latent each; batched shape arrays are not served -
 use chebax.pergroup for per-group shapes). Domains, from the underlying
 tables: TruncatedBeta needs (concentration1, concentration0) in
-[0.1, 10]^2; TruncatedStudentT needs df in [0.2, 20]; TruncatedGamma's
+[0.1, 10]^2; TruncatedStudentT needs df in [0.2, 200]; TruncatedGamma's
 concentration solves through jax's own gammainc and needs only
 concentration > 0. Rates, bounds and data are unrestricted.
 
@@ -186,7 +186,7 @@ class TruncatedStudentT(dist.Distribution):
     """Standard Student-t(df) truncated to [low, high].
 
     df must be uniform per call and inside chebax's table range
-    [0.2, 20]; low and high broadcast freely (either may be infinite).
+    [0.2, 200]; low and high broadcast freely (either may be infinite).
     For a located/scaled variant, truncate the standard one to
     ((low - loc)/scale, (high - loc)/scale) and map samples through
     loc + scale * x.

@@ -31,8 +31,9 @@ incomplete-beta reduction are used, t^2/(nu+t^2) near the median (exact
 first-order behavior through t = 0, where the classic nu/(nu+t^2) form
 rounds to 1 and loses everything) and nu/(nu+t^2) in the tails. Their
 JVPs use the exact Student-t density. betaincinv and stdtr/stdtrit need
-(a, b) inside the betainc table domain [0.1, 10]; stdtr/stdtrit therefore
-cover nu in [0.2, 20]. gammaincinv has no table domain: its Newton
+(a, b) inside the betainc table domain [0.1, 10]. stdtr/stdtrit run on
+their own 2-D slice tables of the same kernel at a = 1/2 (b-panels to
+100), so they cover nu in [0.2, 200] without the 3-D tensor. gammaincinv has no table domain: its Newton
 residual evaluates the chebax gammainc recipe when a is inside [0.1, 10]
 (fixed-degree polynomials; jax's gammainc re-runs a whole-array
 while_loop per Newton iteration) and falls back to jax's gammainc
@@ -46,8 +47,10 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import gammainc_table as _gt
+from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import canon_float as _canon
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
+from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
                                          tensor_coefs_traced)
 from chebax._src.recipes.gammainc import _traced_series as _gi_series
@@ -116,22 +119,13 @@ def _dPda_jvp(primals, tangents):
 _dPda.defjvp(_dPda_jvp, symbolic_zeros=True)
 
 
-@jax.custom_jvp
-def betaincinv(a, b, p):
-    """Inverse of betainc in x: the Beta(a, b) quantile function.
-
-    a, b are (traceable) scalars in [0.1, 10], uniform per call; p any shape.
-    Quantiles below the smallest positive float64 return 0.0 (and, mirrored,
-    quantiles within eps of 1 return 1.0, the scipy-shared representation
-    limit; use betaincinv(b, a, 1-p) for the distance from 1). A solve that
-    fails its CDF-residual check returns nan instead of a wrong value."""
-    a = _canon(a)
-    b = _canon(b)
-    p = _canon(p)
+def _betaincinv_core(a, b, p, cab, cba):
+    """The betaincinv solve, series-agnostic: cab/cba are the x-series of
+    the betainc kernel at (a, b) and (b, a), from the 3-D tensor (public
+    betaincinv) or the stdtr slice tables (stdtrit). Not differentiable
+    on its own; callers wrap it in a custom_jvp."""
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
-    cab = ChebSeries(_tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT))
-    cba = ChebSeries(_tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT))
     ln_b = _ln_beta(a, b)
 
     # Solve every element as a LOWER-tail problem of the mirrored orientation
@@ -175,6 +169,23 @@ def betaincinv(a, b, p):
     x = jnp.where(p <= 0.0, 0.0, jnp.where(p >= 1.0, 1.0, x))
     oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(a) | jnp.isnan(b)
     return jnp.where(oob, jnp.nan, x)
+
+
+@jax.custom_jvp
+def betaincinv(a, b, p):
+    """Inverse of betainc in x: the Beta(a, b) quantile function.
+
+    a, b are (traceable) scalars in [0.1, 10], uniform per call; p any shape.
+    Quantiles below the smallest positive float64 return 0.0 (and, mirrored,
+    quantiles within eps of 1 return 1.0, the scipy-shared representation
+    limit; use betaincinv(b, a, 1-p) for the distance from 1). A solve that
+    fails its CDF-residual check returns nan instead of a wrong value."""
+    a = _canon(a)
+    b = _canon(b)
+    p = _canon(p)
+    cab = ChebSeries(_tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT))
+    cba = ChebSeries(_tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT))
+    return _betaincinv_core(a, b, p, cab, cba)
 
 
 @betaincinv.defjvp
@@ -301,6 +312,22 @@ def _t_logpdf(nu, t):
             - 0.5 * (nu + 1.0) * jnp.log1p(t * t / nu))
 
 
+def _half_series(hb):
+    """x-series of the betainc kernel at (1/2, hb) and (hb, 1/2), from the
+    stdtr slice tables: hb = nu/2 in [0.1, 100] (nu in [0.2, 200]),
+    uniform per call, panel select at hb = 10. All four tables share the
+    x-node count, so the selects act elementwise on coefficient vectors."""
+    lo = hb <= _st.BSPLIT
+    ca = jnp.where(lo,
+                   traced_coefs(_st.TABLE_A_LO, _st.BLO, _st.BSPLIT, hb),
+                   traced_coefs(_st.TABLE_A_HI, _st.BSPLIT, _st.BHI, hb))
+    cb = jnp.where(lo,
+                   traced_coefs(_st.TABLE_B_LO, _st.BLO, _st.BSPLIT, hb),
+                   traced_coefs(_st.TABLE_B_HI, _st.BSPLIT, _st.BHI, hb))
+    return (ChebSeries(ca, (0.0, _st.XSPLIT)),
+            ChebSeries(cb, (0.0, _st.XSPLIT)))
+
+
 def _stdtr_impl(nu, t):
     t2 = t * t
     central = t2 <= nu
@@ -310,8 +337,9 @@ def _stdtr_impl(nu, t):
     # tail probability. Seam at t^2 = nu, where both are mid-range.
     w = jnp.where(central, t2 / (nu + t2), 0.25)
     x = jnp.where(central, 0.25, nu / (nu + t2))
-    half_central = 0.5 * betainc_fn(jnp.asarray(0.5), 0.5 * nu, w)
-    half_tail = 0.5 * betainc_fn(0.5 * nu, jnp.asarray(0.5), x)
+    ca, cb = _half_series(0.5 * nu)
+    half_central = 0.5 * _eval_betainc(jnp.asarray(0.5), 0.5 * nu, w, ca, cb)
+    half_tail = 0.5 * _eval_betainc(0.5 * nu, jnp.asarray(0.5), x, cb, ca)
     sgn = jnp.where(t >= 0.0, 1.0, -1.0)
     F = jnp.where(central, 0.5 + sgn * half_central,
                   jnp.where(t >= 0.0, 1.0 - half_tail, half_tail))
@@ -320,7 +348,7 @@ def _stdtr_impl(nu, t):
 
 @jax.custom_jvp
 def stdtr(nu, t):
-    """Student-t CDF with nu degrees of freedom (nu in [0.2, 20], traceable).
+    """Student-t CDF with nu degrees of freedom (nu in [0.2, 200], traceable).
 
     jax.grad works with respect to nu as well: learnable degrees of freedom.
     First-order exact through t = 0 (dF/dt there is the density, not 0)."""
@@ -355,8 +383,11 @@ def _stdtrit_impl(nu, p):
     # central: |t| from w = I^-1(|q|; 1/2, nu/2), t = sqrt(nu w/(1-w));
     # tails: x = I^-1(2 min(p,1-p); nu/2, 1/2), t = sqrt(nu (1-x)/x).
     # 1 - aq is 2p or 2(1-p) exactly, so the tail argument is exact.
-    w = betaincinv(jnp.asarray(0.5), 0.5 * nu, jnp.where(central, aq, 0.25))
-    x = betaincinv(0.5 * nu, jnp.asarray(0.5), jnp.where(central, 0.5, 1.0 - aq))
+    ca, cb = _half_series(0.5 * nu)
+    w = _betaincinv_core(jnp.asarray(0.5), 0.5 * nu,
+                         jnp.where(central, aq, 0.25), ca, cb)
+    x = _betaincinv_core(0.5 * nu, jnp.asarray(0.5),
+                         jnp.where(central, 0.5, 1.0 - aq), cb, ca)
     mag = jnp.where(central, jnp.sqrt(nu * w / (1.0 - w)),
                     jnp.sqrt(nu * (1.0 - x) / x))
     t = jnp.where(q < 0.0, -mag, mag)
@@ -367,7 +398,7 @@ def _stdtrit_impl(nu, p):
 
 @jax.custom_jvp
 def stdtrit(nu, p):
-    """Student-t quantile with nu degrees of freedom (nu in [0.2, 20]).
+    """Student-t quantile with nu degrees of freedom (nu in [0.2, 200]).
 
     Closed form via betaincinv in both orientations: exact 0 at p = 1/2,
     +-inf at the endpoints, gradients from the implicit function theorem

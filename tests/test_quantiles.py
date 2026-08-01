@@ -311,3 +311,40 @@ def test_endpoint_contract():
     # shape gradients at the endpoints are masked to zero, not nan
     assert float(jax.grad(lambda a: chebax.betaincinv(a, 3.0, 0.0))(2.0)) == 0.0
     assert float(jax.grad(lambda a: chebax.gammaincinv(a, 1.0))(2.5)) == 0.0
+
+
+def test_stdtr_extended_nu_range():
+    # the slice tables (increment 21) extend nu from [0.2, 20] to
+    # [0.2, 200]. Measured absolute worst 4.6e-14 (at nu = 199.9, the
+    # panel edge grid below), roundtrip 2.8e-15, d/dnu at nu = 150
+    # matching mp.diff to 7 digits; bars ~4x. The old range's accuracy
+    # is covered by the existing stdtr tests, which now also run on the
+    # slice path.
+    def tcdf(nu, t):
+        x = mp.mpf(nu) / (nu + mp.mpf(t) ** 2)
+        p = mp.betainc(mp.mpf(nu) / 2, mp.mpf(1) / 2, 0, x,
+                       regularized=True) / 2
+        return p if t < 0 else 1 - p
+
+    ts = np.concatenate([-np.logspace(2, -3, 9), [0.0], np.logspace(-3, 2, 9)])
+    for nu in [20.1, 60.0, 150.0, 199.9]:
+        ref = np.array([float(tcdf(nu, t)) for t in ts])
+        got = np.asarray(chebax.stdtr(nu, jnp.asarray(ts)))
+        assert np.max(np.abs(got - ref)) <= 2e-13, nu
+        ps = np.linspace(0.01, 0.99, 21)
+        tq = np.asarray(chebax.stdtrit(nu, jnp.asarray(ps)))
+        rp = np.asarray(chebax.stdtr(nu, jnp.asarray(tq)))
+        assert np.max(np.abs(rp - ps)) <= 2e-14, nu
+    g = float(jax.grad(chebax.stdtr, argnums=0)(150.0, 1.5))
+    ref_g = float(mp.diff(lambda n: tcdf(n, 1.5), mp.mpf(150)))
+    assert abs(g - ref_g) <= 1e-11
+
+
+@pytest.mark.slow
+def test_stdtr_tables_regenerate_bit_for_bit(tmp_path):
+    import pathlib
+    from chebax._src.recipes import stdtr_gen
+    from chebax._src.recipes import stdtr_table as st
+    stdtr_gen.main(tmp_path)
+    assert ((tmp_path / "stdtr_table.py").read_text()
+            == pathlib.Path(st.__file__).read_text())

@@ -90,6 +90,7 @@ python -m chebax._src.recipes.bessely_gen         # regenerate the bessely table
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
 python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
+python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice tables (~4 min)
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```

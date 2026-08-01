@@ -311,3 +311,24 @@ measured, the inverses were ALREADY exact at the endpoints (betaincinv
 gradients), so the clips guard downstream log-densities, not the
 inverses. Nothing to fix; the behavior is now locked as a contract in
 tests/test_quantiles.py::test_endpoint_contract so it cannot regress.
+
+## 17 — gammaincinv solves on the gammainc recipe (2026-07-31)
+
+The Newton residual inside gammaincinv used jax.scipy.special.gammainc,
+which re-runs a whole-array while_loop on EVERY one of the 40 fixed
+iterations. For a inside [0.1, 10] the residual now evaluates the
+chebax gammainc tables (reconstructed once per call, closed over by the
+loop body); jax's gammainc stays as the out-of-box fallback behind one
+lax.cond on the scalar a, so the domain is still all of a > 0 and only
+the taken branch executes. Measured (experiments/09, RTX 3080 Laptop,
+N = 2^20, f64, same solver both sides): 23.4x at a = 0.5, 8.5x at 3.5,
+6.3x at 9.9 on p ~ U(1e-6, 1-1e-6); 1.4x on a pure deep-tail workload
+(p in [1e-12, 1e-2]), where jax's series branch converges in a few
+terms and the recipe's flat ~100 ms cost meets it. Path agreement at
+solver tolerance (2.2e-12 relative worst, at a = 0.5 extreme
+quantiles). test_quantiles passes unchanged on the recipe path;
+consumers inherit for free: chi2inv, the pytensor plugin's GammaIncInv,
+chebax.numpyro's TruncatedGamma sampling, truncated_sampling.py. The
+custom_jvp's dP/da still uses jax's igamma_grad_a (evaluated once at
+the solution, not per iteration); replacing it in-box is a possible
+follow-up if gradient-path profiling warrants.

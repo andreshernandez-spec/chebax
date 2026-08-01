@@ -128,3 +128,25 @@ def test_origin_gradients():
     assert abs(float(jax.grad(chebax.besseli(0.0, scaled=True))(0.0)) + 1.0) <= 1e-14
     assert abs(float(jax.grad(chebax.besseli(1.0))(0.0)) - 0.5) <= 1e-14
     assert float(jax.grad(chebax.besseli_fn, argnums=1)(0.0, 0.0)) == 0.0
+
+
+def test_besseli_ratio():
+    # relative errors, measured worst 3.1e-15 over the orders below on
+    # x in [1e-8, 5000]; bar 4x. Endpoint: exact 0 at x = 0 (hard
+    # select, gradient there masked to 0).
+    xs = np.concatenate([np.logspace(-8, 2, 20), [500.0, 5000.0]])
+    for nu in [0.0, 0.5, 1.0, 4.5, 8.99]:
+        ref = np.array([float(mp.besseli(mp.mpf(nu) + 1, mp.mpf(x))
+                              / mp.besseli(mp.mpf(nu), mp.mpf(x))) for x in xs])
+        got = np.asarray(chebax.besseli_ratio(nu, jnp.asarray(xs)))
+        assert np.max(np.abs(got - ref) / ref) <= 1.5e-14, nu
+    assert float(chebax.besseli_ratio(2.0, 0.0)) == 0.0
+    assert np.isnan(float(chebax.besseli_ratio(2.0, np.nan)))
+    # gradients in both arguments against mp.diff
+    g_nu = float(jax.grad(chebax.besseli_ratio, argnums=0)(2.0, 3.0))
+    g_x = float(jax.grad(chebax.besseli_ratio, argnums=1)(2.0, 3.0))
+    r_nu = float(mp.diff(lambda v: mp.besseli(v + 1, 3.0) / mp.besseli(v, 3.0),
+                         mp.mpf(2)))
+    r_x = float(mp.diff(lambda x: mp.besseli(3, x) / mp.besseli(2, x),
+                        mp.mpf(3)))
+    assert abs(g_nu - r_nu) <= 1e-13 and abs(g_x - r_x) <= 1e-13

@@ -137,3 +137,44 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     gammainc_gen.main(tmp_path)
     assert ((tmp_path / "gammainc_table.py").read_text()
             == pathlib.Path(gt.__file__).read_text())
+
+
+def test_log_gammainc_pair():
+    # ln P: direct for x <= 8, measured worst 1.1e-14 of max(1, |ln P|)
+    # down to x = 1e-100 (ln P ~ -2300). ln Q: direct for x > 8 with no
+    # underflow ceiling (checked at x = 1e4, ln Q ~ -1e4); for x <= 8 it
+    # is log1p(-exp(ln P)), error is the value path's absolute
+    # floor over Q (measured 12 eps / Q worst, the gammaincc_fn wedge);
+    # the bar carries the value bar 2e-14 divided by Q. dQ/da vs
+    # mp.diff measured 7e-13 of max(1, |.|). Bars ~4x.
+    xg = np.concatenate([[1e-100, 1e-10, 1e-3], np.linspace(0.5, 8.0, 8),
+                         [8.0001, 20.0, 100.0, 700.0, 1e4]])
+    for a in [0.1, 1.0, 2.5, 9.9]:
+        refp = np.array([float(mp.log(mp.gammainc(mp.mpf(a), 0, mp.mpf(x),
+                                                  regularized=True)))
+                         for x in xg])
+        gotp = np.asarray(chebax.log_gammainc_fn(a, jnp.asarray(xg)))
+        assert np.max(np.abs(gotp - refp)
+                      / np.maximum(1.0, np.abs(refp))) <= 5e-14, a
+        refq = np.array([float(mp.log(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf,
+                                                  regularized=True)))
+                         for x in xg])
+        gotq = np.asarray(chebax.log_gammaincc_fn(a, jnp.asarray(xg)))
+        bar = 5e-14 * np.maximum(1.0, np.abs(refq))
+        bar[xg <= gt.XS] += 2e-14 / np.exp(refq[xg <= gt.XS])
+        assert np.all(np.abs(gotq - refq) <= bar), a
+    assert np.isneginf(float(chebax.log_gammainc_fn(2.0, 0.0)))
+    assert float(chebax.log_gammaincc_fn(2.0, 0.0)) == 0.0
+    assert np.isnan(float(chebax.log_gammaincc_fn(2.0, np.nan)))
+    xs = np.linspace(0.5, 20.0, 9)
+    np.testing.assert_allclose(
+        np.exp(np.asarray(chebax.log_gammaincc_fn(2.5, jnp.asarray(xs)))),
+        np.asarray(chebax.gammaincc(2.5)(xs)), rtol=1e-12)
+    xa = np.array([0.5, 3.0, 20.0, 100.0])
+    for a in [0.1, 2.5, 9.9]:
+        da = np.array([float(mp.diff(lambda t: mp.log(mp.gammainc(
+            t, mp.mpf(x), mp.inf, regularized=True)), mp.mpf(a))) for x in xa])
+        gda = np.asarray(jax.vmap(jax.grad(chebax.log_gammaincc_fn, argnums=0),
+                                  in_axes=(None, 0))(jnp.asarray(a),
+                                                     jnp.asarray(xa)))
+        assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 3e-12, a

@@ -337,3 +337,13 @@ def _stdtrit_jvp(primals, tangents):
     dt = (_canon(dp) - dF_dnu * _canon(dnu)) / pdf
     dt = jnp.where(finite, dt, 0.0)
     return t, jnp.where(jnp.isnan(t), jnp.nan, dt)
+
+
+def chi2inv(k, p):
+    """Chi-squared quantile at real degrees of freedom: 2 gammaincinv(k/2, p).
+
+    chi2(k) is Gamma(k/2, rate 1/2), so the quantile is a rescaled Gamma
+    quantile: k a (traceable) positive scalar uniform per call, p any
+    shape, differentiable in both, real non-integer dof included.
+    Endpoints follow gammaincinv (p = 0 -> 0, p = 1 -> inf)."""
+    return 2.0 * gammaincinv(0.5 * _canon(k), p)

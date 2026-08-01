@@ -32,19 +32,26 @@ first-order behavior through t = 0, where the classic nu/(nu+t^2) form
 rounds to 1 and loses everything) and nu/(nu+t^2) in the tails. Their
 JVPs use the exact Student-t density. betaincinv and stdtr/stdtrit need
 (a, b) inside the betainc table domain [0.1, 10]; stdtr/stdtrit therefore
-cover nu in [0.2, 20]. gammaincinv uses jax's own gammainc and has no
-table domain. Inputs are computed in the canonical float dtype (float64
-under x64), so explicit float32 arguments are promoted, not crashed on.
+cover nu in [0.2, 20]. gammaincinv has no table domain: its Newton
+residual evaluates the chebax gammainc recipe when a is inside [0.1, 10]
+(fixed-degree polynomials; jax's gammainc re-runs a whole-array
+while_loop per Newton iteration) and falls back to jax's gammainc
+outside the box, picked by one lax.cond on the scalar a. Inputs are
+computed in the canonical float dtype (float64 under x64), so explicit
+float32 arguments are promoted, not crashed on.
 """
 
 import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import betainc_table as _bt
+from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes._common import canon_float as _canon
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
 from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
                                          tensor_coefs_traced)
+from chebax._src.recipes.gammainc import _traced_series as _gi_series
+from chebax._src.recipes.gammainc import eval_gammainc as _eval_gammainc
 from chebax._src.series import ChebSeries
 
 _eval_betainc = eval_betainc
@@ -169,29 +176,28 @@ def _betaincinv_jvp(primals, tangents):
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
-@jax.custom_jvp
-def gammaincinv(a, p):
-    """Inverse of jax.scipy.special.gammainc in x: the Gamma(a, 1) quantile.
+def _gammaincinv_solve(a, pc, use_recipe):
+    """Solve P(a, e^v) = pc in v (log space: small-a tail quantiles stay
+    resolvable and df/dv = pdf * x = exp(a v - e^v - lgamma(a))).
 
-    a is a (traceable) positive scalar, uniform per call; p any shape. Needs
-    no chebax tables (jax's own gammainc supplies values and the a-gradient).
-    Quantiles below the smallest positive float64 return 0.0; a solve that
-    fails its CDF-residual check returns nan instead of a wrong value.
-
-    Second derivatives in p and mixed p-a derivatives work (dP/da is
-    wrapped with its exact x-derivative); a pure second derivative in a
-    needs d2P/da2, which is unavailable and raises with a clear message."""
-    a = _canon(a)
-    p = _canon(p)
-    interior = (p > 0.0) & (p < 1.0)
-    pc = jnp.where(interior, p, 0.5)
+    use_recipe is a python bool (each lax.cond branch traces one): True
+    evaluates P from the chebax gammainc tables, reconstructed once and
+    closed over, so each of the 40 Newton iterations is a fixed-degree
+    polynomial; False uses jax's gammainc (any a, but a whole-array
+    while_loop per iteration). Returns (v, final residual)."""
     lga = jax.scipy.special.gammaln(a)
+    if use_recipe:
+        lser, ltail = _gi_series(a)
 
-    # solve in log space: x = e^v, so small-a tail quantiles stay resolvable
-    # and df/dv = pdf * x = exp(a v - e^v - lgamma(a))
+        def P(x):
+            return _eval_gammainc(a, x, lser, ltail, lower=True)
+    else:
+        def P(x):
+            return jax.scipy.special.gammainc(a, x)
+
     def f_and_df(v):
         x = jnp.exp(v)
-        f = jax.scipy.special.gammainc(a, x) - pc
+        f = P(x) - pc
         dfdv = jnp.exp(a * v - x - lga)
         return f, dfdv
 
@@ -206,8 +212,36 @@ def gammaincinv(a, p):
     v0 = jnp.clip(jnp.where(pc < 0.01, v_asym, v_wh), _U_LO, 709.0)
     v = _newton_bisect(f_and_df, v0, jnp.full_like(pc, _U_LO),
                        jnp.full_like(pc, 709.0), 40)
-
     f_fin, _ = f_and_df(v)
+    return v, f_fin
+
+
+@jax.custom_jvp
+def gammaincinv(a, p):
+    """Inverse of the regularized lower gamma in x: the Gamma(a, 1) quantile.
+
+    a is a (traceable) positive scalar, uniform per call; p any shape. For
+    a inside [0.1, 10] the Newton residual runs on the chebax gammainc
+    tables (fixed-degree polynomials); outside the box it falls back to
+    jax's gammainc, so the domain stays all of a > 0.
+    Quantiles below the smallest positive float64 return 0.0; a solve that
+    fails its CDF-residual check returns nan instead of a wrong value.
+
+    Second derivatives in p and mixed p-a derivatives work (dP/da is
+    wrapped with its exact x-derivative); a pure second derivative in a
+    needs d2P/da2, which is unavailable and raises with a clear message."""
+    a = _canon(a)
+    p = _canon(p)
+    interior = (p > 0.0) & (p < 1.0)
+    pc = jnp.where(interior, p, 0.5)
+
+    # the recipe residual serves a inside its table box; jax's gammainc
+    # outside. One scalar cond: only the taken branch executes.
+    in_box = (a >= _gt.ALO) & (a <= _gt.AHI)
+    v, f_fin = jax.lax.cond(
+        in_box,
+        lambda: _gammaincinv_solve(a, pc, True),
+        lambda: _gammaincinv_solve(a, pc, False))
     at_floor = v <= _U_LO + 0.5
     x = jnp.where(at_floor, 0.0, jnp.exp(v))
     bad = ~at_floor & (jnp.abs(f_fin) > _RESID_RTOL * pc)

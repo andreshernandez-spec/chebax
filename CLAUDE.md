@@ -25,7 +25,10 @@ This file is how to work here.
   the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
   for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane
   trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
-  still the only number for a outside the box — say which when citing; betainc race
+  still the only number for a outside the box — say which when citing; gammaincinv
+  solver rewire (`experiments/09`, same solver, residual swapped): 6.3–23.4× f64
+  for uniform p at a in {9.9, 3.5, 0.5}, 1.4× on pure deep-tail p (jax's series
+  branch is cheap there), path agreement ≤ 2.2e-12; betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N

@@ -170,3 +170,71 @@ def test_emission_deterministic(tmp_path):
 def test_bake_rejects_non_besselj(tmp_path):
     with pytest.raises(TypeError, match="BesselJ"):
         bake.jax_module(chebax.fit(np.exp), tmp_path / "x.py")
+
+
+def test_truncate_drops_converged_tail():
+    # measured: besselk(1.5) inner degree 79 -> 26 at tol 1e-7 with
+    # 1.7e-7 worst relative deviation from the full instance
+    k = chebax.besselk(1.5)
+    kt = k.truncate(1e-7)
+    assert kt.ltil.degree < k.ltil.degree // 2
+    xs = np.logspace(-5, 2, 40)
+    rel = np.abs(np.asarray(kt(xs)) - np.asarray(k(xs))) / np.asarray(k(xs))
+    assert rel.max() <= 1e-6
+    # a fit-produced series truncates too
+    s = chebax.fit(lambda x: np.exp(-x * x), (0.0, 3.0), tol=1e-15)
+    st = s.truncate(1e-7)
+    assert st.degree < s.degree
+    # tol below every coefficient is the identity
+    assert k.truncate(1e-30).ltil.degree == k.ltil.degree
+
+
+def test_jax_module_truncate_tol(tmp_path):
+    import importlib.util
+    inst = chebax.besselk(1.5)
+    mod = tmp_path / "baked32.py"
+    name = bake.jax_module(inst, mod, truncate_tol=1e-7)
+    spec = importlib.util.spec_from_file_location("baked32_gen", mod)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    xs = np.logspace(-5, 1.5, 30)
+    got = np.asarray(getattr(m, name)(xs))
+    ref = np.asarray(inst(xs))
+    np.testing.assert_allclose(got, ref, rtol=1e-6)
+
+
+@pytest.mark.parametrize("family,make,xs", BAKEABLE[1:3], ids=["besselk", "besseli"])
+def test_bake_cpp_float32(tmp_path, family, make, xs):
+    # dtype="float" + truncate_tol=1e-7: an f32 CUDA-shaped kernel body.
+    # The accuracy contract is f32-grade AND value-representability: for
+    # the log-table recipes the f32 floor is ~eps32 * |ln f| (exponent
+    # assembly), so the grid keeps |ln f| <= 40 and the bar sits at
+    # 1e-5 (measured worst 3.9e-6 for besselk); values below the f32
+    # normal floor underflow by format, not by kernel error.
+    if shutil.which("g++") is None:
+        pytest.skip("g++ not available")
+    inst = make()
+    hdr = tmp_path / "baked32.h"
+    name = bake.xsf_header(inst, hdr, dtype="float", truncate_tol=1e-7)
+    assert "inline constexpr float" in hdr.read_text()
+    main = tmp_path / "main.cpp"
+    main.write_text(
+        '#include "baked32.h"\n#include <cstdio>\n'
+        'int main() { float x; while (std::scanf("%f", &x) == 1) '
+        'std::printf("%.9e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+    exe = tmp_path / "exe32"
+    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+                   check=True, cwd=tmp_path)
+    ref_full = np.asarray(inst(xs))
+    keep = (np.abs(np.log(np.abs(ref_full) + 1e-300)) <= 40.0) & (ref_full != 0)
+    xs_k = np.asarray(xs)[keep]
+    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs_k),
+                         capture_output=True, text=True, check=True)
+    got = np.array([float(t) for t in out.stdout.split()])
+    ref = np.asarray(inst(xs_k))
+    np.testing.assert_allclose(got, ref, rtol=1e-5)
+
+
+def test_xsf_header_dtype_validation(tmp_path):
+    with pytest.raises(ValueError, match="dtype"):
+        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h", dtype="half")

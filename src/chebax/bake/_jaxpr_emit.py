@@ -46,7 +46,7 @@ _UNARY = {
     "sin":   ("jnp.sin({0})",      "std::sin({0})"),
     "cos":   ("jnp.cos({0})",      "std::cos({0})"),
     "abs":   ("jnp.abs({0})",      "std::fabs({0})"),
-    "sign":  ("jnp.sign({0})",     "((double)(({0}) > 0.0) - (double)(({0}) < 0.0))"),
+    "sign":  ("jnp.sign({0})",     "((T)(({0}) > 0.0) - (T)(({0}) < 0.0))"),
     "logistic": ("jax.nn.sigmoid({0})", "(1.0 / (1.0 + std::exp(-({0}))))"),
     "is_finite": ("jnp.isfinite({0})", "std::isfinite({0})"),
     "lgamma": ("jax.scipy.special.gammaln({0})", "std::lgamma({0})"),
@@ -70,8 +70,9 @@ _NAMED_FOLDS = {
 
 
 class _Emit:
-    def __init__(self, cpp):
+    def __init__(self, cpp, ctype="double"):
         self.cpp = cpp
+        self.ctype = ctype
         self.lines = []
         self.counter = 0
         self.coef_names = {}      # id -> (name, series)
@@ -83,13 +84,13 @@ class _Emit:
     def assign(self, expr, is_bool=False):
         sym = self.fresh()
         if self.cpp:
-            self.lines.append(f"    {'bool' if is_bool else 'double'} {sym} = {expr};")
+            self.lines.append(f"    {'bool' if is_bool else self.ctype} {sym} = {expr};")
         else:
             self.lines.append(f"    {sym} = {expr}")
         return sym
 
 
-def _lit(val, cpp):
+def _lit(val, cpp, ctype="double"):
     a = np.asarray(val)
     if a.dtype == bool:
         if cpp:
@@ -97,13 +98,13 @@ def _lit(val, cpp):
         return ("True" if bool(a) else "False"), True
     v = float(a)
     if v != v:
-        return ("(std::numeric_limits<double>::quiet_NaN())" if cpp
+        return (f"(std::numeric_limits<{ctype}>::quiet_NaN())" if cpp
                 else "float('nan')"), False
     if v == float("inf") or v == float("-inf"):
-        s = ("std::numeric_limits<double>::infinity()" if cpp
+        s = (f"std::numeric_limits<{ctype}>::infinity()" if cpp
              else "float('inf')")
         return (f"(-{s})" if v < 0 else s), False
-    return repr(v), False
+    return (repr(v) + ("f" if cpp and ctype == "float" else "")), False
 
 
 def _collect_matches(inst, a, prefix=""):
@@ -140,7 +141,7 @@ def _match_series(inst, const):
 def _emit_jaxpr(em, jaxpr, env):
     def read(v):
         if isinstance(v, _Literal):
-            return _lit(v.val, em.cpp)[0]
+            return _lit(v.val, em.cpp, em.ctype)[0]
         return env[v]
 
     for eqn in jaxpr.eqns:
@@ -157,7 +158,9 @@ def _emit_jaxpr(em, jaxpr, env):
             name, series = em.coef_names[env[coef_in[0]]]
             (x_in,) = [v for v in eqn.invars if v is not coef_in[0]]
             a, b = series.domain
-            t_expr = f"(2.0 * ({read(x_in)}) - {b + a!r}) / {b - a!r}"
+            suf = "f" if em.cpp and em.ctype == "float" else ""
+            t_expr = (f"(2.0{suf} * ({read(x_in)}) - {b + a!r}{suf})"
+                      f" / {b - a!r}{suf}")
             if em.cpp:
                 expr = f"detail::clenshaw(detail::{name}, {t_expr})"
             else:
@@ -168,6 +171,7 @@ def _emit_jaxpr(em, jaxpr, env):
             inner = eqn.params.get("jaxpr")
             if name in _NAMED_FOLDS:
                 tmpl = _NAMED_FOLDS[name][1 if em.cpp else 0]
+                tmpl = tmpl.replace("(T)", f"({em.ctype})")
                 env[out] = em.assign(tmpl.format(*[read(v) for v in eqn.invars]))
                 continue
             inner_jaxpr = inner.jaxpr if hasattr(inner, "jaxpr") else inner
@@ -177,7 +181,7 @@ def _emit_jaxpr(em, jaxpr, env):
             _emit_jaxpr(em, inner_jaxpr, inner_env)
             for ov, iv in zip(eqn.outvars, inner_jaxpr.outvars):
                 env[ov] = inner_env[iv] if not isinstance(iv, _Literal) \
-                    else _lit(iv.val, em.cpp)[0]
+                    else _lit(iv.val, em.cpp, em.ctype)[0]
         elif p == "convert_element_type":
             nd = np.dtype(eqn.params["new_dtype"])
             src = read(eqn.invars[0])
@@ -187,7 +191,7 @@ def _emit_jaxpr(em, jaxpr, env):
                 # bool -> double masks and float promotions; multiplying by
                 # 1.0 is exact for floats and promotes bools, keeping the
                 # emitted python weak-typed
-                env[out] = em.assign(f"(double)({src})" if em.cpp
+                env[out] = em.assign(f"({em.ctype})({src})" if em.cpp
                                      else f"({src}) * 1.0")
             else:
                 raise NotImplementedError(
@@ -226,17 +230,17 @@ def _emit_jaxpr(em, jaxpr, env):
 def _register_const(em, name_hint, val):
     a = np.asarray(val)
     if a.ndim == 0:
-        return _lit(a, em.cpp)[0]
+        return _lit(a, em.cpp, em.ctype)[0]
     sym = name_hint
     if sym is None:
         raise NotImplementedError(f"unnamed array constant of shape {a.shape} in jaxpr")
     return sym
 
 
-def trace_and_emit(inst, cpp):
+def trace_and_emit(inst, cpp, ctype="double"):
     """Returns (lines, coef_arrays{name: np.array}, result_symbol)."""
     closed = jax.make_jaxpr(inst)(jnp.zeros((), jnp.float64))
-    em = _Emit(cpp)
+    em = _Emit(cpp, ctype)
 
     # name jaxpr constants: coefficient vectors by value-match against the
     # instance's series; anything else must be a scalar
@@ -245,7 +249,7 @@ def trace_and_emit(inst, cpp):
     for cv, cval in zip(closed.jaxpr.constvars, closed.consts):
         a = np.asarray(cval)
         if a.ndim == 0:
-            env[cv] = _lit(a, cpp)[0]
+            env[cv] = _lit(a, cpp, em.ctype)[0]
             continue
         hit = _match_series(inst, a)
         if hit is None:
@@ -260,5 +264,5 @@ def trace_and_emit(inst, cpp):
     env = _emit_jaxpr(em, closed.jaxpr, env)
     (out_var,) = closed.jaxpr.outvars
     result = env[out_var] if not isinstance(out_var, _Literal) \
-        else _lit(out_var.val, cpp)[0]
+        else _lit(out_var.val, cpp, em.ctype)[0]
     return em.lines, coef_arrays, result

@@ -30,6 +30,12 @@ class Recipe:
         return type(self)(*[getattr(self, f) for f in self._static_fields],
                           *[getattr(self, f).astype(dtype) for f in self._series_fields])
 
+    def truncate(self, tol):
+        """Instance with every series' converged tail dropped (see
+        ChebSeries.truncate); nested recipe children truncate too."""
+        return type(self)(*[getattr(self, f) for f in self._static_fields],
+                          *[getattr(self, f).truncate(tol) for f in self._series_fields])
+
     def __repr__(self):
         statics = ", ".join(f"{f}={getattr(self, f)!r}" for f in self._static_fields)
         dtype = "-"

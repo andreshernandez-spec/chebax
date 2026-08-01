@@ -369,3 +369,26 @@ fallback's NotImplementedError fires regardless of the box - which
 also means the recipe path cannot silently enable in-box d2/da2; doing
 that properly is future work if anyone asks). Out-of-box gradients
 unchanged via the fallback.
+
+## 20 — matern clamp fix and the GPJax play (2026-08-01)
+
+Integration with GPJax found a real matern bug: their distance helper
+returns ~1e-18 (never exactly 0) for identical points, and below
+besselk's 1e-6 argument clamp the z^nu prefactor used the RAW z while
+K used the clamped one - the product collapsed and the whole gram
+DIAGONAL read ~0. Fixed by clamping z consistently (prefactor and K
+together), so tiny nonzero distances read as k at the clamp; the
+docstring now also states the honest small-nu behavior (1 - k ~
+(z/2)^(2 nu) means the correlation has genuinely dropped ~0.25 by
+z = 1e-6 at nu = 0.05 - that is the Matern, not the clamp).
+Regression test at r = 1e-18 across orders. The play itself:
+`general-matern` branch in the local GPJax clone (kernel class with
+trainable PositiveReal smoothness, half-integers reproduce
+Matern12/32/52 to 1e-12, spectral density generalised to 2 nu-dof
+Student t, 5 tests + their 620 stationary tests passing; never
+pushed), examples/gpjax_learned_matern.py against RELEASED gpjax
+(recovers nu = 2.29 for true 2.5 from a clustered design - smoothness
+is identified by short-range behavior, so the demo pairs every base
+point with a close neighbor), and drafts/gpjax-general-matern.md
+citing the maintainer's own blocker statement in gpjax#482 (no
+AI-contribution policy found; checked 2026-08-01).

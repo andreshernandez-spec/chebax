@@ -94,3 +94,15 @@ def test_pergroup_and_jit():
     jitted = jax.jit(chebax.matern)
     np.testing.assert_allclose(float(jitted(1.7, 0.8)),
                                float(chebax.matern(1.7, 0.8)), rtol=1e-14)
+
+
+def test_tiny_nonzero_distance_reads_as_clamp():
+    # distance functions often return ~1e-18 for identical points (e.g.
+    # sqrt of a clamped squared distance); an inconsistent clamp used to
+    # collapse the prefactor and return ~0 here. The contract: z below
+    # besselk's 1e-6 clamp evaluates k AT the clamp.
+    for nu in [0.05, 0.5, 1.7, 9.0]:
+        tiny = float(chebax.matern(nu, 1e-18))
+        at_clamp = _ref(nu, 1e-6 / np.sqrt(2.0 * nu))
+        assert abs(tiny - at_clamp) <= 5e-14, nu
+    assert float(chebax.matern(0.5, 1e-18)) > 0.999

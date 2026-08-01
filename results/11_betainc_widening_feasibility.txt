@@ -1,0 +1,23 @@
+x-direction on [0, 1/2] (96 nodes) at wide corners:
+  a=  0.1, b=100.0: 46
+  a=100.0, b=  0.1: 18
+  a=100.0, b=100.0: 37
+  a= 50.0, b= 50.0: 29
+  a= 10.0, b=100.0: 62
+  a=  0.1, b= 10.0: 18
+a-direction on [0.1, 100] at x=0.5: raw (192 nodes) vs log (128):
+  b=  0.1: raw 175, log 40
+  b= 10.0: raw 142, log 65
+  b=100.0: raw 129, log 95
+b-direction on [0.1, 100] at x=0.5: raw (192) vs log (128):
+  a=  0.1: raw 55, log 49
+  a= 10.0: raw 63, log 97
+  a=100.0: raw 26, log 65
+per-panel worst degrees (x on [0,1/2]; a, b raw within panel):
+  panel a x b   x-deg  a-deg  b-deg
+  LOxLO             19     58     20
+  LOxHI             62     52     49
+  HIxLO             19     49     15
+  HIxHI             62     50     49
+single-tensor [0.1, 50]^2, log-a, raw b:
+  x-deg 45, a-deg(log) 72, b-deg(raw) 40

@@ -461,3 +461,38 @@ and the bit-for-bit contract is deterministic today precisely because
 every fit stage is pure mpmath (generator docstring). Dense cost:
 ~600k coefficients, ~11 MB module. stdtr keeps its own slice tables
 (increment 21); nothing else touches the 3-D path.
+
+## 24 — hyp1f1: Kummer's M on (a, b) in [0.1, 10]^2 (2026-08-01)
+
+The recipe-candidate with a documented-unstable jax incumbent
+(jax#21503: series truncated at tol 1e-8, imprecise parameter grads).
+The naive kernel ln M fails twice at once (experiments/13): M's
+nearest zero sits at x ~ -b/a, which hugs the origin when b << a
+(x-degree past 150 at the (10, 0.1) corner), and 1F1's denominator
+poles start at b = 0, only 0.1 from the box edge (raw b-degree
+137-172). Both die with one move, the generalization of gammainc's
+1F1(1; a+1; x) trick: tabulate ln R with M = 1 + (a/b) x R. R's
+nearest zero moves out to -2(b+1)/(a+1), its b-poles start at -1
+(the same 1.1 clearance the other recipes enjoy), and the runtime
+reassembles ln M = log1p((a/b) x exp(ln R)) at full relative
+accuracy. Parameter axes go log (a: 26 vs 43 raw; b: 36 vs 50) except
+the tail's b, where raw wins (20 vs 44). The tail is the DLMF 13.7.1
+log-remainder T with t = XS/x, and XS must sit at 30, not gammainc's
+8: at x = 8 the asymptotic series is not yet asymptotic for
+|b - a| ~ 10 and t needs degree ~100. Two measurement artifacts worth
+recording: T(a, a, t) = 0 identically (M(a, a, x) = e^x), so
+diagonal fits report full degree on pure noise (max |T| = 7e-40),
+and near-diagonal strips report degrees on values ~ 1e-13 that are
+absolutely invisible in ln M ~ x >= 30 - normalize per-fit degree
+claims by the GLOBAL scale before believing them. Tables: inner
+136x32x44, tail 40x32x25, ~5.4 MB module, 11 min generation; CI
+regenerates the tail table bit-exactly as the canary, the full check
+runs behind CHEBAX_FULL_REGEN=1 (the increment-23 policy). Measured
+(sweep 9x9 pairs x 13 x, normalized by max(1, |ln M|)): values and
+log form 3.7e-13 worst, log form at deep x 1.7e-16 relative (M
+itself leaves f64 past x ~ 700; log_hyp1f1_fn is the likelihood
+form), dM/dx 9.5e-14 vs the exact (a/b) M(a+1, b+1, x) shift oracle,
+d/da and d/db 2.9e-15 vs mp.diff. x < 0 is out of scope in v1 (the
+Kummer transform e^x M(b-a, b, -x) leaves the box when b - a does).
+No performance claim: no race was run (B3 rule); the pitch is
+stability and shape gradients, not speed, until measured.

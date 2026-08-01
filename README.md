@@ -39,6 +39,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | Matérn | — | `matern(nu, r, lengthscale)` | via `grad` | unit-variance correlation, LEARNABLE smoothness ν ∈ (0, 10] |
 | `betainc` | `betainc(a, b)` | `betainc_fn`, `log_betainc_fn` | via `grad` of `_fn` | (a, b) ∈ [0.1, 100]² (panels, split at 10); the log form resolves the lower tail with no underflow floor |
 | `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ∈ [0.1, 10], x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 (`experiments/05`) |
+| `hyp1f1` | `hyp1f1(a, b)` | `hyp1f1_fn`, `log_hyp1f1_fn` | via `grad` of `_fn` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
 | quantiles | — | `betaincinv`, `gammaincinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |

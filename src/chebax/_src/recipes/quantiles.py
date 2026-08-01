@@ -30,14 +30,15 @@ stdtr/stdtrit need no solver of their own: both orientations of the
 incomplete-beta reduction are used, t^2/(nu+t^2) near the median (exact
 first-order behavior through t = 0, where the classic nu/(nu+t^2) form
 rounds to 1 and loses everything) and nu/(nu+t^2) in the tails. Their
-JVPs use the exact Student-t density. betaincinv and stdtr/stdtrit need
-(a, b) inside the betainc table domain [0.1, 10]. stdtr/stdtrit run on
-their own 2-D slice tables of the same kernel at a = 1/2 (b-panels to
-100), so they cover nu in [0.2, 200] without the 3-D tensor. gammaincinv has no table domain: its Newton
-residual evaluates the chebax gammainc recipe when a is inside [0.1, 10]
-(fixed-degree polynomials; jax's gammainc re-runs a whole-array
+JVPs use the exact Student-t density. betaincinv needs (a, b) inside
+the betainc table domain [0.1, 100]. stdtr/stdtrit run on their own
+2-D slice tables of the same kernel at a = 1/2 (b-panels to 100), so
+they cover nu in [0.2, 200] without the 3-D tensor. gammaincinv has no
+table domain: its Newton residual evaluates the chebax gammainc recipe
+when a is inside [0.1, 1000] ((10, 1000] via the Temme-zone tables;
+fixed-degree polynomials where jax's gammainc re-runs a whole-array
 while_loop per Newton iteration) and falls back to jax's gammainc
-outside the box, picked by one lax.cond on the scalar a. Inputs are
+outside, picked by nested lax.conds on the scalar a. Inputs are
 computed in the canonical float dtype (float64 under x64), so explicit
 float32 arguments are promoted, not crashed on.
 """
@@ -46,6 +47,8 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import betainc_table as _bt
+from chebax._src.recipes import gammainc_large as _gl
+from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import canon_float as _canon
@@ -91,6 +94,16 @@ def _dPda_recipe(a, x):
     def p_of_a(t):
         lser, ltail = _gi_series(t)
         return _eval_gammainc(t, x, lser, ltail, lower=True)
+
+    return jax.jvp(p_of_a, (a,), (jnp.ones_like(a),))[1]
+
+
+def _dPda_recipe_large(a, x):
+    """dP/da through the Temme-zone tables, a in (10, 1000]."""
+
+    def p_of_a(t):
+        tm, dl, du = _gl.series_traced(t)
+        return _gl.eval_large(t, x, tm, dl, du, "p")
 
     return jax.jvp(p_of_a, (a,), (jnp.ones_like(a),))[1]
 
@@ -213,17 +226,23 @@ def _gammaincinv_solve(a, pc, use_recipe):
     """Solve P(a, e^v) = pc in v (log space: small-a tail quantiles stay
     resolvable and df/dv = pdf * x = exp(a v - e^v - lgamma(a))).
 
-    use_recipe is a python bool (each lax.cond branch traces one): True
-    evaluates P from the chebax gammainc tables, reconstructed once and
+    use_recipe is a python constant (each lax.cond branch traces one):
+    "small" evaluates P from the a <= 10 gammainc tables, "large" from
+    the Temme-zone tables (a in (10, 1000]), each reconstructed once and
     closed over, so each of the 40 Newton iterations is a fixed-degree
-    polynomial; False uses jax's gammainc (any a, but a whole-array
+    polynomial; None uses jax's gammainc (any a, but a whole-array
     while_loop per iteration). Returns (v, final residual)."""
     lga = jax.scipy.special.gammaln(a)
-    if use_recipe:
+    if use_recipe == "small":
         lser, ltail = _gi_series(a)
 
         def P(x):
             return _eval_gammainc(a, x, lser, ltail, lower=True)
+    elif use_recipe == "large":
+        tm, dl, du = _gl.series_traced(a)
+
+        def P(x):
+            return _gl.eval_large(a, x, tm, dl, du, "p")
     else:
         def P(x):
             return jax.scipy.special.gammainc(a, x)
@@ -234,15 +253,20 @@ def _gammaincinv_solve(a, pc, use_recipe):
         dfdv = jnp.exp(a * v - x - lga)
         return f, dfdv
 
-    # Initialization: Wilson-Hilferty for the bulk; the exact leading
-    # asymptotic P(a, x) = x^a / Gamma(a+1) (1 + O(x)) in the lower tail,
-    # where WH can start far off for large a (measured: a = 20, p = 1e-20
-    # started at 0.56 for a root at 0.87 and the fixed count returned 1.53).
+    # Initialization: the larger of Wilson-Hilferty and the exact leading
+    # asymptotic P(a, x) = x^a / Gamma(a+1) (1 + O(x)). Both UNDERestimate
+    # the root (e^-x 1F1(1; a+1; x) <= 1 for the asymptotic; WH sags for
+    # strongly negative z), so max picks whichever regime applies: asym in
+    # the power-law tail (a = 20, p = 1e-20: WH started 0.56 for a root at
+    # 0.87), WH near the bulk of a large a (a = 500, p = 1e-12: asym
+    # started at x = 175 for a root at 350, where df/dv underflows and
+    # 40 safeguarded steps cannot finish bisecting the full bracket -
+    # measured 8.5e-7 relative before this rule).
     z = jax.scipy.special.ndtri(pc)
     wh = a * (1.0 - 1.0 / (9.0 * a) + z / (3.0 * jnp.sqrt(a))) ** 3
     v_asym = (jnp.log(pc) + jax.scipy.special.gammaln(a + 1.0)) / a
-    v_wh = jnp.where(wh > 1e-300, jnp.log(jnp.maximum(wh, 1e-300)), v_asym)
-    v0 = jnp.clip(jnp.where(pc < 0.01, v_asym, v_wh), _U_LO, 709.0)
+    v_wh = jnp.where(wh > 1e-300, jnp.log(jnp.maximum(wh, 1e-300)), _U_LO)
+    v0 = jnp.clip(jnp.maximum(v_asym, v_wh), _U_LO, 709.0)
     v = _newton_bisect(f_and_df, v0, jnp.full_like(pc, _U_LO),
                        jnp.full_like(pc, 709.0), 40)
     f_fin, _ = f_and_df(v)
@@ -254,9 +278,10 @@ def gammaincinv(a, p):
     """Inverse of the regularized lower gamma in x: the Gamma(a, 1) quantile.
 
     a is a (traceable) positive scalar, uniform per call; p any shape. For
-    a inside [0.1, 10] the Newton residual runs on the chebax gammainc
-    tables (fixed-degree polynomials); outside the box it falls back to
-    jax's gammainc, so the domain stays all of a > 0.
+    a inside [0.1, 1000] the Newton residual runs on the chebax gammainc
+    tables (fixed-degree polynomials; (10, 1000] via the Temme-zone
+    path); outside it falls back to jax's gammainc, so the domain stays
+    all of a > 0.
     Quantiles below the smallest positive float64 return 0.0; a solve that
     fails its CDF-residual check returns nan instead of a wrong value.
 
@@ -268,13 +293,18 @@ def gammaincinv(a, p):
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
 
-    # the recipe residual serves a inside its table box; jax's gammainc
-    # outside. One scalar cond: only the taken branch executes.
-    in_box = (a >= _gt.ALO) & (a <= _gt.AHI)
+    # the recipe residuals serve a inside the table boxes (small tables
+    # to 10, Temme-zone tables to 1000); jax's gammainc outside. Nested
+    # scalar conds: only the taken branch executes.
+    in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
+    in_large = (a > _gt.AHI) & (a <= _glt.AHI)
     v, f_fin = jax.lax.cond(
-        in_box,
-        lambda: _gammaincinv_solve(a, pc, True),
-        lambda: _gammaincinv_solve(a, pc, False))
+        in_small,
+        lambda: _gammaincinv_solve(a, pc, "small"),
+        lambda: jax.lax.cond(
+            in_large,
+            lambda: _gammaincinv_solve(a, pc, "large"),
+            lambda: _gammaincinv_solve(a, pc, None)))
     at_floor = v <= _U_LO + 0.5
     x = jnp.where(at_floor, 0.0, jnp.exp(v))
     bad = ~at_floor & (jnp.abs(f_fin) > _RESID_RTOL * pc)
@@ -300,10 +330,14 @@ def _gammaincinv_jvp(primals, tangents):
     num = _canon(dp) if not isinstance(dp, zero) else 0.0
     if not isinstance(da, zero):
         ac = _canon(a)
-        in_box = (ac >= _gt.ALO) & (ac <= _gt.AHI)
-        dPda_val = jax.lax.cond(in_box,
-                                lambda: _dPda_recipe(ac, xs),
-                                lambda: _dPda(ac, xs))
+        in_small = (ac >= _gt.ALO) & (ac <= _gt.AHI)
+        in_large = (ac > _gt.AHI) & (ac <= _glt.AHI)
+        dPda_val = jax.lax.cond(
+            in_small,
+            lambda: _dPda_recipe(ac, xs),
+            lambda: jax.lax.cond(in_large,
+                                 lambda: _dPda_recipe_large(ac, xs),
+                                 lambda: _dPda(ac, xs)))
         num = num - dPda_val * _canon(da)
     dx = num / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
@@ -437,5 +471,7 @@ def chi2inv(k, p):
     chi2(k) is Gamma(k/2, rate 1/2), so the quantile is a rescaled Gamma
     quantile: k a (traceable) positive scalar uniform per call, p any
     shape, differentiable in both, real non-integer dof included.
+    The recipe residual serves k up to 2000 (a = k/2 <= 1000 since the
+    Temme-zone tables); beyond that the jax fallback takes over.
     Endpoints follow gammaincinv (p = 0 -> 0, p = 1 -> inf)."""
     return 2.0 * gammaincinv(0.5 * _canon(k), p)

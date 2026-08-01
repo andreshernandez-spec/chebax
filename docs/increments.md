@@ -496,3 +496,37 @@ d/da and d/db 2.9e-15 vs mp.diff. x < 0 is out of scope in v1 (the
 Kummer transform e^x M(b-a, b, -x) leaves the box when b - a does).
 No performance claim: no race was run (B3 rule); the pitch is
 stability and shape gradients, not speed, until measured.
+
+## 25 — gammainc to a = 1000: the Temme zone (2026-08-01)
+
+The queued large-a extension (PROJECT.md's part (2) sketch), and the
+cheapest increment yet: ~1.3k coefficients TOTAL. Three zones of
+lambda = x/a on v = 10/a in [0.01, 1] (experiments/14): the existing
+kernels reappear in scaled coordinates and go flat (lower
+D = ln 1F1(1; a+1; a lambda), degrees 18x28; upper tail in the uniform
+variable s = (a-1)/x, 11x8), and the transition is Temme's uniform
+asymptotic with the O(1) correction kernel T(v, eta) tabulated at
+degree 20x7 (26x10 nodes): the WHOLE incomplete-gamma transition for
+three decades of a fits in 260 numbers. Runtime assembles
+Q = erfc(eta sqrt(a/2))/2 + e^(-a w)/sqrt(2 pi a) T and P from its own
+erfc side, so both tails stay relatively accurate; the log forms
+factor through erfcx (y^2 = a w exactly), staying finite past the
+linear forms' underflow. gammainc.py dispatches on one scalar cond at
+a = 10; gammaincinv's recipe residual and the JVP's dP/da follow
+(nested conds), so chi2inv serves real dof to 2000 on fixed-degree
+polynomials. Fallout fixed along the way: (1) erf_family's lazily
+cached series leaked tracers when first built inside a cond branch
+(ensure_compile_time_eval now guards it); (2) the quantile solver's
+pc < 0.01 rule always took the power-law init, which at a = 500,
+p = 1e-12 starts so far into the flat region that df underflows and
+bisection cannot finish (measured 8.5e-7 relative); both inits are
+underestimates, so v0 = max(asym, WH) picks the right regime
+everywhere, including the recorded a = 20 case. Measured (sweep +
+tests): P/Q 2.9e-16 absolute, log forms 4.5e-15/1.3e-14 on
+max(1, |ln .|), dP/da 2.8e-17, log-form shape grads 8.1e-16 vs
+mp.diff, quantile roundtrips at a = 1000 within 2e-13 relative-p to
+p = 1e-12. Generation 3.4 s; the bit-for-bit test covers the whole
+module, no canary split. The box stops at 1000 because the 40-dps
+REFERENCE does (mpmath's gammainc fails near lambda ~ 1 for a >~ 1e5;
+small-side subtraction mandatory past ~92 nats, experiments/14), not
+the representation.

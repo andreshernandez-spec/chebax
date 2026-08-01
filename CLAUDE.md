@@ -98,6 +98,7 @@ python -m chebax._src.recipes.betainc_wide_gen    # regenerate the wide panels (
                                                   #  release with CHEBAX_FULL_REGEN=1 pytest
                                                   #  tests/test_betainc.py -m slow)
 python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
+python -m chebax._src.recipes.gammainc_large_gen  # regenerate the Temme-zone tables (~4 s)
 python -m chebax._src.recipes.hyp1f1_gen          # regenerate the hyp1f1 log-tables (~11 min;
                                                   #  CI regen-checks only the tail table; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)

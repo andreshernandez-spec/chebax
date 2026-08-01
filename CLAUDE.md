@@ -92,6 +92,11 @@ python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-t
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
+python -m chebax._src.recipes.betainc_wide_gen    # regenerate the wide panels (~25 min;
+                                                  #  CI regen-checks only the small HILO
+                                                  #  panel; run the full check before a
+                                                  #  release with CHEBAX_FULL_REGEN=1 pytest
+                                                  #  tests/test_betainc.py -m slow)
 python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
 python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice tables (~4 min)
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)

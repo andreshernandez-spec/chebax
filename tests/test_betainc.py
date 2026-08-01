@@ -1,4 +1,4 @@
-"""M6 (fourth increment) acceptance: betainc on (a, b) in [0.1, 10]^2.
+"""M6 (fourth increment) acceptance: betainc on (a, b) in [0.1, 100]^2.
 
 References mpmath at 40 dps; errors absolute (I is a CDF in [0, 1], and
 absolute error is the standard contract for CDFs; near the endpoints the
@@ -10,6 +10,7 @@ gradients jax itself lacks (jax#38610).
 """
 
 import math
+import os
 
 import jax
 import jax.numpy as jnp
@@ -90,7 +91,7 @@ def test_param_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
         chebax.betainc(0.05, 1.0)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.betainc(1.0, 11.0)
+        chebax.betainc(1.0, 101.0)
 
 
 @pytest.mark.slow
@@ -143,3 +144,72 @@ def test_log_betainc():
                                   in_axes=(None, None, 0))(
             jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)))
         assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 1.5e-14
+
+
+WIDE_PAIRS = [(0.15, 55.0), (55.0, 0.15), (55.0, 55.0), (99.9, 99.9),
+              (2.0, 99.9), (99.9, 2.0), (30.0, 70.0), (0.1, 100.0),
+              (100.0, 100.0), (11.0, 11.0)]
+
+
+def test_wide_panels_values_and_gradients():
+    # increment 23: the box is [0.1, 100]^2 via three additional panels.
+    # Measured worst over the pairs below: values 1.8e-13 absolute (the
+    # sharp-transition interior (30, 70)), dI/da 8.5e-16 vs mp.diff,
+    # betaincinv roundtrip 6.7e-15; bars ~4x. The original box's floor
+    # is untouched (the low-low panel IS the original tensor).
+    for a, b in WIDE_PAIRS:
+        ref = _iref(a, b)
+        got = np.asarray(chebax.betainc(a, b)(XB))
+        gott = np.asarray(chebax.betainc_fn(a, b, jnp.asarray(XB)))
+        assert np.max(np.abs(got - ref)) <= 8e-13, (a, b)
+        assert np.max(np.abs(gott - ref)) <= 8e-13, (a, b)
+    xg = np.array([0.1, 0.5, 0.9])
+    for a, b in [(55.0, 0.15), (2.0, 99.9), (70.0, 30.0)]:
+        da = np.array([float(mp.diff(lambda t: mp.betainc(
+            t, mp.mpf(b), 0, mp.mpf(x), regularized=True), mp.mpf(a)))
+            for x in xg])
+        g = np.asarray(jax.vmap(jax.grad(chebax.betainc_fn, argnums=0),
+                                in_axes=(None, None, 0))(
+            jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)))
+        assert np.max(np.abs(g - da)) <= 1e-14, (a, b)
+    for a, b in [(55.0, 55.0), (2.0, 99.9), (99.9, 2.0)]:
+        ps = np.array([1e-6, 0.05, 0.5, 0.95, 1 - 1e-6])
+        x = np.asarray(chebax.betaincinv(a, b, jnp.asarray(ps)))
+        rt = np.asarray(chebax.betainc_fn(a, b, jnp.asarray(x)))
+        assert np.max(np.abs(rt - ps)) <= 3e-14, (a, b)
+
+
+def test_panel_edges_are_ordinary_points():
+    # each side of the a = 10 split meets mpmath at its own panel's bar;
+    # a naive two-sided jump test would just measure dI/da * 2 eps
+    for a in (10.0 - 1e-9, 10.0 + 1e-9):
+        ref = _iref(a, 5.0)
+        got = np.asarray(chebax.betainc_fn(a, 5.0, jnp.asarray(XB)))
+        assert np.max(np.abs(got - ref)) <= 8e-13, a
+
+
+@pytest.mark.slow
+def test_wide_hilo_panel_regenerates_exact():
+    # the CI-affordable regeneration canary (~1.5 min): the smallest wide
+    # panel rebuilds bit-exactly through the full generator pipeline.
+    # The complete three-panel regeneration takes ~25 min and runs only
+    # with CHEBAX_FULL_REGEN=1 (test below); policy in CLAUDE.md.
+    import mpmath as mpm
+    from chebax._src.recipes import betainc_wide_gen as g
+    from chebax._src.recipes import betainc_wide_table as bw
+    from chebax._src.recipes._gen_common import DPS
+    with mpm.workdps(DPS):
+        t = g.generate_panel(mpm, (10.0, 100.0), (0.1, 10.0), 24, 60, 20)
+    assert np.array_equal(t, bw.TENSOR_HILO)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not os.environ.get("CHEBAX_FULL_REGEN"),
+                    reason="~25 min; set CHEBAX_FULL_REGEN=1 (pre-release)")
+def test_wide_tables_regenerate_bit_for_bit(tmp_path):
+    import pathlib
+    from chebax._src.recipes import betainc_wide_gen
+    from chebax._src.recipes import betainc_wide_table as bw
+    betainc_wide_gen.main(tmp_path)
+    assert ((tmp_path / "betainc_wide_table.py").read_text()
+            == pathlib.Path(bw.__file__).read_text())

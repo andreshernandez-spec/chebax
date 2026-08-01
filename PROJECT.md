@@ -25,15 +25,14 @@ spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name 
 publishing action and stays Andres's.
 
 **Status:** live. Public at https://github.com/andreshernandez-spec/chebax;
-0.2.0 released on PyPI 2026-07-31 (0.1.0 the same day; releases are tagged and
-uploaded by Andres). M0–M5 done and M6 running (eleven increments delivered,
-including the `chebax.pytensor` dispatch module; design log in
-`docs/increments.md`). Open: the per-group crossover measurement and API
-(queued below), the numpyro truncated-Gamma revival, upstream outreach
-(local notes in `drafts/`). Parent evidence lives in `../bessel/` (Track B);
-this project generalizes B1 into a library.
+0.2.0 released on PyPI 2026-07-31 (0.3.0 pending: pergroup, the gammainc
+recipe, chebax.numpyro, matern, the log-CDF forms, the quantile-solver
+rewire; nineteen increments in `docs/increments.md`). Open: betainc box
+widening (feasibility unmeasured), the GPJax Matern play, gammainc a > 10,
+upstream outreach (local notes in `drafts/`). Parent evidence lives in
+`../bessel/` (Track B); this project generalizes B1 into a library.
 **Owner:** Andres
-**Last verified:** 2026-07-31, experiments run locally (see `results/`); upstream
+**Last verified:** 2026-08-01, experiments run locally (see `results/`); upstream
 references checked against the clones pinned in `../bessel/PROJECT.md`
 (xsf @ `ac62f926`, jax @ `f8e48d5`).
 
@@ -310,6 +309,16 @@ survives: chebder applies factor-by-factor, ∂f/∂ν = Σ σ_j u_j'(ν) v_j(x)
 Composes with f32 degree truncation (the two truncations compound). When
 picked up, first action is an `experiments/` script reproducing the rank table
 above per convention.
+MEASURED 2026-08-01 (`experiments/10_table_rank_structure.py`, all baked
+tables): 2-D epsilon-ranks at 1e-15 give flop/storage models of only
+1.1–2.2× (gammainc's inner table is nearly full rank at 19/32;
+vonmises the best at 2.2×), so a compressed 2-D evaluation path is NOT
+worth building at f64. The cases that matter: the betainc tensor
+(Tucker (18,21,18) → 5.2× storage at f64, (8,10,9) → 25.7× at
+f32-grade truncation) and f32-grade 2-D truncation generally
+(2.3–4.8×). Keeps its original sequencing with the f32 bake work;
+revisit when a 3-parameter recipe or baked-artifact size actually
+hurts.
 
 **External review 2026-07-30:** a full read-only review found 26 issues, several
 release-blocking (silent deep-tail quantile saturation, an aliasing hole in the

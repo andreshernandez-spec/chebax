@@ -18,9 +18,10 @@ two paths agree on the returned quantile.
 WHAT IT DOES NOT MEASURE
 ------------------------
 Accuracy contracts (tests/test_quantiles.py owns them and passes
-unchanged on the recipe path); the gradient path (the custom_jvp is
-evaluated once at the solution, not per iteration; its dP/da still uses
-jax's igamma_grad_a); out-of-box a > 10 (no chebax side to race).
+unchanged on the recipe path); the full gradient path end to end (the
+custom_jvp is evaluated once at the solution; its dP/da term is raced
+in its own section below, since 2026-08-01 it too dispatches to the
+recipe in-box); out-of-box a > 10 (no chebax side to race).
 
 Run:  python experiments/09_gammaincinv_race.py   (~2 min, needs GPU)
 """
@@ -90,6 +91,34 @@ def main():
         xj, xc = jnp.exp(yj[0]), jnp.exp(yc[0])
         agree = float(jnp.max(jnp.abs(xj - xc) / jnp.maximum(xj, 1e-300)))
         print(f"{name:26s} {t['jx'] * 1e3:8.2f}ms {t['cb'] * 1e3:7.2f}ms "
+              f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")
+
+    # the JVP's dP/da term: jax's looped igamma_grad_a series vs the
+    # recipe's a-directional polynomial (the in-box dispatch added with
+    # the solver rewire's follow-up)
+    from chebax._src.recipes.quantiles import _dPda, _dPda_recipe
+
+    hdr2 = f"{'dP/da term':26s} {'igamma_grad_a':>13s} {'recipe':>9s} {'ratio':>6s}  max|diff|"
+    print("\n" + hdr2)
+    print("-" * len(hdr2))
+    x_host = rng.gamma(3.5, 1.0, N)
+    for a in (0.5, 3.5, 9.9):
+        x = jax.device_put(jnp.asarray(x_host, jnp.float64), dev)
+        av = jnp.asarray(a, jnp.float64)
+        fj = jax.jit(lambda xx, aa=av: _dPda(aa, xx))
+        fc = jax.jit(lambda xx, aa=av: _dPda_recipe(aa, xx))
+        yj, yc = [None], [None]
+
+        def lj():
+            yj[0] = fj(x)
+
+        def lc():
+            yc[0] = fc(x)
+
+        t = bench({"jx": (lj, lambda: yj[0].block_until_ready()),
+                   "cb": (lc, lambda: yc[0].block_until_ready())})
+        agree = float(jnp.max(jnp.abs(yj[0] - yc[0])))
+        print(f"a={a:4}, x~Gamma(3.5)        {t['jx'] * 1e3:11.2f}ms {t['cb'] * 1e3:7.2f}ms "
               f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")
 
     print("\nBoth columns run the SAME solver; only the residual CDF differs."

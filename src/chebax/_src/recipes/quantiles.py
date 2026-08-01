@@ -70,6 +70,21 @@ def _ln_beta(a, b):
             - jax.scipy.special.gammaln(a + b))
 
 
+def _dPda_recipe(a, x):
+    """dP(a, x)/da through the gammainc tables: one polynomial where
+    jax's igamma_grad_a runs a looped series. a inside [0.1, 10] only
+    (the JVP's cond dispatches). Differentiable in x through the tables;
+    the a direction is never requested here (the cond traces the
+    fallback's NotImplementedError for a-tangents, so d2/da2 keeps its
+    clear raise on every path)."""
+
+    def p_of_a(t):
+        lser, ltail = _gi_series(t)
+        return _eval_gammainc(t, x, lser, ltail, lower=True)
+
+    return jax.jvp(p_of_a, (a,), (jnp.ones_like(a),))[1]
+
+
 @jax.custom_jvp
 def _dPda(a, x):
     """dP(a, x)/da (regularized lower gamma), differentiable in x.
@@ -266,7 +281,12 @@ def _gammaincinv_jvp(primals, tangents):
     # outer derivative through _dPda's a direction.
     num = _canon(dp) if not isinstance(dp, zero) else 0.0
     if not isinstance(da, zero):
-        num = num - _dPda(_canon(a), xs) * _canon(da)
+        ac = _canon(a)
+        in_box = (ac >= _gt.ALO) & (ac <= _gt.AHI)
+        dPda_val = jax.lax.cond(in_box,
+                                lambda: _dPda_recipe(ac, xs),
+                                lambda: _dPda(ac, xs))
+        num = num - dPda_val * _canon(da)
     dx = num / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 

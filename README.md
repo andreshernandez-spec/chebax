@@ -47,7 +47,9 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
-modules and C++17 headers from an instance).
+modules and C++17 headers from an instance; `dtype="float"` emits an f32
+CUDA-shaped kernel body, and `truncate_tol=1e-7` drops the converged f64
+tail — measured 1.4–2.2x faster f32 evaluation, `experiments/12`).
 
 For pymc users: `import chebax.pytensor` (installs with
 `pip install chebax[pytensor]`) registers JAX-backend lowerings for the

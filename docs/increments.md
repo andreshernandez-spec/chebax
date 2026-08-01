@@ -412,3 +412,24 @@ chebax.numpyro's TruncatedStudentT df range is updated; the robit and
 t-copula notebooks' nu priors could now widen (not re-executed here).
 The general (a, b) box widening stays queued on the CI-policy decision;
 this increment removes its most demanded consumer.
+
+## 22 — the f32 bake line: truncate(tol) and float headers (2026-08-01)
+
+The queued f32 work, parts (1) and (2). truncate(tol) on
+ChebSeries/PiecewiseCheb/Recipe drops each series' converged tail
+(besselk inner degree 79 -> 26 at 1e-7, betainc x 23 -> 9; concrete
+coefficients only, a traced tail has no static length). The gate
+measurement REFUTED the roofline guess: on the RTX 3080, truncation
+speeds f32 GPU evaluation 1.4-2.2x (experiments/12; agreement at each
+family's own metric and f32 floor, including besselk's eps32 |ln K|
+exponent-assembly growth - and a benchmark lesson re-learned: a
+relative agreement metric misfires at oscillatory J's zeros, the
+family metric table exists for a reason). bake.jax_module and
+bake.xsf_header take truncate_tol; xsf_header takes dtype="float",
+emitting f-suffixed literals, float arrays, float locals and a
+scalar-templated Clenshaw - an f32 CUDA-shaped kernel body,
+compile-verified against the runtime at f32 grade with the
+representability caveat stated (K(100) ~ 5e-45 is below the f32
+subnormal floor; that is the format, not the kernel). Tables always
+source from the f64 instance and round at emission. Option (3),
+fpminimax polish, stays dead per the earlier 2% measurement.

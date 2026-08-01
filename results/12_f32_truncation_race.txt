@@ -1,0 +1,10 @@
+jax 0.11.0 on cuda:0, N = 16777216, reps = 25 (medians)
+
+instance            degrees   full64   full32  trunc32 32 ratio  agree (family metric)
+--------------------------------------------------------------------------------------
+besselj(2.5)   24/41 ->8/25  49.63ms   1.44ms   0.72ms    2.01x  1.6e-06
+besselk(1.5)   79/23 ->26/5  59.47ms   1.41ms   0.64ms    2.20x  8.8e-06
+betainc(2,3)    23/23 ->9/9  41.95ms   0.72ms   0.53ms    1.36x  3.9e-07
+
+'32 ratio' is full-degree f32 over truncated f32: the truncation
+speedup, if the roofline is wrong and there is one.

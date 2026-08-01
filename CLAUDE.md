@@ -37,7 +37,10 @@ This file is how to work here.
   groups): reconstruction overhead ≤ 1.07× vs the uniform floor for
   n/group ≥ 16k (betainc, N = 2^24), besselk ≤ 1.08× down to n/group = 1024,
   and vs jax's betainc the per-group path wins every measured cell, worst 7.3×
-  (16384 groups of 64), 44–98× at MCMC scale (4 groups). Consumer-GPU fp64 is
+  (16384 groups of 64), 44–98× at MCMC scale (4 groups); f32 truncation race (`experiments/12`):
+  truncate(1e-7) speeds f32 GPU evaluation 1.4–2.2× (besselj 2.0×, besselk
+  2.2×, betainc 1.4×) at each family's f32 floor — the "extra terms are free"
+  roofline guess was wrong on this part. Consumer-GPU fp64 is
   compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
   analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's

@@ -237,7 +237,8 @@ covers a → ∞ through the 1/a variable with erfc XLA-native. Same fits-both-o
 consideration as betainc does not arise (single parameter). Also likely fixes XLA
 igamma's f32 accuracy reputation in passing.
 
-**Queued f32 work (2026-07-30, Andres):** three bake-step options, in order of value.
+**Queued f32 work (2026-07-30, Andres; (1) and (2) DELIVERED 2026-08-01,
+increment 22):** three bake-step options, in order of value.
 (1) Degree truncation for f32: `astype(f32)` keeps the full f64 degree, roughly 2× the
 terms f32 accuracy needs (exp-02: f32 degrees are about half the f64 ones); a
 `truncate(tol)` dropping the converged tail would halve the FLOPs — benchmark under B3
@@ -250,6 +251,13 @@ downcast leaves only ~2% on the table in the Chebyshev basis (coefficient roundi
 the rest), so this only becomes worthwhile if chebax ever targets correctly-rounded-
 grade f32 kernels. In the monomial basis the calculus flips — another reason the
 runtime stays Chebyshev + Clenshaw.
+MEASURED 2026-08-01 (`experiments/12_f32_truncation_race.py`): the roofline
+prediction was WRONG on the 3080 — truncate(1e-7) speeds f32 GPU evaluation
+1.4–2.2× (besselj 2.0×, besselk 2.2×, betainc 1.4×) at each family's f32
+floor. truncate(tol) ships on ChebSeries/PiecewiseCheb/Recipe; the bake
+emitters take truncate_tol and xsf_header takes dtype="float" (f-suffixed
+literals, float arrays and locals, templated Clenshaw), compile-verified at
+f32 grade. Option (3), fpminimax, stays dead per the 2% measurement.
 
 **Queued per-group parameter API (2026-07-30, Andres; strictly after the B3
 benchmark study, scheduled 2026-07-31 in `../bessel/`):** a wrapper over the

@@ -126,6 +126,17 @@ class ChebSeries:
         """Round the coefficients; error floor grows to ~eps(dtype)*sum|c|."""
         return ChebSeries(self.coef.astype(dtype), self.domain)
 
+    def truncate(self, tol):
+        """Drop the converged tail: keep coefficients through the last one
+        above tol * max|c|. Adds up to ~tol relative error - pair with
+        astype(float32) at tol ~ 1e-7, where the f64 fit carries roughly
+        twice the terms f32 accuracy needs. Concrete coefficients only
+        (a traced tail has no static length)."""
+        c = np.asarray(self.coef)
+        keep = np.nonzero(np.abs(c) > tol * np.abs(c).max())[0]
+        n = int(keep.max()) + 1 if keep.size else 1
+        return ChebSeries(self.coef[:n], self.domain)
+
     def __repr__(self):
         return f"ChebSeries(degree={self.degree}, domain={self.domain}, dtype={self.coef.dtype})"
 
@@ -207,6 +218,15 @@ class PiecewiseCheb:
 
     def astype(self, dtype):
         return PiecewiseCheb(self.coef.astype(dtype), self.breaks)
+
+    def truncate(self, tol):
+        """Drop trailing coefficient COLUMNS below tol * max|c| across all
+        segments (rows share one degree by construction)."""
+        c = np.asarray(self.coef)
+        col = np.abs(c).max(axis=0)
+        keep = np.nonzero(col > tol * col.max())[0]
+        n = int(keep.max()) + 1 if keep.size else 1
+        return PiecewiseCheb(self.coef[:, :n], self.breaks)
 
     def __repr__(self):
         return (f"PiecewiseCheb(segments={len(self.breaks) - 1}, degree={self.degree}, "

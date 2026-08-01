@@ -75,9 +75,16 @@ def _py_tuple(name, vals):
     return lines
 
 
-def jax_module(inst, path, name=None):
-    """Write a self-contained pure-jax module defining <name>(x). Returns name."""
+def jax_module(inst, path, name=None, truncate_tol=None):
+    """Write a self-contained pure-jax module defining <name>(x). Returns name.
+
+    truncate_tol drops each series' converged tail before tracing (see
+    ChebSeries.truncate); constants stay weak-typed python floats, so the
+    emitted function follows x's dtype either way - truncation at ~1e-7
+    just halves the terms for f32 use."""
     _check(inst)
+    if truncate_tol is not None:
+        inst = inst.truncate(truncate_tol)
     body, coefs, result = trace_and_emit(inst, cpp=False)
     name = name or _family(inst)
     statics = ", ".join(f"{k} = {v!r}" for k, v in _statics(inst).items())
@@ -115,24 +122,36 @@ def jax_module(inst, path, name=None):
     return name
 
 
-def _cpp_array(name, vals):
+def _cpp_array(name, vals, ctype="double"):
     vals = [float(v) for v in np.asarray(vals)]
-    body = "\n".join("    " + ", ".join(repr(x) for x in vals[i:i + 4]) + ","
+    suf = "f" if ctype == "float" else ""
+    body = "\n".join("    " + ", ".join(repr(x) + suf for x in vals[i:i + 4]) + ","
                      for i in range(0, len(vals), 4))
-    return f"inline constexpr double {name}[{len(vals)}] = {{\n{body}\n}};"
+    return f"inline constexpr {ctype} {name}[{len(vals)}] = {{\n{body}\n}};"
 
 
-def xsf_header(inst, path, name=None):
-    """Write a standalone C++17 header. Returns the emitted function name."""
+def xsf_header(inst, path, name=None, dtype="double", truncate_tol=None):
+    """Write a standalone C++17 header. Returns the emitted function name.
+
+    dtype: "double" (default) or "float" - float emits f-suffixed
+    literals, float arrays and float locals throughout (a CUDA f32
+    kernel body). Tables are always sourced from the f64 instance and
+    rounded at emission. truncate_tol drops each series' converged tail
+    first; pair dtype="float" with truncate_tol=1e-7 (the f64 fit
+    carries roughly twice the terms f32 needs)."""
+    if dtype not in ("double", "float"):
+        raise ValueError(f"dtype must be 'double' or 'float', got {dtype!r}")
     _check(inst)
-    body, coefs, result = trace_and_emit(inst, cpp=True)
+    if truncate_tol is not None:
+        inst = inst.truncate(truncate_tol)
+    body, coefs, result = trace_and_emit(inst, cpp=True, ctype=dtype)
     name = name or f"{_family(inst)}_{_tag(inst)}"
     statics = ", ".join(f"{k} = {v!r}" for k, v in _statics(inst).items())
     guard = name.upper()
-    arrays = "\n\n".join(_cpp_array(cname, arr) for cname, arr in coefs.items())
+    arrays = "\n\n".join(_cpp_array(cname, arr, dtype) for cname, arr in coefs.items())
     nl = "\n"
     src = f"""// {type(inst).__name__} ({statics}), baked by chebax {__version__} from the
-// runtime jaxpr. Self-contained C++17, double precision; do not edit.
+// runtime jaxpr. Self-contained C++17, {dtype} precision; do not edit.
 #ifndef CHEBAX_BAKED_{guard}_H
 #define CHEBAX_BAKED_{guard}_H
 
@@ -149,11 +168,11 @@ namespace detail {{
 
 {arrays}
 
-template <int N>
-XSF_HOST_DEVICE inline double clenshaw(const double (&c)[N], double t) {{
-    double b1 = 0.0, b2 = 0.0;
+template <typename T, int N>
+XSF_HOST_DEVICE inline T clenshaw(const T (&c)[N], T t) {{
+    T b1 = T(0), b2 = T(0);
     for (int k = N - 1; k > 0; --k) {{
-        double bk = 2.0 * t * b1 - b2 + c[k];
+        T bk = T(2) * t * b1 - b2 + c[k];
         b2 = b1;
         b1 = bk;
     }}
@@ -163,7 +182,7 @@ XSF_HOST_DEVICE inline double clenshaw(const double (&c)[N], double t) {{
 }} // namespace detail
 }} // namespace detail_{name}
 
-XSF_HOST_DEVICE inline double {name}(double x) {{
+XSF_HOST_DEVICE inline {dtype} {name}({dtype} x) {{
     using namespace detail_{name};
 {nl.join(body)}
     return {result};

@@ -28,7 +28,7 @@ v-axis reaches it and the box has no upper end. First-kind nodes never
 sample v = 0 itself; the smallest is v = 5.0e-4 (a = 2.0e4) at 36
 nodes. The earlier a = 1000 cap was a REFERENCE limit: mpmath's
 gammainc stops converging near lambda ~ 1 for a >~ 1e5, so Q comes
-from Legendre's continued fraction here (experiments/15) and P from
+from Legendre's continued fraction here (experiments/16) and P from
 the 1F1 series, each on the side where it converges, and the erfc
 split is always taken on its small side (experiments/14; the naive
 subtraction is catastrophic past ~92 nats). All ~1.4k coefficients
@@ -76,7 +76,7 @@ def _hyp1f1_1(mp, a1, x):
 
 def _log_q(mp, a, x):
     """ln Q(a, x) by Legendre's continued fraction (modified Lentz), for
-    x > a. mpmath's own gammainc gives up out here; see experiments/15."""
+    x > a. mpmath's own gammainc gives up out here; see experiments/16."""
     tiny = mp.mpf(10) ** (-2 * DPS)
     eps = mp.mpf(10) ** (-DPS - 5)
     b = x + 1 - a

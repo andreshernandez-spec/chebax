@@ -6,7 +6,7 @@ tail's digits; the reference artifact recorded in experiments/14). Past
 a ~ 1e5 mpmath's gammainc stops converging near lambda ~ 1, so the
 large-a tests carry their own side-aware reference: the 1F1 series for
 P below the mean, Legendre's continued fraction for Q above it, each
-where it converges (experiments/15).
+where it converges (experiments/16).
 
 P/Q are CDFs: absolute error. The log forms are relative on
 max(1, |ln .|). Measured worst over a denser sweep than the grids

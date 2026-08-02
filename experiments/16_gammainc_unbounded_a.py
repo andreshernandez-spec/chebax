@@ -33,7 +33,7 @@ handles.
 
 FINDINGS (2026-08-02, reproduced by this script)
 ------------------------------------------------
-See results/15_gammainc_unbounded_a.txt.
+See results/16_gammainc_unbounded_a.txt.
 
 WHAT IT DOES NOT MEASURE
 ------------------------
@@ -43,7 +43,7 @@ lnGamma(a+1) is a cancelling bracket whose terms grow like a ln a, so
 the LOG forms are what stay accurate out there while P and Q
 themselves underflow, as they must.
 
-Run:  python experiments/15_gammainc_unbounded_a.py  (~40 s, CPU)
+Run:  python experiments/16_gammainc_unbounded_a.py  (~40 s, CPU)
 """
 
 import sys

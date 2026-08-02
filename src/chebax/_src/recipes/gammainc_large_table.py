@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th v-coefficient of the k-th argument coefficient, v = ASPLIT/
 
 import numpy as np
 
-META = {'ne': 26, 'nv_t': 10, 'nl': 24, 'nv_d': 36, 'ns': 16, 'nv_u': 12, 'asplit': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '191b48b9e9fafe37'}
+META = {'ne': 26, 'nv_t': 10, 'nl': 24, 'nv_d': 36, 'ns': 16, 'nv_u': 12, 'asplit': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '13f5923067111bbc'}
 ASPLIT = 10.0
 VLO = 0.0
 ELO = -0.7

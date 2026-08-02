@@ -690,7 +690,7 @@ v = 10/a = 0 is a = inf, and it is a regular point of all three kernels:
 D -> -ln(1 - lambda) and U -> -ln(1 - s) (the geometric sums their series
 become once (a+1)_n / a^n -> 1), T -> Temme's leading coefficient. So the
 v-axis simply extends to [0, 1] and the box loses its upper end.
-experiments/15 measures what that costs: nothing in the Temme table
+experiments/16 measures what that costs: nothing in the Temme table
 (eta 20, v 7, unchanged), nothing in the upper zone (s 11, v 8), and one
 coefficient in the lower zone (v 28 -> 29). First-kind nodes never sample
 v = 0 itself; the smallest is a = 2.0e4 at 36 nodes.

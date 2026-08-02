@@ -29,6 +29,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import vonmises_table as _vt
 from chebax._src.recipes._common import canon_float as _canon
+from chebax._src.recipes._common import float_params
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
 from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.besseli import besseli_fn
@@ -66,7 +67,7 @@ def _cdf_impl(kappa, theta):
 
 
 @jax.custom_jvp
-def vonmises_cdf(kappa, theta):
+def _vonmises_cdf_cj(kappa, theta):
     """CDF of vonMises(mu=0, kappa) at theta in [-pi, pi]; kappa traceable.
 
     The kappa gradient is finite on the whole documented domain including
@@ -74,7 +75,7 @@ def vonmises_cdf(kappa, theta):
     return _cdf_impl(_canon(kappa), _canon(theta))
 
 
-@vonmises_cdf.defjvp
+@_vonmises_cdf_cj.defjvp
 def _vonmises_cdf_jvp(primals, tangents):
     kappa, theta = primals
     dkappa, dtheta = tangents
@@ -102,7 +103,7 @@ def _log_pdf(kappa, theta):
 
 
 @jax.custom_jvp
-def vonmises_icdf(kappa, p):
+def _vonmises_icdf_cj(kappa, p):
     """Quantile of vonMises(mu=0, kappa): inverse of vonmises_cdf in theta.
 
     Guarantee instead of silent saturation: the final CDF residual is
@@ -156,7 +157,7 @@ def vonmises_icdf(kappa, p):
     return jnp.where(oob, jnp.nan, th)
 
 
-@vonmises_icdf.defjvp
+@_vonmises_icdf_cj.defjvp
 def _vonmises_icdf_jvp(primals, tangents):
     kappa, p = primals
     dkappa, dp = tangents
@@ -171,3 +172,11 @@ def _vonmises_icdf_jvp(primals, tangents):
     # solve must hand back nan in reverse mode as well as forward
     return th, dth * jnp.where(interior, 1.0,
                                jnp.where(jnp.isnan(th), jnp.nan, 0.0))
+
+
+# Public entry points: the rules sit on the private names so an INTEGER
+# kappa (vonmises_cdf(5, theta)) is a float before any tangent exists.
+# jax gives integer primals float0 tangents, which the rules cannot do
+# arithmetic on (review, 2026-08-02).
+vonmises_cdf = float_params(_vonmises_cdf_cj)
+vonmises_icdf = float_params(_vonmises_icdf_cj)

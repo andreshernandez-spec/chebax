@@ -73,6 +73,7 @@ from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import canon_float as _canon
+from chebax._src.recipes._common import float_params
 from chebax._src.recipes._common import canon_tag as _canon_tag
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
 from chebax._src.recipes._common import traced_coefs
@@ -609,7 +610,7 @@ def _log_stdtr_impl(nu, t):
 
 
 @jax.custom_jvp
-def stdtr(nu, t):
+def _stdtr_cj(nu, t):
     """Student-t CDF with nu degrees of freedom (nu in [0.2, 200], traceable).
 
     jax.grad works with respect to nu as well: learnable degrees of freedom.
@@ -618,7 +619,7 @@ def stdtr(nu, t):
     return _stdtr_impl(_canon(nu), _canon(t))
 
 
-@stdtr.defjvp
+@_stdtr_cj.defjvp
 def _stdtr_jvp(primals, tangents):
     nu, t = primals
     dnu, dt = tangents
@@ -638,7 +639,7 @@ def _stdtr_jvp(primals, tangents):
 
 
 @jax.custom_jvp
-def log_stdtr(nu, t):
+def _log_stdtr_cj(nu, t):
     """ln F(t; nu), the Student-t log-CDF, with no underflow floor in the
     lower tail.
 
@@ -665,7 +666,7 @@ def log_stdtr(nu, t):
     return _log_stdtr_impl(_canon(nu), _canon(t))
 
 
-@log_stdtr.defjvp
+@_log_stdtr_cj.defjvp
 def _log_stdtr_jvp(primals, tangents):
     nu, t = primals
     dnu, dt = tangents
@@ -691,7 +692,7 @@ def log_stdtr_sf(nu, t):
     The distribution is symmetric, so this is the log-CDF at -t and the
     negation is exact: no 1 - F cancellation anywhere, and the same
     accuracy in the upper tail that log_stdtr has in the lower."""
-    return log_stdtr(nu, -_canon(t))
+    return _log_stdtr_cj(_canon(nu), -_canon(t))
 
 
 def _stdtrit_impl(nu, p):
@@ -723,7 +724,7 @@ def _stdtrit_impl(nu, p):
 
 
 @jax.custom_jvp
-def stdtrit(nu, p):
+def _stdtrit_cj(nu, p):
     """Student-t quantile with nu degrees of freedom (nu in [0.2, 200]).
 
     Closed form via betaincinv in both orientations: exact 0 at p = 1/2,
@@ -737,7 +738,7 @@ def stdtrit(nu, p):
     return _stdtrit_impl(_canon(nu), _canon(p))
 
 
-@stdtrit.defjvp
+@_stdtrit_cj.defjvp
 def _stdtrit_jvp(primals, tangents):
     nu, p = primals
     dnu, dp = tangents
@@ -753,6 +754,16 @@ def _stdtrit_jvp(primals, tangents):
     dt = (_canon(dp) - dF_dnu * _canon(dnu)) / pdf
     dt = jnp.where(finite, dt, 0.0)
     return t, jnp.where(jnp.isnan(t), jnp.nan, dt)
+
+
+# Public entry points. The custom_jvp rules live on the private names
+# above so an INTEGER nu (stdtr(4, t) is how anyone writes it) is a float
+# before any tangent exists; jax hands a rule float0 tangents for integer
+# primals, and the rules' arithmetic dies on those (review, 2026-08-02).
+stdtr = float_params(_stdtr_cj)
+log_stdtr = float_params(_log_stdtr_cj)
+stdtrit = float_params(_stdtrit_cj)
+log_stdtr_sf = float_params(log_stdtr_sf)
 
 
 def chi2inv(k, p):

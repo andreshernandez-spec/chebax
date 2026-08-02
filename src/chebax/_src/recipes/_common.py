@@ -9,11 +9,13 @@ cached factories; `traced_coefs` is the jax path used by the *_fn traced
 variants (differentiable in the parameter through the series custom_jvp).
 """
 
+import functools
 import math
+
+import numpy as np
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from chebax._src import algorithms
 from chebax._src.series import _chebval
@@ -32,6 +34,24 @@ def canon_float(x):
     carry; an explicit float32 input under x64 raised a carry dtype
     mismatch instead of computing. One deliberate dtype for everything."""
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
+
+
+def float_params(impl):
+    """Public entry point for a custom_jvp'd implementation: promote every
+    argument to the canonical float dtype before the rule sees it.
+
+    A python or numpy INTEGER parameter is not a differentiable type, so
+    jax hands the rule a float0 tangent for it and the rule's own
+    arithmetic dies on that: grad through stdtr(4, t), besseli_fn(2, x)
+    and vonmises_cdf(5, t) all failed this way (review, 2026-08-02), and
+    nu=4 or kappa=5 is how anyone would write those. Converting OUTSIDE
+    the rule turns the parameter into an ordinary float constant, which
+    is what the caller meant; converting inside cannot work, since by
+    then the tangent already exists."""
+    @functools.wraps(impl)
+    def public(*args, **kw):
+        return impl(*[canon_float(a) for a in args], **kw)
+    return public
 
 
 def param_coefs(table, lo, hi, p):

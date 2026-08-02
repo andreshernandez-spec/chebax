@@ -11,17 +11,35 @@ sampling by inverse CDF (has_rsample = True, pathwise gradients in every
 parameter including the shapes), truncation-normalized log_prob,
 cdf/icdf, dependent interval support.
 
+The truncation algebra runs entirely on logs. The normalizer is
+ln(F(hi) - F(lo)), built from a log-CDF and a log survival function
+through logdiffexp and taken in whichever tail holds both endpoints;
+icdf aims at a lower-tail or an upper-tail probability to match. A plain
+F(hi) - F(lo) is exactly zero as soon as both endpoints land on the same
+float, which happens early: under Gamma(3) both ends of [50, 51] give
+F = 1.0, and that interval has perfectly ordinary conditional moments.
+An interval in the BULK narrower than the CDF's own absolute error stays
+unresolvable, in logs as much as out of them, and comes back with a
+relative error of about eps over its mass.
+
 The chebax contract applies: shape parameters are uniform per call (a
-scalar or one traced latent each; batched shape arrays are not served -
-use chebax.pergroup for per-group shapes). Domains, from the underlying
-tables: TruncatedBeta needs (concentration1, concentration0) in
-[0.1, 100]^2; TruncatedStudentT needs df in [0.2, 200]; TruncatedGamma's
-concentration solves through jax's own gammainc and needs only
-concentration > 0. Rates, bounds and data are unrestricted.
+scalar or one traced latent each; batched shape arrays are not served,
+use chebax.pergroup for per-group shapes), and a non-scalar shape is
+rejected at construction. Domains, from the underlying tables and
+checked eagerly when the value is not traced: TruncatedBeta needs
+(concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
+needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
+its normalizer falling back to jax's own gammainc pair outside chebax's
+[0.1, 1000] box (which costs the deep upper tail there, since those
+underflow; inside the box the (10, 1000] range runs on the Temme-zone
+tables). Rates, bounds and data are unrestricted.
 
 numpyro is imported here and only here (the chebax runtime proper stays
 jax + numpy). Install with:  pip install chebax[numpyro]
 """
+
+import math
+from collections import namedtuple
 
 import numpy as np
 
@@ -37,11 +55,47 @@ except ImportError as e:
         "chebax.numpyro needs numpyro: pip install chebax[numpyro]") from e
 
 from jax import lax, random
-from jax.scipy.special import betaln, gammainc, gammaln
+from jax.scipy.special import betaln, gammaln, ndtri
 
 import chebax
+from chebax._src.recipes import betainc_table as _bt
+from chebax._src.recipes import gammainc_large_table as _glt
+from chebax._src.recipes import gammainc_table as _gt
+from chebax._src.recipes import stdtr_table as _st
+from chebax._src.recipes._common import canon_float, canon_tag, newton_bisect
+# the log-CDF pair for the Student-t is not re-exported at the top level yet
+from chebax._src.recipes.quantiles import (_dPda, _limits, _t_logpdf,
+                                           log_stdtr, log_stdtr_sf)
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT"]
+
+_LN2 = math.log(2.0)
+_DF_LO, _DF_HI = 2.0 * _st.BLO, 2.0 * _st.BHI      # nu = 2 hb, hb the table's b
+_REAL_OR_INF = constraints.interval(-jnp.inf, jnp.inf)
+
+
+def _logdiffexp(a, b):
+    """ln(e^a - e^b) for a >= b, without forming either exponential.
+
+    b = -inf gives a back exactly, which is what an endpoint sitting at the
+    edge of the support needs; a = -inf (both terms zero) gives -inf."""
+    fin = a > -jnp.inf
+    a_s = jnp.where(fin, a, 0.0)
+    d = jnp.minimum(b - a_s, 0.0)          # rounding can push b just past a
+    return jnp.where(fin, a_s + jnp.log(-jnp.expm1(d)), -jnp.inf)
+
+
+def _pick(mask, when_true, when_false):
+    """Take one tail branch or the other. Batched bounds need a select, but
+    the usual scalar case takes a real branch, and a concrete one does not
+    even build the quantile solve it is not going to run."""
+    if jnp.ndim(mask) != 0:
+        return jnp.where(mask, when_true(), when_false())
+    try:
+        taken = bool(mask)
+    except jax.errors.TracerBoolConversionError:
+        return lax.cond(mask, when_true, when_false)
+    return when_true() if taken else when_false()
 
 
 def _check_bounds_eagerly(low, high):
@@ -52,11 +106,214 @@ def _check_bounds_eagerly(low, high):
         pass
 
 
-class TruncatedGamma(dist.Distribution):
+def _check_scalar(owner, name, v):
+    if jnp.ndim(v) != 0:
+        raise ValueError(
+            f"{owner} needs a scalar {name}: chebax shape parameters are "
+            "uniform per call, use chebax.pergroup for per-group shapes")
+
+
+def _check_shape_range(owner, name, v, lo, hi):
+    try:  # a traced shape cannot be checked at construction time
+        x = float(np.asarray(v))
+    except jax.errors.TracerArrayConversionError:
+        return
+    if not lo <= x <= hi:
+        raise ValueError(f"{owner} needs {name} in [{lo}, {hi}], got {x}")
+
+
+def _in_box(a):
+    # the recipe's a-box: small tables to 10, Temme-zone tables to 1000
+    # (the public log forms dispatch between them internally)
+    return (a >= _gt.ALO) & (a <= _glt.AHI)
+
+
+def _log_pq(a, x, use_recipe):
+    """(ln P(a, x), ln Q(a, x)). use_recipe is a python bool, so each
+    lax.cond branch traces one: the chebax tables inside their a-box
+    (fixed-degree polynomials, still accurate where P or Q underflows),
+    jax's own gammainc pair outside it, whose logs bottom out where those
+    functions do."""
+    if use_recipe:
+        return chebax.log_gammainc_fn(a, x), chebax.log_gammaincc_fn(a, x)
+    return (jnp.log(jax.scipy.special.gammainc(a, x)),
+            jnp.log(jax.scipy.special.gammaincc(a, x)))
+
+
+def _gamma_log_pq(a, x):
+    """(ln P, ln Q) for any a > 0. One scalar cond, only one branch runs."""
+    a, x = canon_float(a), canon_float(x)
+    return lax.cond(_in_box(a), lambda: _log_pq(a, x, True),
+                    lambda: _log_pq(a, x, False))
+
+
+def _qinv_solve(a, sc, use_recipe):
+    """Newton on v = ln x for ln Q(a, e^v) = ln sc. Returns (v, residual).
+
+    Against the LOG of Q for the same reason gammaincinv iterates on the
+    log probability: ln Q is nearly linear in v wherever Q is exponentially
+    small, so a deep tail converges in a couple of steps instead of one
+    e-fold per step. The residual is judged on whichever of P and Q is
+    computed directly (Q above the seam, P below it), since that is the
+    side carrying relative accuracy."""
+    lim = _limits(canon_tag())
+    lq_t, lp_t = jnp.log(sc), jnp.log1p(-sc)
+    lga = gammaln(a)
+
+    def f_and_df(v):
+        x = jnp.exp(v)
+        lq = _log_pq(a, x, use_recipe)[1]
+        # increasing in v, as newton_bisect wants; slope is x pdf(x)/Q
+        return lq_t - lq, jnp.exp(a * v - x - lga - lq)
+
+    # Wilson-Hilferty for the bulk, and below s = 1e-4 the exact tail
+    # asymptotic ln Q = (a-1) ln x - x - lnGamma(a), inverted by three
+    # fixed-point passes (WH drifts off by a factor there). The clamp only
+    # guards the start's own log; the bracket recovers a bad one.
+    z = -ndtri(sc)
+    wh = a * (1.0 - 1.0 / (9.0 * a) + z / (3.0 * jnp.sqrt(a))) ** 3
+    r = -lq_t - lga
+    xa = jnp.maximum(r, 1.0)
+    for _ in range(3):
+        xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
+    pos = wh > 0.0
+    v_wh = jnp.where(pos, jnp.log(jnp.where(pos, wh, 1.0)), jnp.log(xa))
+    v0 = jnp.clip(jnp.where(sc < 1e-4, jnp.log(xa), v_wh), lim.lo, lim.v_hi)
+    v = newton_bisect(f_and_df, v0, jnp.full_like(sc, lim.lo),
+                      jnp.full_like(sc, lim.v_hi), lim.n_gamma)
+
+    x = jnp.exp(v)
+    lp, lq = _log_pq(a, x, use_recipe)
+    # direct-side boundary: the small table's seam at x = 8 for a <= 10;
+    # the Temme path is relatively accurate on both sides, split at the
+    # mean; the jax fallback's own transition sits near 1 + a
+    seam = (jnp.where(a <= _gt.AHI, _gt.XS, a) if use_recipe
+            else 1.0 + a)
+    return v, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - lq_t, lp - lp_t)))
+
+
+@jax.custom_jvp
+def _gammaqinv(a, s):
+    """x with Q(a, x) = s: the Gamma(a, 1) upper-tail quantile, for s <= 1/2.
+
+    gammaincinv cannot serve here. Its target is the lower-tail probability
+    1 - s, which rounds to exactly 1 once s falls below eps, and that is
+    where a truncation deep in the upper tail lives; solving against ln Q
+    keeps every digit of s. Same shape of solve as gammaincinv's, sharing
+    its constants: safeguarded Newton on v = ln x, fixed count, bracketed
+    by the canonical dtype's own exponent range. Measured against
+    mpmath at 50 dps over a in [0.05, 500] and s in [1e-300, 1/2]: worst
+    1.9e-12 float64, 3.9e-4 float32, the latter in the wedge x just below
+    8 at small a, where Q is 1 - P and only absolutely accurate."""
+    a, s = canon_float(a), canon_float(s)
+    lim = _limits(canon_tag())
+    interior = (s > 0.0) & (s < 1.0)
+    sc = jnp.where(interior, s, 0.5)
+    v, rel = lax.cond(_in_box(a), lambda: _qinv_solve(a, sc, True),
+                      lambda: _qinv_solve(a, sc, False))
+    at_ceil = v >= lim.v_hi - 0.5           # the quantile itself overflows
+    x = jnp.where(at_ceil, jnp.inf, jnp.exp(v))
+    x = jnp.where(~at_ceil & (rel > lim.rtol), jnp.nan, x)
+    x = jnp.where(s <= 0.0, jnp.inf, jnp.where(s >= 1.0, 0.0, x))
+    oob = jnp.isnan(s) | (s < 0.0) | (s > 1.0) | ~((a > 0.0) & jnp.isfinite(a))
+    return jnp.where(oob, jnp.nan, x)
+
+
+def _gammaqinv_jvp(primals, tangents):
+    a, s = primals
+    da, ds = tangents
+    zero = jax.custom_derivatives.SymbolicZero
+    a_c = canon_float(a)
+    x = _gammaqinv(a_c, s)
+    interior = jnp.isfinite(x) & (x > 0.0)
+    xs = jnp.where(interior, x, 1.0)
+    pdf = jnp.exp((a_c - 1.0) * jnp.log(xs) - xs - gammaln(a_c))
+    # IFT on Q(a, x) = s, with dQ/dx = -pdf and dQ/da = -dP/da
+    num = canon_float(ds) if not isinstance(ds, zero) else 0.0
+    if not isinstance(da, zero):
+        num = num + _dPda(a_c, xs) * canon_float(da)
+    dx = -num / pdf
+    return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
+
+
+_gammaqinv.defjvp(_gammaqinv_jvp, symbolic_zeros=True)
+
+
+_Norm = namedtuple("_Norm", "lnz lo_f lo_s hi_f hi_s upper")
+
+
+class _Truncated(dist.Distribution):
+    """Truncation algebra shared by the three classes, all of it in logs.
+
+    A subclass supplies the base law's (ln F, ln S) pair, its log density,
+    and the two one-sided inverses (from a lower-tail probability and from
+    an upper-tail one). Every endpoint value the base law sees is masked
+    to a safe interior point first: an infinite bound reaching an arithmetic
+    op poisons reverse-mode tangents even when the result is selected away.
+    """
+
+    has_rsample = True
+
+    @constraints.dependent_property(is_discrete=False, event_dim=0)
+    def support(self):
+        return constraints.interval(self.low, self.high)
+
+    def _norm(self):
+        lo_f, lo_s = self._log_cdf_sf(self.low)
+        hi_f, hi_s = self._log_cdf_sf(self.high)
+        # Work in the tail that holds both endpoints: below the median the
+        # mass is a difference of log-CDFs, above it one of log survivals,
+        # and each keeps its digits where the other has already rounded to
+        # a constant. A straddling interval takes the lower form; it has
+        # O(1) mass on at least one side.
+        upper = lo_f >= -_LN2
+        lnz = jnp.where(upper, _logdiffexp(lo_s, hi_s), _logdiffexp(hi_f, lo_f))
+        return _Norm(lnz, lo_f, lo_s, hi_f, hi_s, upper)
+
+    def rsample(self, key, sample_shape=()):
+        u = random.uniform(key, sample_shape + self.batch_shape)
+        return self.icdf(u)
+
+    sample = rsample
+
+    def icdf(self, q):
+        n = self._norm()
+        q = jnp.asarray(q)
+        # p = F(lo) + q Z and s = S(hi) + (1-q) Z, by logaddexp so no
+        # difference is formed; 1 - q is exact for q >= 1/2, where the upper
+        # side needs it. An interval inside one tail keeps its own target
+        # below 1/2 and so keeps full relative accuracy. A straddling one
+        # takes the lower form and hits the untruncated quantile's own limit
+        # near q = 1, no worse.
+        lp = jnp.logaddexp(n.lo_f, jnp.log(q) + n.lnz)
+        ls = jnp.logaddexp(n.hi_s, jnp.log1p(-q) + n.lnz)
+        x = _pick(n.upper,
+                  lambda: self._icdf_upper(jnp.exp(ls)),
+                  lambda: self._icdf_lower(jnp.exp(lp)))
+        x = jnp.clip(x, self.low, self.high)
+        return jnp.where(q <= 0.0, self.low,
+                         jnp.where(q >= 1.0, self.high, x))
+
+    def cdf(self, value):
+        n = self._norm()
+        v = jnp.clip(jnp.asarray(value), self.low, self.high)
+        f, s = self._log_cdf_sf(v)
+        num = jnp.where(n.upper, _logdiffexp(n.lo_s, s), _logdiffexp(f, n.lo_f))
+        return jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
+
+    @validate_sample
+    def log_prob(self, value):
+        value = jnp.asarray(value)
+        inside = (value >= self.low) & (value <= self.high)
+        return jnp.where(inside, self._log_density(value) - self._norm().lnz,
+                         -jnp.inf)
+
+
+class TruncatedGamma(_Truncated):
     """Gamma(concentration, rate) truncated to [low, high].
 
-    concentration must be uniform per call (a scalar or one traced
-    latent); rate, low, high broadcast freely. high may be inf.
+    concentration must be a positive scalar (or one traced latent); rate,
+    low, high broadcast freely. high may be inf.
     """
 
     arg_constraints = {
@@ -66,10 +323,10 @@ class TruncatedGamma(dist.Distribution):
         "high": constraints.positive,
     }
     reparametrized_params = ["concentration", "rate", "low", "high"]
-    has_rsample = True
 
     def __init__(self, concentration, rate=1.0, *, low=0.0, high=jnp.inf,
                  validate_args=None):
+        _check_scalar("TruncatedGamma", "concentration", concentration)
         self.concentration = jnp.asarray(concentration)
         self.rate, self.low, self.high = promote_shapes(
             jnp.asarray(rate), jnp.asarray(low), jnp.asarray(high))
@@ -79,64 +336,58 @@ class TruncatedGamma(dist.Distribution):
             jnp.shape(high))
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return constraints.interval(self.low, self.high)
+    def _log_cdf_sf(self, value):
+        # mask before the multiply: high = inf otherwise reaches
+        # rate * high, and reverse mode turns the masked-away 0 * inf into
+        # a nan rate gradient (the default one-sided truncation)
+        inside = (value > 0.0) & jnp.isfinite(value)
+        v = jnp.where(inside, value, 1.0)
+        f, s = _gamma_log_pq(self.concentration, self.rate * v)
+        below = value <= 0.0
+        return (jnp.where(inside, f, jnp.where(below, -jnp.inf, 0.0)),
+                jnp.where(inside, s, jnp.where(below, 0.0, -jnp.inf)))
 
-    def _bounds(self):
-        flo = gammainc(self.concentration, self.rate * self.low)
-        # high = inf means no upper truncation; keep the argument finite
-        # so the unused branch cannot poison gradients
-        finite = jnp.isfinite(self.high)
-        xhi = jnp.where(finite, self.rate * self.high, 1.0)
-        fhi = jnp.where(finite, gammainc(self.concentration, xhi), 1.0)
-        return flo, fhi
-
-    def rsample(self, key, sample_shape=()):
-        u = random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
-
-    sample = rsample
-
-    def icdf(self, q):
-        flo, fhi = self._bounds()
-        return chebax.gammaincinv(self.concentration,
-                                  flo + q * (fhi - flo)) / self.rate
-
-    def cdf(self, value):
-        flo, fhi = self._bounds()
-        f = gammainc(self.concentration, self.rate * value)
-        return jnp.clip((f - flo) / (fhi - flo), 0.0, 1.0)
-
-    @validate_sample
-    def log_prob(self, value):
-        flo, fhi = self._bounds()
+    def _log_density(self, value):
         c = self.concentration
-        base = (c * jnp.log(self.rate) + (c - 1.0) * jnp.log(value)
-                - self.rate * value - gammaln(c))
-        inside = (value >= self.low) & (value <= self.high)
-        return jnp.where(inside, base - jnp.log(fhi - flo), -jnp.inf)
+        pos = (value > 0.0) & jnp.isfinite(value)
+        v = jnp.where(pos, value, 1.0)
+        core = (c * jnp.log(self.rate) + (c - 1.0) * jnp.log(v)
+                - self.rate * v - gammaln(c))
+        # x = 0 leaves (c-1) log 0, which is 0 * -inf at c = 1, where the
+        # density is the rate itself
+        at0 = jnp.where(c == 1.0, jnp.log(self.rate),
+                        jnp.where(c < 1.0, jnp.inf, -jnp.inf))
+        return jnp.where(pos, core, jnp.where(value <= 0.0, at0, -jnp.inf))
+
+    def _icdf_lower(self, p):
+        return chebax.gammaincinv(self.concentration, p) / self.rate
+
+    def _icdf_upper(self, s):
+        return _gammaqinv(self.concentration, s) / self.rate
 
 
-class TruncatedBeta(dist.Distribution):
+class TruncatedBeta(_Truncated):
     """Beta(concentration1, concentration0) truncated to [low, high].
 
-    Both concentrations must be uniform per call and inside chebax's
-    (a, b) box [0.1, 100]^2 (tables back the normalizer's gradient and
-    the inverse CDF); low, high broadcast freely.
+    Both concentrations must be scalars inside chebax's (a, b) box
+    [0.1, 100]^2 (tables back the normalizer's gradient and the inverse
+    CDF); low, high broadcast freely.
     """
 
     arg_constraints = {
-        "concentration1": constraints.positive,
-        "concentration0": constraints.positive,
+        "concentration1": constraints.interval(_bt.ALO, _bt.AHI),
+        "concentration0": constraints.interval(_bt.ALO, _bt.AHI),
         "low": constraints.unit_interval,
         "high": constraints.unit_interval,
     }
     reparametrized_params = ["concentration1", "concentration0", "low", "high"]
-    has_rsample = True
 
     def __init__(self, concentration1, concentration0, *, low=0.0, high=1.0,
                  validate_args=None):
+        for name, c in (("concentration1", concentration1),
+                        ("concentration0", concentration0)):
+            _check_scalar("TruncatedBeta", name, c)
+            _check_shape_range("TruncatedBeta", name, c, _bt.ALO, _bt.AHI)
         self.concentration1 = jnp.asarray(concentration1)
         self.concentration0 = jnp.asarray(concentration0)
         self.low, self.high = promote_shapes(jnp.asarray(low),
@@ -147,58 +398,59 @@ class TruncatedBeta(dist.Distribution):
             jnp.shape(low), jnp.shape(high))
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return constraints.interval(self.low, self.high)
-
-    def _bounds(self):
+    def _log_cdf_sf(self, value):
         a, b = self.concentration1, self.concentration0
-        return (chebax.betainc_fn(a, b, self.low),
-                chebax.betainc_fn(a, b, self.high))
+        inside = (value > 0.0) & (value < 1.0)
+        v = jnp.where(inside, value, 0.5)
+        below = value <= 0.0
+        # 1 - v is exact for v >= 1/2, which is the side the upper tail
+        # needs; below the median the survival is O(1) and does not care
+        return (jnp.where(inside, chebax.log_betainc_fn(a, b, v),
+                          jnp.where(below, -jnp.inf, 0.0)),
+                jnp.where(inside, chebax.log_betainc_fn(b, a, 1.0 - v),
+                          jnp.where(below, 0.0, -jnp.inf)))
 
-    def rsample(self, key, sample_shape=()):
-        u = random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
-
-    sample = rsample
-
-    def icdf(self, q):
-        flo, fhi = self._bounds()
-        return chebax.betaincinv(self.concentration1, self.concentration0,
-                                 flo + q * (fhi - flo))
-
-    def cdf(self, value):
-        flo, fhi = self._bounds()
-        f = chebax.betainc_fn(self.concentration1, self.concentration0, value)
-        return jnp.clip((f - flo) / (fhi - flo), 0.0, 1.0)
-
-    @validate_sample
-    def log_prob(self, value):
-        flo, fhi = self._bounds()
+    def _log_density(self, value):
         a, b = self.concentration1, self.concentration0
-        base = ((a - 1.0) * jnp.log(value) + (b - 1.0) * jnp.log1p(-value)
-                - betaln(a, b))
-        inside = (value >= self.low) & (value <= self.high)
-        return jnp.where(inside, base - jnp.log(fhi - flo), -jnp.inf)
+        lnb = betaln(a, b)
+        inside = (value > 0.0) & (value < 1.0)
+        v = jnp.where(inside, value, 0.5)
+        core = (a - 1.0) * jnp.log(v) + (b - 1.0) * jnp.log1p(-v) - lnb
+        # at an endpoint one exponent multiplies -inf; the density is finite
+        # there exactly when that concentration is 1
+        at0 = jnp.where(a == 1.0, -lnb, jnp.where(a < 1.0, jnp.inf, -jnp.inf))
+        at1 = jnp.where(b == 1.0, -lnb, jnp.where(b < 1.0, jnp.inf, -jnp.inf))
+        return jnp.where(inside, core, jnp.where(value <= 0.0, at0, at1))
+
+    def _icdf_lower(self, p):
+        return chebax.betaincinv(self.concentration1, self.concentration0, p)
+
+    def _icdf_upper(self, s):
+        # 1 - X is Beta(b, a), so the upper tail inverts at full accuracy
+        # in the distance from 1; only the final subtraction is absolute
+        return 1.0 - chebax.betaincinv(self.concentration0,
+                                       self.concentration1, s)
 
 
-class TruncatedStudentT(dist.Distribution):
+class TruncatedStudentT(_Truncated):
     """Standard Student-t(df) truncated to [low, high].
 
-    df must be uniform per call and inside chebax's table range
-    [0.2, 200]; low and high broadcast freely (either may be infinite).
-    For a located/scaled variant, truncate the standard one to
-    ((low - loc)/scale, (high - loc)/scale) and map samples through
-    loc + scale * x.
+    df must be a scalar inside chebax's table range [0.2, 200]; low and
+    high broadcast freely (either may be infinite). For a located/scaled
+    variant, truncate the standard one to ((low - loc)/scale,
+    (high - loc)/scale) and map samples through loc + scale * x.
     """
 
-    arg_constraints = {"df": constraints.positive,
-                       "low": constraints.real,
-                       "high": constraints.real}
+    # constraints.real rejects inf, so it would reject the untruncated
+    # default bounds; interval's own test is inclusive
+    arg_constraints = {"df": constraints.interval(_DF_LO, _DF_HI),
+                       "low": _REAL_OR_INF,
+                       "high": _REAL_OR_INF}
     reparametrized_params = ["df", "low", "high"]
-    has_rsample = True
 
     def __init__(self, df, *, low=-jnp.inf, high=jnp.inf, validate_args=None):
+        _check_scalar("TruncatedStudentT", "df", df)
+        _check_shape_range("TruncatedStudentT", "df", df, _DF_LO, _DF_HI)
         self.df = jnp.asarray(df)
         self.low, self.high = promote_shapes(jnp.asarray(low),
                                              jnp.asarray(high))
@@ -207,39 +459,20 @@ class TruncatedStudentT(dist.Distribution):
             jnp.shape(df), jnp.shape(low), jnp.shape(high))
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
-    def support(self):
-        return constraints.interval(self.low, self.high)
+    def _log_cdf_sf(self, value):
+        fin = jnp.isfinite(value)
+        v = jnp.where(fin, value, 0.0)
+        below = value < 0.0
+        return (jnp.where(fin, log_stdtr(self.df, v),
+                          jnp.where(below, -jnp.inf, 0.0)),
+                jnp.where(fin, log_stdtr_sf(self.df, v),
+                          jnp.where(below, 0.0, -jnp.inf)))
 
-    def _bounds(self):
-        # infinite bounds are exact CDF limits; keep the arguments the
-        # masked branch sees finite so gradients stay clean
-        flo = jnp.where(jnp.isfinite(self.low),
-                        chebax.stdtr(self.df, jnp.where(jnp.isfinite(self.low),
-                                                        self.low, 0.0)), 0.0)
-        fhi = jnp.where(jnp.isfinite(self.high),
-                        chebax.stdtr(self.df, jnp.where(jnp.isfinite(self.high),
-                                                        self.high, 0.0)), 1.0)
-        return flo, fhi
+    def _log_density(self, value):
+        return _t_logpdf(self.df, value)
 
-    def rsample(self, key, sample_shape=()):
-        u = random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
+    def _icdf_lower(self, p):
+        return chebax.stdtrit(self.df, p)
 
-    sample = rsample
-
-    def icdf(self, q):
-        flo, fhi = self._bounds()
-        return chebax.stdtrit(self.df, flo + q * (fhi - flo))
-
-    def cdf(self, value):
-        flo, fhi = self._bounds()
-        f = chebax.stdtr(self.df, value)
-        return jnp.clip((f - flo) / (fhi - flo), 0.0, 1.0)
-
-    @validate_sample
-    def log_prob(self, value):
-        flo, fhi = self._bounds()
-        lp = jax.scipy.stats.t.logpdf(value, self.df) - jnp.log(fhi - flo)
-        inside = (value >= self.low) & (value <= self.high)
-        return jnp.where(inside, lp, -jnp.inf)
+    def _icdf_upper(self, s):
+        return -chebax.stdtrit(self.df, s)

@@ -66,9 +66,13 @@ def eval_large(a, x, temme, dlow, dup, kind):
     xl = jnp.where(pos & in_low, x, 0.25 * a)
     lp_low = (a * jnp.log(xl) - xl - jax.scipy.special.gammaln(a + 1.0)
               + dlow(xl / a))
-    xu = jnp.where(in_up, x, 12.0 * a)
+    # at x = inf the bracket is inf - inf: mask it and set ln Q = -inf
+    # by hand (the small-a path does the same)
+    big = x == jnp.inf
+    xu = jnp.where(in_up & ~big, x, 12.0 * a)
     lq_up = ((a - 1.0) * jnp.log(xu) - xu - jax.scipy.special.gammaln(a)
              + dup((a - 1.0) / xu))
+    lq_up = jnp.where(big, -jnp.inf, lq_up)
 
     # masked lanes clipped to the Temme zone's own lambda range so eta
     # stays inside the table domain: eta(0.5) = -0.62, eta(6) = 2.53

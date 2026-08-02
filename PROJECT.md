@@ -292,7 +292,12 @@ tiny groups, which is the per-element regime that stays out of scope.
 DELIVERED 2026-07-31: `chebax.pergroup(fn, group_idx, num_groups=None)`,
 increment 12 in `docs/increments.md`, tests in `tests/test_pergroup.py`.
 
-**Queued betainc box widening (2026-08-01, feasibility measured in
+**Betainc box widening (DELIVERED 2026-08-01, increment 23: [0.1, 100]^2
+via three additional panels, lax.switch dispatch, in-box path unchanged;
+CI regen policy = HILO-panel canary in CI + full regen behind
+CHEBAX_FULL_REGEN, recorded in CLAUDE.md; Tucker declined for checked-in
+tables, see the generator docstring. Original feasibility record follows.)
+(2026-08-01, feasibility measured in
 `experiments/11_betainc_widening_feasibility.py`; design decision is
 Andres's):** degree growth beyond [0.1, 10]^2 is tractable but not free.
 Measured: the a-axis carries the pole structure (raw degree 129-175 over

@@ -348,3 +348,35 @@ def test_stdtr_tables_regenerate_bit_for_bit(tmp_path):
     stdtr_gen.main(tmp_path)
     assert ((tmp_path / "stdtr_table.py").read_text()
             == pathlib.Path(st.__file__).read_text())
+
+
+def test_deep_tail_verified_and_dead_zone_fixed():
+    # The disclosure item closed: tail depth measured far beyond the old
+    # "p = 1e-20 unverified" caveat. Metric: map the returned quantile
+    # back through EXACT mp betainc/gammainc; relative error in p
+    # (I ~ x^a / aB, so rel-p ~ a * rel-x). Measured worst 7.1e-14
+    # (betainc) / 8.7e-14 (gamma) down to p = 1e-290; bars 4x. Also the
+    # regression for the subnormal dead zone: with the old -745 bracket
+    # floor, XLA's subnormal flush made the CDF evaluate to exactly 0
+    # below the smallest normal float64, and these two cells returned
+    # nan instead of the documented 0.0.
+    assert float(chebax.betaincinv(0.15, 9.9, jnp.asarray(1e-50))) == 0.0
+    assert float(chebax.gammaincinv(0.15, jnp.asarray(1e-50))) == 0.0
+    ps = [1e-20, 1e-50, 1e-100, 1e-290]
+    for a, b in [(0.5, 0.5), (2.0, 3.0), (9.9, 0.15), (55.0, 55.0)]:
+        for p in ps:
+            x = float(chebax.betaincinv(a, b, jnp.asarray(p)))
+            assert not np.isnan(x), (a, b, p)
+            if x == 0.0:
+                continue
+            pr = mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x),
+                            regularized=True)
+            assert abs(float((pr - mp.mpf(p)) / mp.mpf(p))) <= 3e-13, (a, b, p)
+    for a in (0.15, 2.5, 9.9):
+        for p in ps:
+            x = float(chebax.gammaincinv(a, jnp.asarray(p)))
+            assert not np.isnan(x), (a, p)
+            if x == 0.0:
+                continue
+            pr = mp.gammainc(mp.mpf(a), 0, mp.mpf(x), regularized=True)
+            assert abs(float((pr - mp.mpf(p)) / mp.mpf(p))) <= 4e-13, (a, p)

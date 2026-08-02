@@ -61,9 +61,9 @@ def test_betainc_out_of_box_values_fine_grads_nan():
     x = pt.dvector("x")
     f = jaxify([a, b, x], pt.betainc(a, b, x))
     xv = np.array([0.3, 0.7])
-    got = np.asarray(f(20.0, 3.5, xv))  # a outside [0.1, 10]
-    np.testing.assert_allclose(got, sps.betainc(20.0, 3.5, xv), rtol=1e-12)
-    ga = jax.grad(lambda av: jnp.sum(f(av, 3.5, jnp.asarray(xv))))(20.0)
+    got = np.asarray(f(150.0, 3.5, xv))  # a outside [0.1, 100]
+    np.testing.assert_allclose(got, sps.betainc(150.0, 3.5, xv), rtol=1e-12)
+    ga = jax.grad(lambda av: jnp.sum(f(av, 3.5, jnp.asarray(xv))))(150.0)
     assert np.isnan(float(ga))
 
 

@@ -19,7 +19,7 @@ What gets registered, and the contracts:
   limited to ~eps. Batched shape arrays fall back to tfp when
   installed, else raise NotImplementedError at trace time.
 - BetaIncInv: chebax.betaincinv for scalar (a, b) inside chebax's
-  domain box (a, b) in [0.1, 10]^2; outside the box the result is nan
+  domain box (a, b) in [0.1, 100]^2; outside the box the result is nan
   (loud, never silently wrong). Batched shapes fall back as above.
 - Ive: chebax.besseli_fn(scaled=True) for a scalar order v in [0, 10]
   and x >= 0; nan outside (I_{-v} differs from I_v, so negative orders
@@ -29,7 +29,7 @@ What gets registered, and the contracts:
 - BetaInc: values stay jax's own betainc on every domain; a custom_jvp
   adds the a/b derivatives (the "Betainc gradient with respect to a and
   b not supported" gap) from forward mode through chebax.betainc_fn,
-  valid for scalar (a, b) in [0.1, 10]^2 and nan outside; the x
+  valid for scalar (a, b) in [0.1, 100]^2 and nan outside; the x
   derivative is the exact Beta density. Batched shapes keep the plain
   jax op (values fine, a/b gradients raise as before).
 """
@@ -42,7 +42,7 @@ from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
 
 import chebax
 
-_BOX_LO, _BOX_HI = 0.1, 10.0
+_BOX_LO, _BOX_HI = 0.1, 100.0
 
 
 def _is_uniform(p):

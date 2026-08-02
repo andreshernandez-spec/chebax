@@ -52,7 +52,8 @@ from chebax._src.recipes._common import canon_float as _canon
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
 from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
-                                         tensor_coefs_traced)
+                                         tensor_coefs_traced,
+                                         with_panel_series)
 from chebax._src.recipes.gammainc import _traced_series as _gi_series
 from chebax._src.recipes.gammainc import eval_gammainc as _eval_gammainc
 from chebax._src.series import ChebSeries
@@ -60,9 +61,15 @@ from chebax._src.series import ChebSeries
 _eval_betainc = eval_betainc
 _tensor_coefs_traced = tensor_coefs_traced
 
-# solved-in-log-space brackets: the edges of normal float64
-_U_LO = -745.0
-_U_HI = 745.0
+# solved-in-log-space brackets. The floor is ln of the smallest POSITIVE
+# NORMAL float64: below it XLA's subnormal flushing evaluates the CDF to
+# exactly 0, creating a dead zone where the solve can neither converge
+# nor detect the floor (measured: betaincinv(0.15, 9.9, 1e-50) and
+# gammaincinv(0.15, 1e-50) returned nan with the old -745 floor; the
+# true quantiles are ~e-763, below even subnormal float64). Quantiles
+# whose solve pins here return 0.0, the documented convention.
+_U_LO = -708.0
+_U_HI = 708.0
 # a solve is accepted when the CDF residual is this small relative to the
 # target probability; healthy solves land at ~eps relative
 _RESID_RTOL = 1e-6
@@ -175,7 +182,8 @@ def _betaincinv_core(a, b, p, cab, cba):
 def betaincinv(a, b, p):
     """Inverse of betainc in x: the Beta(a, b) quantile function.
 
-    a, b are (traceable) scalars in [0.1, 10], uniform per call; p any shape.
+    a, b are (traceable) scalars in [0.1, 100], uniform per call; p any
+    shape (the wide panels of increment 23 dispatch by one lax.switch).
     Quantiles below the smallest positive float64 return 0.0 (and, mirrored,
     quantiles within eps of 1 return 1.0, the scipy-shared representation
     limit; use betaincinv(b, a, 1-p) for the distance from 1). A solve that
@@ -183,9 +191,8 @@ def betaincinv(a, b, p):
     a = _canon(a)
     b = _canon(b)
     p = _canon(p)
-    cab = ChebSeries(_tensor_coefs_traced(a, b), (0.0, _bt.XSPLIT))
-    cba = ChebSeries(_tensor_coefs_traced(b, a), (0.0, _bt.XSPLIT))
-    return _betaincinv_core(a, b, p, cab, cba)
+    return with_panel_series(
+        a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
 
 
 @betaincinv.defjvp

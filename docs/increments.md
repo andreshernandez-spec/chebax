@@ -433,3 +433,31 @@ representability caveat stated (K(100) ~ 5e-45 is below the f32
 subnormal floor; that is the format, not the kernel). Tables always
 source from the f64 instance and round at emission. Option (3),
 fpminimax polish, stays dead per the earlier 2% measurement.
+
+## 23 — betainc box widened to [0.1, 100]^2 (2026-08-01)
+
+The general widening, built on experiments/11's measurements: three
+additional tensor panels (LOxHI 76x64x60, HIxLO 24x60x20, HIxHI
+76x62x60, raw axes per panel, split at 10) alongside the untouched
+original tensor as the low-low panel. Runtime dispatch is one
+lax.switch on the scalar (a, b) quadrant: only the taken branch
+executes, each panel keeps its own degrees, and in-box users pay
+NOTHING - the low-low branch builds the identical series as before.
+The reflection needs both orientations, so each branch pulls (a, b)
+and (b, a) from their own, possibly different, panels. betaincinv,
+log_betainc_fn, the pytensor plugin's box and chebax.numpyro's
+TruncatedBeta all inherit the [0.1, 100]^2 domain. Measured: values
+1.8e-13 absolute worst at the sharp-transition interior (30, 70)
+(old box unchanged at ~7e-15), dI/da 8.5e-16 vs mp.diff, inverse
+roundtrips 6.7e-15, panel edges ordinary points (each side meets
+mpmath at its own bar; a naive two-sided jump test measures the true
+dI/da times the probe gap - recorded so it is not re-learned).
+Generation is 25 min single-core, so the CI regen policy changes for
+the first time: CI regenerates the smallest panel bit-exactly as a
+canary (~40 s), the full three-panel byte-for-byte check runs behind
+CHEBAX_FULL_REGEN=1 before releases (CLAUDE.md). Tucker storage was
+DECLINED for checked-in tables: float SVDs are BLAS-build-dependent
+and the bit-for-bit contract is deterministic today precisely because
+every fit stage is pure mpmath (generator docstring). Dense cost:
+~600k coefficients, ~11 MB module. stdtr keeps its own slice tables
+(increment 21); nothing else touches the 3-D path.

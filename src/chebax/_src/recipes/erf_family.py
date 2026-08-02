@@ -17,6 +17,7 @@ Test oracles: D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
 
 import functools
 
+import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import erf_table as _et
@@ -26,11 +27,15 @@ from chebax._src.series import ChebSeries
 @functools.lru_cache(maxsize=None)
 def _series():
     # built lazily: module-level ChebSeries would initialize the jax backend
-    # (and touch the device) as an import side effect
-    return (ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
-            ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
-            ChebSeries(_et.ERFCX_C, (0.0, _et.XS)),
-            ChebSeries(_et.ERFCX_H, (0.0, 1.0)))
+    # (and touch the device) as an import side effect. Built OUTSIDE any
+    # active trace: the first call can come from inside a lax.cond branch
+    # (gammainc's large-a path), and a cached series whose arrays were
+    # created under that trace leaks its tracers into every later call.
+    with jax.ensure_compile_time_eval():
+        return (ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
+                ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
+                ChebSeries(_et.ERFCX_C, (0.0, _et.XS)),
+                ChebSeries(_et.ERFCX_H, (0.0, 1.0)))
 
 
 def dawsn(x):

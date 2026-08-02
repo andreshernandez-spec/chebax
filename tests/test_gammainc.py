@@ -120,7 +120,7 @@ def test_jit_pytree_and_out_of_range():
     with pytest.raises(ValueError, match="gammainc"):
         chebax.gammainc(0.05)
     with pytest.raises(ValueError, match="gammaincc"):
-        chebax.gammaincc(10.5)
+        chebax.gammaincc(1000.5)
 
 
 def test_matches_jax_gammainc():

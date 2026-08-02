@@ -601,3 +601,17 @@ ChebSeries and PiecewiseCheb freeze after construction, since the factories
 hand the same object to every caller; series.py's O(n²) matrix caches
 replaced by O(n) recurrences; `log_stdtr` / `log_stdtr_sf` added and
 exported.
+
+The integration with increments 23-25 (merged the same day) was not
+mechanical, and three resolutions matter. The gammaincinv log-space
+solver gained a third recipe mode: the Temme-zone tables serve
+a in (10, 1000] through eval_large's own log forms (relatively
+accurate on both sides, so the residual seam sits at the mean), and
+the review's dtype-parameterized limits replaced both of the older
+floor constants; the max(asym, WH) init became unnecessary once the
+iteration was on ln P. The incomplete-gamma endpoint slopes apply
+AFTER the a = 10 dispatch, where they are exact for both branches,
+and the large path inherited the x = inf mask the review added to the
+small one. chebax.numpyro's gamma gate widened to the merged recipe
+box, which closes the review's TruncatedGamma deep-upper-tail gap for
+concentration in (10, 1000].

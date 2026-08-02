@@ -131,6 +131,22 @@ def _py_tuple(name, vals):
     return lines
 
 
+def _slope_note(dropped):
+    """Disclosure for an artifact whose endpoint slope was folded away.
+
+    The artifact is otherwise value-exact, and the emitted docstring says
+    plain AD gives the derivative, so where that stops being true it has
+    to say so itself: the flag used to be recorded and never surfaced
+    (review, 2026-08-02)."""
+    if not dropped:
+        return []
+    return ["",
+            "One exception: a one-sided slope AT a domain endpoint was folded",
+            "to 0 while baking (chebax carries those through a custom rule the",
+            "emitter cannot express). Values are unaffected; the derivative",
+            "exactly at that endpoint is 0 here and nonzero in the recipe."]
+
+
 def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
     """Write a self-contained pure-jax module defining <name>(x). Returns name.
 
@@ -149,7 +165,7 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
     name = _ident(_family(inst) if name is None else name, "name")
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
-    body, coefs, result = trace_and_emit(inst, cpp=False)
+    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False)
     statics = _statics_text(inst)
     dtype_note = (
         ["Baked for float64 input, the dtype of the trace; anything else raises."]
@@ -162,7 +178,9 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
         'runtime jaxpr. Self-contained: imports jax only. Do not edit.',
         "",
         *dtype_note,
-        'Plain jax AD gives the derivative."""',
+        'Plain jax AD gives the derivative.',
+        *_slope_note(slope_dropped),
+        '"""',
         "",
         "import jax",
         "import jax.numpy as jnp",
@@ -219,13 +237,15 @@ def xsf_header(inst, path, name=None, dtype="double", truncate_tol=None):
     name = _ident(f"{_family(inst)}_{_tag(inst)}" if name is None else name, "name")
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
-    body, coefs, result = trace_and_emit(inst, cpp=True, ctype=dtype)
+    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=True, ctype=dtype)
     statics = _statics_text(inst)
     guard = name.upper()
     arrays = "\n\n".join(_cpp_array(cname, arr, dtype) for cname, arr in coefs.items())
     nl = "\n"
+    slope_lines = "".join(f"// {ln}{nl}" for ln in _slope_note(slope_dropped))
     src = f"""// {type(inst).__name__} ({statics}), baked by chebax {__version__} from the
 // runtime jaxpr. Self-contained C++17, {dtype} precision; do not edit.
+{slope_lines}
 #ifndef CHEBAX_BAKED_{guard}_H
 #define CHEBAX_BAKED_{guard}_H
 

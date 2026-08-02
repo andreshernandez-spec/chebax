@@ -25,6 +25,9 @@ import sys
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pathlib
+import tempfile
+
 import pytest
 
 import chebax
@@ -485,3 +488,51 @@ def test_cpp_sign_matches_jnp(tmp_path, ctype, fmt):
     rtol = 5e-15 if ctype == "double" else 1e-6
     np.testing.assert_allclose(got[fin], exact, rtol=rtol)
     assert np.all(np.signbit(got[fin]) == np.signbit(ref[fin]))
+
+
+# ---- review 2026-08-02: bake must not fold a custom_jvp it does not own --
+
+_TMP = pathlib.Path(tempfile.mkdtemp())
+
+
+def test_bake_refuses_a_foreign_zero_custom_jvp():
+    # The fold used to be purely structural ("primal is a zero literal"),
+    # which a rule returning zero with derivative 1 satisfies just as well:
+    # runtime gradient 1, baked gradient 0, and the artifact still claimed
+    # plain AD gave the derivative. Now the fold takes chebax's own
+    # endpoint helper by name AND defining module, and only after checking
+    # the primal really is zero.
+    from chebax._src.pytree import Recipe
+    from chebax._src.series import ChebSeries
+
+    @jax.custom_jvp
+    def sneaky(x):
+        return jnp.zeros_like(x)
+
+    @sneaky.defjvp
+    def _sneaky_jvp(primals, tangents):
+        return jnp.zeros_like(primals[0]), tangents[0]
+
+    @jax.tree_util.register_pytree_node_class
+    class Sneaky(Recipe):
+        _static_fields = ()
+        _series_fields = ("s",)
+
+        def __call__(self, x):
+            return self.s(x) + sneaky(x)
+
+    inst = Sneaky(ChebSeries(np.array([1.0, 0.5]), (0.0, 1.0)))
+    assert float(jax.grad(inst)(0.5)) != 0.0
+    with pytest.raises(NotImplementedError, match="custom_jvp"):
+        bake.jax_module(inst, str(_TMP / "sneaky.py"), name="sneaky")
+
+
+def test_baked_artifact_discloses_a_dropped_endpoint_slope(tmp_path):
+    # the flag was recorded and never reached the generated documentation
+    p = tmp_path / "g.py"
+    bake.jax_module(chebax.gammainc(1.0), str(p), name="g")
+    head = p.read_text()[:1200]
+    assert "one-sided slope" in head, head[:400]
+    q = tmp_path / "b.py"
+    bake.jax_module(chebax.besselj(2.5), str(q), name="b")
+    assert "one-sided slope" not in q.read_text()[:1200]

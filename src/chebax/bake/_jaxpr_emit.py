@@ -183,21 +183,52 @@ def _match_series(inst, const):
     return hits[0]
 
 
-def _is_constant_zero_jvp(eqn):
-    """True for a custom_jvp whose PRIMAL is the literal 0 (chebax's
-    endpoint-slope trick: a zero carrying a one-sided derivative).
+# The ONE custom_jvp bake is allowed to fold, named explicitly. A
+# structural "primal is zero" test is not enough: a rule returning zero
+# with derivative 1 has that shape too, and folding it silently turns a
+# gradient of 1 into 0 (review, 2026-08-02). Identity by function name AND
+# defining module, so nothing outside chebax can present itself as this.
+_ENDPOINT_JVP = ("_edge_slope", "chebax/_src/recipes/gammainc.py")
 
-    Structural, not name based: the call_jaxpr has no equations and returns
-    a zero literal, so emitting 0.0 is value-exact by construction."""
+
+def _is_endpoint_slope_jvp(eqn):
+    """True only for chebax's own endpoint-slope helper, and only when it
+    really does evaluate to zero.
+
+    Two independent checks, because either alone is unsafe. The name and
+    source file say the author INTENDED the fold and accepted what it
+    costs (the one-sided slope at the endpoint, disclosed in the emitted
+    artifact). Evaluating the primal says the fold cannot change a value:
+    if it is not identically zero on probe inputs, refuse regardless of
+    what it calls itself."""
     cj = eqn.params.get("call_jaxpr")
     if cj is None:
         return False
     inner = cj.jaxpr if hasattr(cj, "jaxpr") else cj
-    if inner.eqns or len(inner.outvars) != 1:
+    info = getattr(inner, "debug_info", None)
+    name = getattr(info, "func_name", None)
+    src = (getattr(info, "func_src_info", "") or "").replace("\\", "/")
+    if name != _ENDPOINT_JVP[0] or _ENDPOINT_JVP[1] not in src:
         return False
-    ov = inner.outvars[0]
-    return isinstance(ov, _Literal) and np.asarray(ov.val).ndim == 0 \
-        and float(np.asarray(ov.val)) == 0.0
+    return _evaluates_to_zero(cj)
+
+
+def _evaluates_to_zero(cj):
+    """Run the primal on probe inputs; every output must be exactly 0."""
+    closed = cj if hasattr(cj, "jaxpr") else None
+    jaxpr = closed.jaxpr if closed is not None else cj
+    consts = closed.consts if closed is not None else ()
+    try:
+        args = [jnp.full(v.aval.shape, p, v.aval.dtype)
+                for p in (1.0, -2.5, 7.0) for v in jaxpr.invars]
+        n = len(jaxpr.invars)
+        for k in range(0, len(args), n):
+            outs = jax.core.eval_jaxpr(jaxpr, consts, *args[k:k + n])
+            if any(float(np.max(np.abs(np.asarray(o)))) != 0.0 for o in outs):
+                return False
+    except Exception:
+        return False
+    return True
 
 
 def _emit_jaxpr(em, jaxpr, env):
@@ -219,11 +250,13 @@ def _emit_jaxpr(em, jaxpr, env):
                 env[out] = _lit(val, em.cpp, em.ctype)[0]
                 continue
         if p == "custom_jvp_call":
-            if _is_constant_zero_jvp(eqn):
-                # an endpoint-slope rule (gammainc's density at x = 0): the
-                # primal is the literal 0, so folding it cannot change a
-                # value, only the one-sided slope AT the endpoint. Recorded
-                # so the caller can state it; see bake's docstring.
+            if _is_endpoint_slope_jvp(eqn):
+                # chebax's endpoint-slope rule (gammainc's density at
+                # x = 0), which is verified to be identically zero, so
+                # folding it cannot change a value, only the one-sided
+                # slope AT the endpoint. Recorded so the emitted artifact
+                # can say so; every other custom_jvp that is not a series
+                # evaluation is refused below.
                 em.endpoint_slope_dropped = True
                 env[out] = _lit(np.zeros(()), em.cpp, em.ctype)[0]
                 continue
@@ -319,7 +352,8 @@ def _register_const(em, name_hint, val):
 
 
 def trace_and_emit(inst, cpp, ctype="double"):
-    """Returns (lines, coef_arrays{name: np.array}, result_symbol)."""
+    """Returns (lines, coef_arrays{name: np.array}, result_symbol,
+    endpoint_slope_dropped)."""
     closed = jax.make_jaxpr(inst)(jnp.zeros((), jnp.float64))
     em = _Emit(cpp, ctype)
 
@@ -346,4 +380,4 @@ def trace_and_emit(inst, cpp, ctype="double"):
     (out_var,) = closed.jaxpr.outvars
     result = env[out_var] if not isinstance(out_var, _Literal) \
         else _lit(out_var.val, cpp, em.ctype)[0]
-    return em.lines, coef_arrays, result
+    return em.lines, coef_arrays, result, em.endpoint_slope_dropped

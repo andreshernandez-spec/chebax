@@ -107,6 +107,7 @@ def _fit_interval(f, a, b, deg, tol, max_deg, dps):
 
 
 _NOISE_CEIL = 1e-8   # a window this close to the function scale is signal
+_PHI = 0.6180339887498949   # (sqrt(5) - 1)/2, irrational: see _offgrid
 
 
 def _chop(c, tol):
@@ -140,25 +141,49 @@ def _chop(c, tol):
             noise / scale if measured else np.inf)
 
 
-def _validated(cand, level, sample_unit, n):
-    """Check the candidate against fresh samples on the 2n and 4n grids.
+def _offgrid(m):
+    """m points cos(pi (i + PHI) / m), PHI irrational.
 
-    Two grids, both fixed by the fitting resolution n rather than by the
-    candidate's size, which could land back on the fitting grid itself.
-    chebpts(p) and chebpts(q) share a point only when p/g and q/g are both
-    odd (g their gcd), so n, 2n and 4n are pairwise disjoint. Disjoint
-    points are not the argument though, the aliasing is: on m first-kind
-    points T_K samples as +-T_j with j and the sign fixed by K mod 4m, and
-    the smallest K whose (j, sign) agrees across n, 2n and 4n is 15n + 1,
-    folding onto j = n - 1, wider than any candidate the loop accepts below
-    the cap. So an aliased fit is off by O(scale) on at least one of the two
-    grids, ~1e15x the chop level, where an honest fit is at ~1x. The 1000x
-    margin makes this a gross-error detector, not the accuracy contract.
-    """
+    NOT the nodes of any Chebyshev grid, which is the whole point. On m
+    first-kind points T_K samples as +-T_j with (j, sign) fixed by
+    K mod 4m, so any set of harmonically related grids has whole families
+    of modes it cannot see: n, 2n and 4n all read T_{16n} as +1, which is
+    how `fit(T272)` used to come back as the constant 1 with sup error 2
+    (found in review, 2026-08-02). Here an alias would need
+    cos(K theta_i) = +-cos(j theta_i) at every point, i.e.
+    (K -+ j)(i + PHI)/m in 2Z for every i; differencing over i forces
+    K -+ j = 2 m q, and then 2 q PHI in Z, which for irrational PHI needs
+    q = 0. So the only mode that can hide is the one already in the
+    candidate."""
+    i = np.arange(m)
+    return np.cos(np.pi * (i + _PHI) / m)
+
+
+def _validated(cand, level, sample_unit, n):
+    """Check the candidate against fresh samples away from the fit grid.
+
+    A finite point set can never prove a fit: any f agreeing with cand at
+    the test points passes, and there are always such f. This is a
+    gross-error detector, nothing more. What it must not have is a
+    STRUCTURAL blind spot, and harmonically related Chebyshev grids have
+    one (see _offgrid), so the off-grid sets carry the argument and the 2n
+    grid is kept only because it is cheap and catches the ordinary
+    mistakes. Sizes are fixed by the fitting resolution n rather than by
+    the candidate's own size, which could otherwise land back on the
+    fitting grid.
+
+    An aliased fit is off by O(scale) here, ~1e15x the chop level, where
+    an honest one is at ~1x; the 1000x margin is the gap between those,
+    not an accuracy contract. The second term is the Clenshaw evaluation
+    floor, which grows with the degree and not just with sum|c|: a
+    degree-544 candidate lands 6e-13 off its own exact samples, over the
+    1000x chop margin, so an honest high-degree fit was being rejected
+    (measured on T544 once the off-grid sets started catching it)."""
     allow = max(1000.0 * level,
-                100.0 * np.finfo(float).eps * float(np.sum(np.abs(cand))))
-    for m in (2 * n, 4 * n):
-        t = algorithms.chebpts(m)
+                100.0 * np.finfo(float).eps * cand.size
+                * float(np.sum(np.abs(cand))))
+    for t in (algorithms.chebpts(2 * n), _offgrid(2 * n + 1),
+              _offgrid(4 * n + 1)):
         err = np.max(np.abs(algorithms.chebval(t, cand) - sample_unit(t)))
         if err > allow:
             return False

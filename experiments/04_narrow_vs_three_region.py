@@ -7,9 +7,14 @@ The queued PROJECT.md benchmark: every full-domain besselj eval executes all
 three regions plus two selects, branchlessly. A user whose inputs live in a
 declared window (the Matern kernel case) could run one short polynomial and
 zero selects, about a third of the arithmetic. This times both on the same
-device-resident x ~ U(0, 8) arrays (GPU via jax; f64 and f32), using the
-instance's own inner-region evaluation as the narrow kernel, so the
-comparison is exactly "same table, minus the other two regions".
+device-resident x ~ U(0, 8) arrays (GPU via jax; f64 and f32).
+
+Two narrow kernels are timed, and they answer different questions.
+`inner` calls the instance's own inner-region evaluation, the arithmetic
+floor. `domain` is the SHIPPED besselj(v, domain=(0, 8)), which is that
+same evaluation plus the out-of-domain nan guard, so the gap between
+them is what the guard costs and the ratio against `full` is what a user
+actually gets.
 
 WHAT IT DOES NOT MEASURE
 ------------------------
@@ -63,24 +68,27 @@ def main():
 
     for dtype, tag in [(jnp.float64, "f64"), (jnp.float32, "f32")]:
         inst = chebax.besselj(2.5).astype(dtype)
+        trimmed = chebax.besselj(2.5, domain=(0.0, 8.0)).astype(dtype)
         x = jnp.asarray(x_host, dtype)
         full = jax.jit(inst)
-        narrow = jax.jit(inst._inner)   # same table, no mid/outer, no selects
-        yf = [None]
-        yn = [None]
+        inner = jax.jit(inst._inner)   # same table, no mid/outer, no selects
+        dom = jax.jit(trimmed)         # the shipped narrow instance
+        y = {}
 
-        def lf():
-            yf[0] = full(x)
+        def mk(name, fn):
+            def launch():
+                y[name] = fn(x)
+            return launch, lambda: y[name].block_until_ready()
 
-        def ln():
-            yn[0] = narrow(x)
-
-        t = bench({"full": (lf, lambda: yf[0].block_until_ready()),
-                   "narrow": (ln, lambda: yn[0].block_until_ready())})
-        diff = float(jnp.max(jnp.abs(yf[0] - yn[0])))
-        assert diff == 0.0, diff  # identical inner table on the window
-        print(f"{tag}: full {t['full'] * 1e3:7.2f} ms   narrow {t['narrow'] * 1e3:7.2f} ms"
-              f"   -> {t['full'] / t['narrow']:.2f}x")
+        t = bench({"full": mk("full", full), "inner": mk("inner", inner),
+                   "domain": mk("domain", dom)})
+        for k in ("inner", "domain"):
+            diff = float(jnp.max(jnp.abs(y["full"] - y[k])))
+            assert diff == 0.0, (k, diff)   # same table on the window
+        print(f"{tag}: full {t['full'] * 1e3:7.2f} ms   "
+              f"inner {t['inner'] * 1e3:7.2f} ms ({t['full'] / t['inner']:.2f}x)   "
+              f"domain= {t['domain'] * 1e3:7.2f} ms "
+              f"({t['full'] / t['domain']:.2f}x)")
 
 
 if __name__ == "__main__":

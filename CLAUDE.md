@@ -20,16 +20,21 @@ This file is how to work here.
   with n_iter·N, a 13 GiB attempt OOMs at 2^24), f32 3.6–7.1×; bessel_jn is
   integer-order only and valid on an n_iter-dependent x-window that narrows from
   both sides (nans below ~1e-4 at n_iter=50, below ~0.1 at n_iter=100) — cite
-  the window when citing the ratio; narrow-domain 2.5–3.0×
-  (`experiments/04`); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
+  the window when citing the ratio; narrow-domain 2.5–3.0× for the
+  private single-region kernel and 2.5× f64 / 2.6× f32 for the SHIPPED
+  `besselj(v, domain=(0, 8))`, whose nan guard is the ~9% f64 difference
+  (`experiments/04`, re-run 2026-08-02); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
   the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
   for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane
   trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
   still the only number for a outside the box — say which when citing; gammaincinv
-  solver rewire (`experiments/09`, same solver, residual swapped): 6.3–23.4× f64
-  for uniform p at a in {9.9, 3.5, 0.5}, 1.4× on pure deep-tail p (jax's series
-  branch is cheap there), path agreement ≤ 2.2e-12, and the JVP's dP/da term
-  4.0–15.3× vs igamma_grad_a (agreement ≤ 1.4e-14); betainc race
+  solver rewire (`experiments/09`, same solver, residual swapped, RE-RUN
+  2026-08-02 on the log-space solver; the earlier 6.3–23.4× / 1.4× figures were
+  the pre-merge solver and no longer describe the code): 10.4–37.8× f64 for
+  uniform p at a in {9.9, 3.5, 0.5} and 5.8–14.7× at a in {50, 500} on the
+  Temme path, 2.4–5.3× on pure deep-tail p (jax's series branch is cheap
+  there), path agreement ≤ 1.8e-12, and the JVP's dP/da term 4.9–17.6× vs
+  igamma_grad_a (agreement ≤ 1.7e-14); betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N

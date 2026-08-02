@@ -322,12 +322,11 @@ def test_gamma_qinv_survives_a_collapsed_asymptotic_init():
     # init now starts from max(WH, asymptotic). Metric: relative error of
     # Q(a, x) at the returned x vs s, mpmath the judge. Measured worst
     # 2.7e-14, bar 1e-13.
-    from chebax.numpyro import _gammaqinv
     cases = [(50.0, 1e-8), (200.0, 1e-6), (30.0, 1e-12),
              (500.0, 1e-8), (1000.0, 1e-4)]
     worst = 0.0
     for a, s in cases:
-        x = float(_gammaqinv(a, s))
+        x = float(chebax.gammainccinv(a, s))
         q = mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True)
         worst = max(worst, abs(float((q - mp.mpf(s)) / mp.mpf(s))))
     assert worst <= 1e-13, worst

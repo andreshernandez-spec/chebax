@@ -9,8 +9,10 @@ whose XLA lowering re-runs a whole-array while_loop EVERY Newton
 iteration; since 2026-07-31 the residual for a inside [0.1, 10] is the
 chebax gammainc recipe (fixed-degree polynomials, reconstructed once per
 call), with jax's gammainc kept as the out-of-box fallback behind one
-lax.cond. This script times both paths through the same solver
-(_gammaincinv_solve with the static flag), same arrays, GPU,
+lax.cond. Since 2026-08-01 a > 10 has a recipe residual too, the
+Temme-zone tables ("large" below), so the fallback only serves a < 0.1.
+This script times the paths through the same solver
+(_gammaincinv_solve with the static mode), same arrays, GPU,
 device-resident, interleaved reps, medians, f64, N = 2^20 (the betainc
 race's size sweep showed ratios flat in N from 2^20 up), and checks the
 two paths agree on the returned quantile.
@@ -72,12 +74,16 @@ def main():
         ("a=3.5,  p~U(1e-6,1-..)", 3.5, rng.uniform(1e-6, 1 - 1e-6, N)),
         ("a=9.9,  p~U(1e-6,1-..)", 9.9, rng.uniform(1e-6, 1 - 1e-6, N)),
         ("a=3.5,  p~U(1e-12,1e-2)", 3.5, 10 ** rng.uniform(-12, -2, N)),
+        ("a=50,   p~U(1e-6,1-..)", 50.0, rng.uniform(1e-6, 1 - 1e-6, N)),
+        ("a=500,  p~U(1e-6,1-..)", 500.0, rng.uniform(1e-6, 1 - 1e-6, N)),
+        ("a=500,  p~U(1e-12,1e-2)", 500.0, 10 ** rng.uniform(-12, -2, N)),
     ]
     for name, a, p_host in cases:
+        mode = "small" if a <= 10.0 else "large"
         p = jax.device_put(jnp.asarray(p_host, jnp.float64), dev)
         av = jnp.asarray(a, jnp.float64)
-        fj = jax.jit(lambda pp, aa=av: _gammaincinv_solve(aa, pp, False)[0])
-        fc = jax.jit(lambda pp, aa=av: _gammaincinv_solve(aa, pp, True)[0])
+        fj = jax.jit(lambda pp, aa=av: _gammaincinv_solve(aa, pp, None)[0])
+        fc = jax.jit(lambda pp, aa=av, m=mode: _gammaincinv_solve(aa, pp, m)[0])
         yj, yc = [None], [None]
 
         def lj():
@@ -96,17 +102,19 @@ def main():
     # the JVP's dP/da term: jax's looped igamma_grad_a series vs the
     # recipe's a-directional polynomial (the in-box dispatch added with
     # the solver rewire's follow-up)
-    from chebax._src.recipes.quantiles import _dPda, _dPda_recipe
+    from chebax._src.recipes.quantiles import (_dPda, _dPda_recipe,
+                                                _dPda_recipe_large)
 
     hdr2 = f"{'dP/da term':26s} {'igamma_grad_a':>13s} {'recipe':>9s} {'ratio':>6s}  max|diff|"
     print("\n" + hdr2)
     print("-" * len(hdr2))
-    x_host = rng.gamma(3.5, 1.0, N)
-    for a in (0.5, 3.5, 9.9):
+    for a in (0.5, 3.5, 9.9, 50.0, 500.0):
+        x_host = rng.gamma(a, 1.0, N)
         x = jax.device_put(jnp.asarray(x_host, jnp.float64), dev)
         av = jnp.asarray(a, jnp.float64)
+        rec = _dPda_recipe if a <= 10.0 else _dPda_recipe_large
         fj = jax.jit(lambda xx, aa=av: _dPda(aa, xx))
-        fc = jax.jit(lambda xx, aa=av: _dPda_recipe(aa, xx))
+        fc = jax.jit(lambda xx, aa=av, r=rec: r(aa, xx))
         yj, yc = [None], [None]
 
         def lj():
@@ -118,12 +126,13 @@ def main():
         t = bench({"jx": (lj, lambda: yj[0].block_until_ready()),
                    "cb": (lc, lambda: yc[0].block_until_ready())})
         agree = float(jnp.max(jnp.abs(yj[0] - yc[0])))
-        print(f"a={a:4}, x~Gamma(3.5)        {t['jx'] * 1e3:11.2f}ms {t['cb'] * 1e3:7.2f}ms "
+        print(f"a={a:5}, x~Gamma(a)         {t['jx'] * 1e3:11.2f}ms {t['cb'] * 1e3:7.2f}ms "
               f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")
 
     print("\nBoth columns run the SAME solver; only the residual CDF differs."
-          "\nchebax.gammaincinv end-to-end takes the recipe column for a in"
-          "\n[0.1, 10] (one lax.cond) and the jax column outside.")
+          "\nchebax.gammaincinv end-to-end takes the recipe column for every"
+          "\na >= 0.1 (one lax.cond, small tables to 10 and the Temme zone"
+          "\nabove) and the jax column below that.")
 
 
 if __name__ == "__main__":

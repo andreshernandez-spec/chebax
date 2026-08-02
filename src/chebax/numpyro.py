@@ -29,10 +29,11 @@ rejected at construction. Domains, from the underlying tables and
 checked eagerly when the value is not traced: TruncatedBeta needs
 (concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
 needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
-its normalizer falling back to jax's own gammainc pair outside chebax's
-[0.1, 1000] box (which costs the deep upper tail there, since those
-underflow; inside the box the (10, 1000] range runs on the Temme-zone
-tables). Rates, bounds and data are unrestricted.
+its normalizer falling back to jax's own gammainc pair below chebax's
+concentration = 0.1 (which costs the deep upper tail there, since jax's
+logs underflow; from 0.1 up the recipe serves every concentration, the
+Temme-zone tables taking over above 10). Rates, bounds and data are
+unrestricted.
 
 numpyro is imported here and only here (the chebax runtime proper stays
 jax + numpy). Install with:  pip install chebax[numpyro]
@@ -55,17 +56,17 @@ except ImportError as e:
         "chebax.numpyro needs numpyro: pip install chebax[numpyro]") from e
 
 from jax import lax, random
-from jax.scipy.special import betaln, gammaln, ndtri
+from jax.scipy.special import betaln, gammaln
 
 import chebax
 from chebax._src.recipes import betainc_table as _bt
-from chebax._src.recipes import gammainc_large_table as _glt
+from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
-from chebax._src.recipes._common import canon_float, canon_tag, newton_bisect
+from chebax._src.recipes._common import canon_float
 # the log-CDF pair for the Student-t is not re-exported at the top level yet
-from chebax._src.recipes.quantiles import (_dPda, _limits, _t_logpdf,
-                                           log_stdtr, log_stdtr_sf)
+from chebax._src.recipes.quantiles import (_t_logpdf, log_stdtr,
+                                           log_stdtr_sf)
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT"]
 
@@ -123,9 +124,9 @@ def _check_shape_range(owner, name, v, lo, hi):
 
 
 def _in_box(a):
-    # the recipe's a-box: small tables to 10, Temme-zone tables to 1000
+    # the recipe's a-box: small tables to 10, Temme-zone tables above
     # (the public log forms dispatch between them internally)
-    return (a >= _gt.ALO) & (a <= _glt.AHI)
+    return (a >= _gt.ALO) & (a <= _gl.AHI)
 
 
 def _log_pq(a, x, use_recipe):
@@ -145,107 +146,6 @@ def _gamma_log_pq(a, x):
     a, x = canon_float(a), canon_float(x)
     return lax.cond(_in_box(a), lambda: _log_pq(a, x, True),
                     lambda: _log_pq(a, x, False))
-
-
-def _qinv_solve(a, sc, use_recipe):
-    """Newton on v = ln x for ln Q(a, e^v) = ln sc. Returns (v, residual).
-
-    Against the LOG of Q for the same reason gammaincinv iterates on the
-    log probability: ln Q is nearly linear in v wherever Q is exponentially
-    small, so a deep tail converges in a couple of steps instead of one
-    e-fold per step. The residual is judged on whichever of P and Q is
-    computed directly (Q above the seam, P below it), since that is the
-    side carrying relative accuracy."""
-    lim = _limits(canon_tag())
-    lq_t, lp_t = jnp.log(sc), jnp.log1p(-sc)
-    lga = gammaln(a)
-
-    def f_and_df(v):
-        x = jnp.exp(v)
-        lq = _log_pq(a, x, use_recipe)[1]
-        # increasing in v, as newton_bisect wants; slope is x pdf(x)/Q
-        return lq_t - lq, jnp.exp(a * v - x - lga - lq)
-
-    # Wilson-Hilferty, or the exact tail asymptotic
-    # ln Q = (a-1) ln x - x - lnGamma(a) inverted by three fixed-point
-    # passes, whichever starts HIGHER. The asymptotic needs x >> a: once
-    # ln(1/s) < lnGamma(a) its iteration collapses to the 1e-3 floor, and
-    # a start that far under the root costs one e-fold per Newton step to
-    # recover (the recipe's logs are finite everywhere, so the safeguard
-    # never bisects), which 40 steps cannot pay at moderate a (measured:
-    # a = 50, s = 1e-8 stopped 5.8e-10 short). WH is good there; where WH
-    # overshoots instead (small a, deep tail), it is only by a few
-    # e-folds, which the crawl absorbs. The clamp only guards the start's
-    # own log; the bracket recovers a bad one.
-    z = -ndtri(sc)
-    wh = a * (1.0 - 1.0 / (9.0 * a) + z / (3.0 * jnp.sqrt(a))) ** 3
-    r = -lq_t - lga
-    xa = jnp.maximum(r, 1.0)
-    for _ in range(3):
-        xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
-    pos = wh > 0.0
-    v_wh = jnp.where(pos, jnp.log(jnp.where(pos, wh, 1.0)), jnp.log(xa))
-    v0 = jnp.clip(jnp.maximum(v_wh, jnp.log(xa)), lim.lo, lim.v_hi)
-    v = newton_bisect(f_and_df, v0, jnp.full_like(sc, lim.lo),
-                      jnp.full_like(sc, lim.v_hi), lim.n_gamma)
-
-    x = jnp.exp(v)
-    lp, lq = _log_pq(a, x, use_recipe)
-    # direct-side boundary: the small table's seam at x = 8 for a <= 10;
-    # the Temme path is relatively accurate on both sides, split at the
-    # mean; the jax fallback's own transition sits near 1 + a
-    seam = (jnp.where(a <= _gt.AHI, _gt.XS, a) if use_recipe
-            else 1.0 + a)
-    return v, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - lq_t, lp - lp_t)))
-
-
-@jax.custom_jvp
-def _gammaqinv(a, s):
-    """x with Q(a, x) = s: the Gamma(a, 1) upper-tail quantile, for s <= 1/2.
-
-    gammaincinv cannot serve here. Its target is the lower-tail probability
-    1 - s, which rounds to exactly 1 once s falls below eps, and that is
-    where a truncation deep in the upper tail lives; solving against ln Q
-    keeps every digit of s. Same shape of solve as gammaincinv's, sharing
-    its constants: safeguarded Newton on v = ln x, fixed count, bracketed
-    by the canonical dtype's own exponent range. Measured against
-    mpmath at 50 dps over a in [0.05, 1200] and s in [1e-300, 1/2]
-    (re-measured 2026-08-02 with a in (10, 1000] on the Temme-zone
-    tables): worst 4.3e-12 float64, 3.9e-4 float32, the latter in the
-    wedge x just below 8 at small a, where Q is 1 - P and only
-    absolutely accurate."""
-    a, s = canon_float(a), canon_float(s)
-    lim = _limits(canon_tag())
-    interior = (s > 0.0) & (s < 1.0)
-    sc = jnp.where(interior, s, 0.5)
-    v, rel = lax.cond(_in_box(a), lambda: _qinv_solve(a, sc, True),
-                      lambda: _qinv_solve(a, sc, False))
-    at_ceil = v >= lim.v_hi - 0.5           # the quantile itself overflows
-    x = jnp.where(at_ceil, jnp.inf, jnp.exp(v))
-    x = jnp.where(~at_ceil & (rel > lim.rtol), jnp.nan, x)
-    x = jnp.where(s <= 0.0, jnp.inf, jnp.where(s >= 1.0, 0.0, x))
-    oob = jnp.isnan(s) | (s < 0.0) | (s > 1.0) | ~((a > 0.0) & jnp.isfinite(a))
-    return jnp.where(oob, jnp.nan, x)
-
-
-def _gammaqinv_jvp(primals, tangents):
-    a, s = primals
-    da, ds = tangents
-    zero = jax.custom_derivatives.SymbolicZero
-    a_c = canon_float(a)
-    x = _gammaqinv(a_c, s)
-    interior = jnp.isfinite(x) & (x > 0.0)
-    xs = jnp.where(interior, x, 1.0)
-    pdf = jnp.exp((a_c - 1.0) * jnp.log(xs) - xs - gammaln(a_c))
-    # IFT on Q(a, x) = s, with dQ/dx = -pdf and dQ/da = -dP/da
-    num = canon_float(ds) if not isinstance(ds, zero) else 0.0
-    if not isinstance(da, zero):
-        num = num + _dPda(a_c, xs) * canon_float(da)
-    dx = -num / pdf
-    return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
-
-
-_gammaqinv.defjvp(_gammaqinv_jvp, symbolic_zeros=True)
 
 
 _Norm = namedtuple("_Norm", "lnz lo_f lo_s hi_f hi_s upper")
@@ -372,7 +272,7 @@ class TruncatedGamma(_Truncated):
         return chebax.gammaincinv(self.concentration, p) / self.rate
 
     def _icdf_upper(self, s):
-        return _gammaqinv(self.concentration, s) / self.rate
+        return chebax.gammainccinv(self.concentration, s) / self.rate
 
 
 class TruncatedBeta(_Truncated):

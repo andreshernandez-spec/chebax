@@ -217,10 +217,12 @@ def test_jit_pytree_and_out_of_range():
     x = jnp.asarray([0.5, 3.0, 20.0])
     np.testing.assert_allclose(np.asarray(jax.jit(lambda d, v: d(v))(p, x)),
                                np.asarray(p(x)), rtol=1e-14)
+    # only the lower end bites now: the Temme tables run to a = inf
     with pytest.raises(ValueError, match="gammainc"):
         chebax.gammainc(0.05)
     with pytest.raises(ValueError, match="gammaincc"):
-        chebax.gammaincc(1000.5)
+        chebax.gammaincc(0.0)
+    assert float(chebax.gammaincc(1000.5)(1000.5)) > 0.0
 
 
 def test_matches_jax_gammainc():

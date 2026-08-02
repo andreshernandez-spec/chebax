@@ -206,7 +206,7 @@ chebax.bake.xsf_header(jv, "cyl_bessel_j_2p5.h")
 | M3 | Full domain: segmentation + oscillatory tail recipe (phase/modulus a la Hankel) for x > 8. **DONE 2026-07-29.** Three regions, hard selects at 8 and 30: the M2 inner table unchanged; J_ν fitted *directly in x* on [8,30] — no x=0 branch point inside, so this is **not** the §2.5-inherited unfactored dead end, and direct fitting is what keeps the table sup-accurate at large ν, where g_ν spans six decades by x=30 and its f64 Clenshaw floor would destroy envelope accuracy; above 30 the exact modulus functions P, Q (via J and Y) tabulated in t=(30/x)², degree 11 suffices. Two floors + one bug found: (a) forming ω = x−(ν/2+¼)π costs ε·x of phase (2e-12 at 10⁴) — eliminated by the angle-addition identity with baked cos φ, sin φ so `sincos(x)` does its own reduction; (b) f32 tails are phase-limited anyway (~ε₃₂·x from XLA's f32 trig reduction; bars 1e-5/2e-5); (c) min/max **ties split tangents**, so naive clamped branch inputs halved dJ/dx at exactly x=8 and 30 — branch inputs rearranged so the active branch sees raw x through its own seam. dJ/dν now covers the full domain. | Measured worst over 11 off-node ν on a grid to x=10⁴ incl. both seams and ±1e-9 neighbors: values 1.7e-15, dJ/dx 2.6e-15 incl. exactly at the seams, ∂J/∂ν ~1e-15 (f64; bars 5e-15 / 1e-14 / 5e-15); f32 4.0e-6 / 7.1e-6 (bars 1e-5 / 2e-5, phase-floor documented); branch-vs-branch jump at each seam ≤1e-13 (exp-04 criterion); x=10⁶ smoke exact to 1e-16 abs; ext tables regenerate bit-for-bit; per-eval work is all three branches + two selects, no data-dependent branching. |
 | M4 | Bake emitters: pure-JAX module + xsf-style header. **DONE 2026-07-29** (`chebax.bake.jax_module` / `chebax.bake.xsf_header`, from a `BesselJ` instance). The emitted jax module inlines coefficients as python floats (weak typed, so one emission serves both dtypes) and needs no custom_jvp: plain AD differentiates the same polynomials. The header is C++17, `<cmath>` only, `XSF_HOST_DEVICE` defined empty when absent so it drops into xsf or host code unchanged. Emission is deterministic: same instance, same bytes. | Emitted jax module meets the library bars (values 5e-15 / grad 1e-14 f64, values 1e-5 f32, eager + jit) in a subprocess with chebax poisoned out of `sys.modules`, at ν=2.5 and 9.97; emitted header compiles standalone with g++ -std=c++17 and matches mpmath to 5e-15 on the full-domain grid; emissions byte-identical across calls; non-BesselJ inputs rejected. |
 | M5 | Second family: `besselk` by direct tabulation (the Matérn story), including ∂K/∂ν. **DONE 2026-07-29 — the "general library" gate is passed.** Design: log-tables. Inner (x ∈ [1e-6, 8]): L̃ = ln[(x/2)^ν K_ν] in u = ln x — the log kills 15 decades of dynamic range, the factored (x/2)^ν carries the branch exponent, and ν splits into two instantiation-time panels ([0,1], [1,10]) around the Γ-pole cancellation feature of width ~1/\|ln x\| near ν=0 (measured: unsplit needs ν-degree >96, panels need 45). Tail (x > 8): Lt = ln[√(2x/π) eˣ K_ν] in t = 8/x, with exp(−x) kept as its own correctly-rounded factor. Direct tabulation makes integer orders ordinary points, retiring risk S3 (tested at exactly 1.0, 2.0, 3.0). New capability: `besselk_fn(nu, x)` takes ν as a **traced** scalar (reconstruction inside the computation), realizing the call-time-uniform-ν relaxation — `jax.grad` works with respect to ν. The f64 floor is again the pow term, ε·ν·\|ln(x/2)\| ≈ 3e-14 in the (10, 1e-6) corner. | Measured worst over 11 orders (incl. integers and panel edge 0.999/1.0/1.001), pointwise relative: values 1.2e-14, dK/dx 1.1e-14, dK/dν 3.3e-13 incl. the traced path (bars 5e-14 / 5e-14 / 1e-12); ∂K/∂ν at ν=0 vanishes to 7e-15 (evenness); clamp below 1e-6 and underflow past x≈746 graceful; tables regenerate bit-for-bit; **the Matérn demo (`examples/matern_learn_nu.py`) recovers (ν, ℓ, σ²) = (1.7, 0.9, 1.3) to six decimals by Adam from a cold start, and the test version converges against mpmath-computed targets** — gradient-based learning of Matérn smoothness, which no mainstream ML library offers. |
-| M6 | Breadth, docs, packaging (ongoing). **Seven recipe increments delivered 2026-07-29/30** — besseli, bessely, dawsn/erfcx, betainc, the quantile toolkit, spherical/truncated-sampling/lambertw, von Mises — plus a review-hardening pass (shared machinery, pytree base, unified emitter, degree harness). The full per-increment design log (measurements, traps, calibrated bars) lives in `docs/increments.md`; the workflow they established in `docs/adding-a-recipe.md`. Fresnel and Wright Bessel remain open. PyPI releases are Andres's action, never autonomous. | — |
+| M6 | Breadth, docs, packaging (ongoing). **Seven recipe increments delivered 2026-07-29/30** — besseli, bessely, dawsn/erfcx, betainc, the quantile toolkit, spherical/truncated-sampling/lambertw, von Mises — plus a review-hardening pass (shared machinery, pytree base, unified emitter, degree harness). The full per-increment design log (measurements, traps, calibrated bars) lives in `docs/increments.md`; the workflow they established in `docs/adding-a-recipe.md`. Fresnel is now in jax itself. Wright Bessel is MEASURED and SPECIFIED but not built (`experiments/17`, 2026-08-02): the tabuland is Gamma(beta) Phi, NOT ln Phi (Phi is entire with complex zeros, so the log carries a branch point at each of them and needs degree 128 in z at beta = 0.1 against 20 for Gamma(beta) Phi); beta goes through ln beta (25-27 against 121-123 direct); rho needs panels [0.1, 0.5], [0.5, 1], [1, 2] (25-30 each, against 64 whole); z panels [0, 1], [1, 8], [8, 30] at 12 / 20 / 30. That is nine betainc-shaped tensors of about 36 x 34 x 32, order 3e5 coefficients, a few times betainc's 48k, and the [8, 30] panel needs its 2e9 span factored out per (rho, beta) before it will hold relative accuracy at the low end. The size is what to decide before building. PyPI releases are Andres's action, never autonomous. | — |
 
 **Performance claims: B3 measured 2026-07-31** (`../bessel/experiments/07`, RTX 3080
 Laptop, 16.8M points). chebax may now claim, with the measurement cited: besselj f64
@@ -220,8 +220,13 @@ measured there. Never claim "memory-bound" for f64 on GeForce-class parts.
 **Narrow-domain race — measured 2026-07-31** (`experiments/04`, was queued 2026-07-29):
 the single-region inner evaluation beats the full three-region select besselj **2.5×
 (f64) / 3.0× (f32)** on x ~ U(0, 8), matching the a-third-the-arithmetic prediction.
-Verdict: worth offering. **Queued build:** a domain-limited `besselj(v, domain=(a, b))`
-that trims to the covering region(s); first customer the Matérn demo.
+Verdict: worth offering. **DELIVERED 2026-08-02, increment 30:**
+`besselj(v, domain=(lo, hi))` keeps only the covering regions, returns
+bit-identical values inside the window and nan outside it, and measures 2.5× f64 /
+2.6× f32 as shipped (`experiments/04`, re-run against the public instance). The
+Matérn demo is NOT its first customer after all: `matern` runs on besselk, whose
+own regions would need the same option and a caller-declared window, since a
+kernel's z-range is data-dependent.
 
 **gammainc work (2026-07-30, Andres): part (1) benchmark DONE 2026-07-31**
 (`experiments/05`): XLA's looped `igamma` vs a mock fixed-degree kernel
@@ -259,19 +264,20 @@ emitters take truncate_tol and xsf_header takes dtype="float" (f-suffixed
 literals, float arrays and locals, templated Clenshaw), compile-verified at
 f32 grade. Option (3), fpminimax, stays dead per the 2% measurement.
 
-**Queued per-group parameter API (2026-07-30, Andres; strictly after the B3
-benchmark study, scheduled 2026-07-31 in `../bessel/`):** a wrapper over the
-traced-parameter path serving *per-group* parameters: G unique parameter values
-plus a static group-index array; build the G coefficient tables under `vmap`
-(~3k FLOPs each, differentiable, inside `jit`), gather per element. This
-relaxes uniform-per-call to "per-group, grouping static, values free to change
-every iteration" — the hierarchical-model regime (numpyro
-`Beta(alpha[group_idx], ...)`, censored likelihoods with per-group shapes,
-mixtures, multi-kernel GPs), which is where the adoption map's constraint
-caveat actually bites (`docs/adoption-map.md`). Cost is
-G × (reconstruction + n_g × polynomial); B3 must measure the crossover n per
-group where reconstruction overhead disappears before any API is designed or
-claimed. The per-element contract (one parameter per point, scipy's
+**Per-group parameter API — DELIVERED** (`chebax.pergroup`, `tests/test_pergroup.py`;
+crossover measured 2026-07-31 in `experiments/07`). A static integer group index plus
+one parameter set per group: the G coefficient tables are built under `vmap` inside
+`jit`, differentiably, and gathered per element. This relaxes uniform-per-call to
+"per-group, grouping static, values free to change every iteration", the
+hierarchical-model regime the adoption map's constraint caveat is about. Measured:
+reconstruction overhead within 1.07× of the uniform floor at n/group ≥ 16k (betainc,
+N = 2^24), besselk within 1.08× down to n/group = 1024, and against jax's own betainc
+the per-group path wins every measured cell (worst 7.3× at 16384 groups of 64,
+44–98× at MCMC scale). The 2026-08-01 review closed its one defect: padded empty
+groups were evaluated, so reverse mode could produce 0·NaN; empty groups now borrow a
+live group's element before the vmap.
+
+The per-element contract (one parameter per point, scipy's
 `jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
 wrapper changes its arithmetic.
 

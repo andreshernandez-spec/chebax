@@ -1,4 +1,4 @@
-"""Large-a path for the regularized incomplete gamma: a in (10, 1000],
+"""Large-a path for the regularized incomplete gamma: a > 10,
 x in [0, inf), from the Temme-zone tables (gammainc_large_gen).
 
 Three zones of lambda = x/a, two hard selects:
@@ -21,8 +21,9 @@ Three zones of lambda = x/a, two hard selects:
 w is evaluated as d - log1p(d) (d = lambda - 1) with a series switch
 below |d| = 1e-3, and eta as d sqrt(2w/d^2) so AD at lambda = 1 gets
 the smooth limit instead of sqrt(0)'s nan. v = 10/a is the parameter
-axis of all three tables; jax.grad in a flows through it, eta, and
-gammaln (dP/da for a in (10, 1000], jax's igamma_grad_a's territory).
+axis of all three tables, reaching v = 0 (a = inf) where each kernel
+tends to its asymptotic limit; jax.grad in a flows through it, eta, and
+gammaln (dP/da for every a > 10, jax's igamma_grad_a's territory).
 
 Shared machinery for gammainc.py, which owns the public dispatch at
 a = 10; nothing here is exported.
@@ -40,6 +41,12 @@ from chebax._src.recipes.erf_family import erfcx
 from chebax._src.series import ChebSeries
 
 _SQ2PI = 2.5066282746310002  # sqrt(2 pi)
+
+# The tables run to v = 10/a = 0, which is a = inf, so this path has no
+# upper end: the box ceiling is a policy of the dispatch, not an axis of
+# the tables. Kept as a name because gammainc, quantiles and the numpyro
+# wiring all gate on it.
+AHI = float("inf")
 
 
 def _w_eta(lam):
@@ -145,7 +152,7 @@ def series_traced(a):
 
 @jax.tree_util.register_pytree_node_class
 class GammaIncLargeP(Recipe):
-    """Callable P(a, x), a in (10, 1000]. Built by gammainc(a)."""
+    """Callable P(a, x), a > 10. Built by gammainc(a)."""
 
     _static_fields = ("a",)
     _series_fields = ("temme", "dlow", "dup")
@@ -159,7 +166,7 @@ class GammaIncLargeP(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class GammaIncLargeQ(Recipe):
-    """Callable Q(a, x), a in (10, 1000]. Built by gammaincc(a)."""
+    """Callable Q(a, x), a > 10. Built by gammaincc(a)."""
 
     _static_fields = ("a",)
     _series_fields = ("temme", "dlow", "dup")

@@ -358,6 +358,14 @@ finding. All release-blocking and high-severity items are fixed; the disposition
 table, including the still-open maintainability items, is
 `docs/review-2026-07-30.md`.
 
+**hyp1f1 recipe (2026-08-01): DELIVERED** (increment 24, `experiments/13`).
+Kummer's M on (a, b) ∈ [0.1, 10]², x ≥ 0, via a ln R inner kernel
+(M = 1 + (a/b)xR, the gammainc trick generalized) and a DLMF 13.7.1
+log-remainder tail split at x = 30. The adoption-map capability gap with a
+ready audience: jax's hyp1f1 is documented-unstable (jax#21503). Worst
+3.7e-13 at the max(1, |ln M|)-normalized metric; no performance claim until
+a race is run.
+
 ---
 
 ## 5. Risks

@@ -147,8 +147,17 @@ def eval_betainc(a, b, x, cab, cba):
     reflected = 1.0 - jnp.exp(_log_direct(b, a, yd, cba))
     core = jnp.where(xi <= _bt.XSPLIT, direct, reflected)
     out = jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
-    out = out + edge_slope(_edge_density(a, b, x), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
+
+
+def with_edge_slopes(a, b, x, out):
+    """Splice the endpoint densities into an already-evaluated CDF.
+
+    Applied OUTSIDE the panel switch: a custom_jvp inside a lax.switch
+    branch has no transpose under vmap, which is how the per-group path
+    reaches it (measured: pergroup + grad raised a broadcast_in_dim shape
+    error). The values are untouched either way."""
+    return out + edge_slope(_edge_density(a, b, x), x)
 
 
 def _edge_density(a, b, x):
@@ -176,7 +185,9 @@ class BetaInc(Recipe):
         self.b = float(self.b)
 
     def __call__(self, x):
-        return eval_betainc(self.a, self.b, x, self.cab, self.cba)
+        return with_edge_slopes(self.a, self.b, x,
+                                eval_betainc(self.a, self.b, x, self.cab,
+                                             self.cba))
 
 
 @functools.lru_cache(maxsize=128)
@@ -197,8 +208,9 @@ def betainc_fn(a, b, x):
     a = jnp.asarray(a)
     b = jnp.asarray(b)
     x = jnp.asarray(x)
-    return with_panel_series(a, b,
-                             lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+    out = with_panel_series(a, b,
+                            lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+    return with_edge_slopes(a, b, x, out)
 
 
 def log_betainc_fn(a, b, x):

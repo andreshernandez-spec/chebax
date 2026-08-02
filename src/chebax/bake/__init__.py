@@ -87,11 +87,12 @@ def _ident(value, what):
             f"got {value!r}")
     if keyword.iskeyword(value) or value in _CPP_KEYWORDS:
         raise ValueError(
-            f"{what} must not be a python or C++ keyword, got {value!r}")
+            f"{what} must be an identifier that is neither a python nor a "
+            f"C++ keyword, got {value!r}")
     if "__" in value or (value[:1] == "_" and value[1:2].isupper()):
         raise ValueError(
-            f"{what} must not be a reserved C++ identifier form (double "
-            f"underscore, or a leading underscore before a capital), got "
+            f"{what} must be an identifier C++ does not reserve (no double "
+            f"underscore, no leading underscore before a capital), got "
             f"{value!r}")
     return value
 

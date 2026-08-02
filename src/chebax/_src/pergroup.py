@@ -43,7 +43,9 @@ def pergroup(fn, group_idx, num_groups=None):
     Returns g(param0, ..., paramK, x): each param is a length-G array
     (traceable), x has group_idx's shape, and the result is
     fn(param0[gi], ..., paramK[gi], x[i]) elementwise. Gradients flow to
-    every group's parameters; an empty group contributes zero gradient.
+    every group's parameters; an empty group contributes exactly zero
+    gradient and its parameters are never passed to fn, so nan or
+    out-of-domain values parked in an empty slot stay harmless.
     """
     idx = np.asarray(group_idx)
     if idx.size == 0:
@@ -62,16 +64,23 @@ def pergroup(fn, group_idx, num_groups=None):
     starts = np.concatenate([[0], np.cumsum(counts)[:-1]])
     order = np.argsort(flat, kind="stable")
 
+    empty = counts == 0
+    any_empty = bool(empty.any())
+    donor = int(np.flatnonzero(counts)[0])
+
     # gather: (g, m) element indices, rows padded with the group's first
-    # element (a real in-domain x, so padding never leaves fn's domain);
-    # empty groups use element 0 and their rows are never read back
-    gather = np.zeros((g, m), dtype=np.int64)
+    # element (a real in-domain x, so padding never leaves fn's domain).
+    # An empty group borrows the donor's element and, below, the donor's
+    # parameters, so fn only ever sees a live (param, x) pair. Passing an
+    # empty group's own parameters was harmless going forward (nothing
+    # reads those rows) but reverse mode turned a nan or out-of-domain
+    # value there into 0 * nan, poisoning that group's gradient and, via
+    # the padding index, x's.
+    gather = np.empty((g, m), dtype=np.int64)
     for gi in range(g):
         c = counts[gi]
-        if c:
-            rows = order[starts[gi]:starts[gi] + c]
-            gather[gi, :c] = rows
-            gather[gi, c:] = rows[0]
+        gather[gi, :c] = order[starts[gi]:starts[gi] + c]
+        gather[gi, c:] = order[starts[gi if c else donor]]
 
     # back[i] = position of element i in the flattened (g, m) result
     pos = np.empty(flat.size, dtype=np.int64)
@@ -93,7 +102,7 @@ def pergroup(fn, group_idx, num_groups=None):
             if p.shape != (g,):
                 raise ValueError(f"parameter {k} has shape {p.shape}, "
                                  f"expected ({g},) for {g} groups")
-            ps.append(p)
+            ps.append(jnp.where(empty, p[donor], p) if any_empty else p)
         yg = jax.vmap(fn)(*ps, x.reshape(-1)[gather])
         return yg.reshape(-1)[back].reshape(shape)
 

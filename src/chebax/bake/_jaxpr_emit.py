@@ -1,7 +1,7 @@
 """Generic artifact emission: trace a Recipe instance's __call__ to a jaxpr
 and print it as self-contained Python-jax or C++17 source.
 
-The runtime is the single source of truth — recipes stay plain, typed jnp
+The runtime is the single source of truth: recipes stay plain, typed jnp
 code, and artifacts are derived from the very computation that runs. Two
 structural facts (probed, and load-bearing):
 
@@ -15,6 +15,15 @@ structural facts (probed, and load-bearing):
   one-to-one below. `jit`-wrapped helpers (jnp.where, clip) are recursed
   into, except for a small fold table of named functions with direct
   library equivalents (gammaln -> std::lgamma).
+
+Equations whose inputs are all literals (jnp.sqrt(2/pi) and friends) are
+evaluated here and inlined as constants. Left as ops they would be
+recomputed in whatever dtype the process running the artifact happens to
+use, which for float32 is not what was traced.
+
+Tracing is done at float64 (bake rejects float32 tables), so a recipe's
+python-level control flow is resolved at float64 and only the float64
+artifact reproduces it exactly; chebax.bake's docstring states the contract.
 
 Solver-based callables (anything containing while/scan/cond) are not
 bakeable and raise. The emitter runs at development time only: if a jax
@@ -46,9 +55,12 @@ _UNARY = {
     "sin":   ("jnp.sin({0})",      "std::sin({0})"),
     "cos":   ("jnp.cos({0})",      "std::cos({0})"),
     "abs":   ("jnp.abs({0})",      "std::fabs({0})"),
-    "sign":  ("jnp.sign({0})",     "((T)(({0}) > 0.0) - (T)(({0}) < 0.0))"),
+    # returns x itself for +-0 and NaN, which is what jnp.sign does there
+    "sign":  ("jnp.sign({0})",
+              "(({0}) > 0.0 ? (T)(1) : (({0}) < 0.0 ? (T)(-1) : ({0})))"),
     "logistic": ("jax.nn.sigmoid({0})", "(1.0 / (1.0 + std::exp(-({0}))))"),
     "is_finite": ("jnp.isfinite({0})", "std::isfinite({0})"),
+    "not":   ("jnp.logical_not({0})", "(!({0}))"),
     "lgamma": ("jax.scipy.special.gammaln({0})", "std::lgamma({0})"),
 }
 
@@ -68,6 +80,12 @@ _NAMED_FOLDS = {
     "_lgamma": ("jax.scipy.special.gammaln({0})", "std::lgamma({0})"),
 }
 
+_BOOL_OUT = {"is_finite", "not"}
+
+# a scalar equation of any of these folds to a literal at bake time (_fold)
+_FOLDABLE = (set(_BINOP) | set(_CMP) | set(_UNARY) | set(_BINFN)
+             | {"integer_pow", "select_n"})
+
 
 class _Emit:
     def __init__(self, cpp, ctype="double"):
@@ -76,10 +94,16 @@ class _Emit:
         self.lines = []
         self.counter = 0
         self.coef_names = {}      # id -> (name, series)
+        self.endpoint_slope_dropped = False
+        self.folded = {}          # var -> its bake-time value (scalar subexpressions)
 
     def fresh(self):
         self.counter += 1
         return f"t{self.counter}"
+
+    def tmpl(self, pair):
+        """Template for the active backend, with (T) resolved to the C++ type."""
+        return pair[1].replace("(T)", f"({self.ctype})") if self.cpp else pair[0]
 
     def assign(self, expr, is_bool=False):
         sym = self.fresh()
@@ -105,6 +129,27 @@ def _lit(val, cpp, ctype="double"):
              else "float('inf')")
         return (f"(-{s})" if v < 0 else s), False
     return (repr(v) + ("f" if cpp and ctype == "float" else "")), False
+
+
+_MISSING = object()
+
+
+def _const_val(em, v):
+    """v's value if it is a literal or an already-folded scalar, else _MISSING."""
+    if isinstance(v, _Literal):
+        return v.val
+    return em.folded.get(v, _MISSING)
+
+
+def _fold(em, eqn):
+    """Evaluate a literals-only equation now, at the traced float64, and
+    return its value. Left in the artifact it would be recomputed in
+    whatever dtype the host runs (jnp.sqrt(0.63) is f32 with x64 off), which
+    is not what was traced."""
+    vals = [_const_val(em, v) for v in eqn.invars]
+    if any(w is _MISSING or np.ndim(w) != 0 for w in vals):
+        return _MISSING
+    return eqn.primitive.bind(*vals, **eqn.params)
 
 
 def _collect_matches(inst, a, prefix=""):
@@ -133,9 +178,26 @@ def _match_series(inst, const):
         names = [h[0] for h in hits]
         raise NotImplementedError(
             f"a coefficient constant matches series fields {names} whose domains "
-            f"differ ({sorted(domains)}); value-matching cannot identify it — "
-            "make the coefficient vectors distinct")
+            f"differ ({sorted(domains)}); value-matching cannot identify it. "
+            "Make the coefficient vectors distinct")
     return hits[0]
+
+
+def _is_constant_zero_jvp(eqn):
+    """True for a custom_jvp whose PRIMAL is the literal 0 (chebax's
+    endpoint-slope trick: a zero carrying a one-sided derivative).
+
+    Structural, not name based: the call_jaxpr has no equations and returns
+    a zero literal, so emitting 0.0 is value-exact by construction."""
+    cj = eqn.params.get("call_jaxpr")
+    if cj is None:
+        return False
+    inner = cj.jaxpr if hasattr(cj, "jaxpr") else cj
+    if inner.eqns or len(inner.outvars) != 1:
+        return False
+    ov = inner.outvars[0]
+    return isinstance(ov, _Literal) and np.asarray(ov.val).ndim == 0 \
+        and float(np.asarray(ov.val)) == 0.0
 
 
 def _emit_jaxpr(em, jaxpr, env):
@@ -150,11 +212,28 @@ def _emit_jaxpr(em, jaxpr, env):
         if p in _LOOP_PRIMS:
             raise NotImplementedError(
                 "solver-based callables (while/scan/cond in the jaxpr) are not bakeable yet")
+        if p in _FOLDABLE:
+            val = _fold(em, eqn)
+            if val is not _MISSING:
+                em.folded[out] = val
+                env[out] = _lit(val, em.cpp, em.ctype)[0]
+                continue
         if p == "custom_jvp_call":
+            if _is_constant_zero_jvp(eqn):
+                # an endpoint-slope rule (gammainc's density at x = 0): the
+                # primal is the literal 0, so folding it cannot change a
+                # value, only the one-sided slope AT the endpoint. Recorded
+                # so the caller can state it; see bake's docstring.
+                em.endpoint_slope_dropped = True
+                env[out] = _lit(np.zeros(()), em.cpp, em.ctype)[0]
+                continue
             coef_in = [v for v in eqn.invars
                        if not isinstance(v, _Literal) and env[v] in em.coef_names]
             if len(coef_in) != 1:
-                raise NotImplementedError(f"unrecognized custom_jvp_call (coef inputs: {len(coef_in)})")
+                raise NotImplementedError(
+                    "custom_jvp_call that is not a series evaluation (coefficient "
+                    f"inputs: {len(coef_in)}); inlining it would drop its derivative "
+                    "rule and the artifact would differ from the runtime under AD")
             name, series = em.coef_names[env[coef_in[0]]]
             (x_in,) = [v for v in eqn.invars if v is not coef_in[0]]
             a, b = series.domain
@@ -170,8 +249,7 @@ def _emit_jaxpr(em, jaxpr, env):
             name = str(eqn.params.get("name", ""))
             inner = eqn.params.get("jaxpr")
             if name in _NAMED_FOLDS:
-                tmpl = _NAMED_FOLDS[name][1 if em.cpp else 0]
-                tmpl = tmpl.replace("(T)", f"({em.ctype})")
+                tmpl = em.tmpl(_NAMED_FOLDS[name])
                 env[out] = em.assign(tmpl.format(*[read(v) for v in eqn.invars]))
                 continue
             inner_jaxpr = inner.jaxpr if hasattr(inner, "jaxpr") else inner
@@ -207,10 +285,13 @@ def _emit_jaxpr(em, jaxpr, env):
             env[out] = em.assign(f"({x}) {_CMP[p]} ({y})", is_bool=True)
         elif p in _BINFN:
             x, y = (read(v) for v in eqn.invars)
-            env[out] = em.assign(_BINFN[p][1 if em.cpp else 0].format(x, y))
+            env[out] = em.assign(em.tmpl(_BINFN[p]).format(x, y))
         elif p in _UNARY:
-            env[out] = em.assign(_UNARY[p][1 if em.cpp else 0].format(read(eqn.invars[0])),
-                                 is_bool=(p == "is_finite"))
+            if p == "not" and eqn.invars[0].aval.dtype != np.dtype(bool):
+                # jax's not is bitwise on integers, C's ! is logical
+                raise NotImplementedError("not on a non-boolean operand is not bakeable")
+            env[out] = em.assign(em.tmpl(_UNARY[p]).format(read(eqn.invars[0])),
+                                 is_bool=p in _BOOL_OUT)
         elif p == "integer_pow":
             k = eqn.params["y"]
             x = read(eqn.invars[0])

@@ -38,11 +38,12 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | `besselk` | `besselk(v)` | `besselk_fn`, `log_besselk_fn` | `besselk_dnu(v)` | x ≥ 1e-6; the log form has no underflow ceiling |
 | Matérn | — | `matern(nu, r, lengthscale)` | via `grad` | unit-variance correlation, LEARNABLE smoothness ν ∈ (0, 10] |
 | `betainc` | `betainc(a, b)` | `betainc_fn`, `log_betainc_fn` | via `grad` of `_fn` | (a, b) ∈ [0.1, 100]² (panels, split at 10); the log form resolves the lower tail with no underflow floor |
-| `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ∈ [0.1, 10], x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 (`experiments/05`) |
+| `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ∈ [0.1, 1000] ((10, 1000] via Temme-zone tables), x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`) |
+| `hyp1f1` | `hyp1f1(a, b)` | `hyp1f1_fn`, `log_hyp1f1_fn` | via `grad` of `_fn` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
-| quantiles | — | `betaincinv`, `gammaincinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
+| quantiles | — | `betaincinv`, `gammaincinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
-| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept for the C++ bake path |
+| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
@@ -59,7 +60,11 @@ gammainccinv, erfcx, erfcinv, ive, kve — and adds betainc gradients in its
 shape parameters, so censored or truncated StudentT/Beta likelihoods with a
 latent scalar shape sample instead of raising. Shape parameters must be
 scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
-return nan, never silently wrong numbers.
+return nan, never silently wrong numbers. One inherited limit worth knowing
+before you rely on it: `gammainccinv` is solved at `1 - p`, so upper-tail
+probabilities below ~1e-17 collapse to 1 and return inf even where the
+quantile is perfectly finite. Call `gammaincinv(a, p)` directly for the
+lower tail, which has no such floor.
 
 For numpyro users: `from chebax.numpyro import TruncatedGamma, TruncatedBeta,
 TruncatedStudentT` (installs with `pip install chebax[numpyro]`) gives the
@@ -67,8 +72,11 @@ truncated distributions numpyro's location-scale machinery cannot cover
 (numpyro#969, numpyro#1365): full Distribution classes with reparameterized
 inverse-CDF sampling (`has_rsample`), truncation-normalized `log_prob`, and
 gradients through every parameter including the shapes, so NUTS and SVI work
-with a latent concentration or df. Shape parameters are uniform per call;
-domain boxes are in the module docstring.
+with a latent concentration or df. The truncation is normalized in log space,
+so an interval whose two ends land in the same tail still works: `Gamma(3)`
+truncated to [50, 51] has mass ~3e-20 and returns an ordinary density.
+Shape parameters are uniform per call; domain boxes are in the module
+docstring and checked at construction.
 
 `notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
 the Bessel family with a learnable Matérn kernel, differentiable quantiles,

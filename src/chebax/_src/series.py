@@ -2,12 +2,12 @@
 
 Only two algorithms run per call: Clenshaw, and (for gradients) one more
 Clenshaw on the derivative coefficients. Differentiation and integration act
-on coefficients through dense (n x n) matrices built from the numpy
-references in algorithms.py, so they work on traced values and agree with
-the references exactly; for concrete coefficients jit constant-folds the
-matrix product, so the per-call gradient cost is one extra Clenshaw, but
-deriv() itself is O(n^2) work and is recomputed per call (caching a
-possibly-traced result on the instance would leak tracers).
+on coefficients through the closed forms of the numpy references in
+algorithms.py, written in jax so they work on traced values, in O(n) time
+and with no cached state. For concrete coefficients jit constant-folds them,
+so the per-call gradient cost is one extra Clenshaw; deriv() itself is O(n)
+and is recomputed per call (caching a possibly-traced result on the instance
+would leak tracers).
 
 Series are pytrees: coefficients are leaves, domains and breakpoints are
 static. Full float64 accuracy needs jax's x64 mode. Evaluation promotes x
@@ -15,27 +15,81 @@ and the coefficients to a common dtype first (a float32 x against float64
 tables computes in float64, matching the segmented path).
 """
 
-import functools
-
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from chebax._src import algorithms
 
+def _der_coefs(coef):
+    """chebder along the last axis, for traced coefficients.
 
-@functools.lru_cache(maxsize=None)
-def _der_matrix(n):
-    """chebder as an (n-1, n) matrix (n=1: zero map), for traced coefficients."""
+    Closed form of algorithms.chebder's downward recurrence: d_k is twice
+    the sum of j*c_j over j > k of the opposite parity, with d_0 halved.
+    Reshaping to (m, 2) puts the two parities in separate columns, so one
+    reverse cumsum down the rows does both stride-2 suffix sums. O(n).
+    n = 1 is the zero map."""
+    n = coef.shape[-1]
     if n == 1:
-        return np.zeros((1, 1))
-    return np.array([algorithms.chebder(e) for e in np.eye(n)]).T
+        return jnp.zeros_like(coef)
+    # the index vectors are static, so build them in numpy (2j and the
+    # halving factor are exact in either float dtype)
+    a = coef * np.arange(0, 2 * n, 2, dtype=np.float64).astype(coef.dtype)
+    if n % 2:
+        a = jnp.concatenate([a, jnp.zeros(a.shape[:-1] + (1,), a.dtype)], axis=-1)
+    pairs = a.reshape(a.shape[:-1] + (-1, 2))
+    s = jax.lax.cumsum(pairs, axis=pairs.ndim - 2, reverse=True).reshape(a.shape)
+    half = np.where(np.arange(n - 1) == 0, 0.5, 1.0).astype(coef.dtype)
+    return s[..., 1:n] * half
 
 
-@functools.lru_cache(maxsize=None)
-def _int_matrix(n):
-    """chebint as an (n+1, n) matrix, for traced coefficients."""
-    return np.array([algorithms.chebint(e) for e in np.eye(n)]).T
+def _int_coefs(coef):
+    """chebint along the last axis, for traced coefficients.
+
+    algorithms.chebint has no recurrence to unroll: out_k = (c_{k-1} -
+    c_{k+1}) / 2k for k >= 2, out_1 = c_0 - c_2/2 (plain-c0 convention),
+    and out_0 last so the antiderivative vanishes at t = 0."""
+    n = coef.shape[-1]
+    z = jnp.zeros(coef.shape[:-1] + (1,), coef.dtype)
+    hi = jnp.concatenate([coef[..., 2:], z, z], axis=-1)[..., :n]   # c_{k+1}, k = 1..n
+    k = np.arange(1, n + 1)
+    # divided term by term, like the reference, so the rounding matches
+    lo_div = np.where(k == 1, 1.0, 2.0 * k).astype(coef.dtype)
+    hi_div = (2.0 * k).astype(coef.dtype)
+    out = coef / lo_div - hi / hi_div
+    tk = np.where(k % 2 == 1, 0.0, np.where(k % 4 == 0, 1.0, -1.0)).astype(coef.dtype)  # T_k(0)
+    return jnp.concatenate([-jnp.sum(out * tk, axis=-1, keepdims=True), out], axis=-1)
+
+
+def _as_float_coef(coef):
+    """Coefficients as a float jax array, with no silent conversion loss.
+
+    jnp.asarray narrows int64 to int32 first, so a big integer wraps under
+    x64 off, and casting complex to float drops the imaginary part. Value
+    checks run on concrete input only: coef may be a tracer (the *_fn paths
+    build series from traced reconstructions)."""
+    traced = isinstance(coef, jax.core.Tracer)
+    if not traced and not isinstance(coef, jax.Array):
+        coef = np.asarray(coef)  # numpy keeps the full integer width
+    if jnp.issubdtype(coef.dtype, jnp.complexfloating):
+        raise ValueError(f"complex coefficients are not supported, got dtype {coef.dtype}")
+    if jnp.issubdtype(coef.dtype, jnp.floating):
+        return jnp.asarray(coef)
+    # integer coefficients truncate under integ() and break coefficient AD
+    # with float0 tangents, so promote
+    canon = jnp.empty(()).dtype
+    if traced:
+        return coef.astype(canon)
+    src = np.asarray(coef)
+    out = src.astype(canon)
+    if not np.array_equal(out.astype(src.dtype), src):
+        raise ValueError(f"integer coefficients are not exactly representable in {canon}; "
+                         "convert them yourself if the rounding is acceptable")
+    return jnp.asarray(out)
+
+
+def _check_float_dtype(dtype):
+    if not jnp.issubdtype(dtype, jnp.floating):
+        raise ValueError(f"astype needs a floating dtype, got {np.dtype(dtype)}")
 
 
 def _clenshaw(t, coef, coef_last_axis=False):
@@ -53,8 +107,7 @@ def _clenshaw(t, coef, coef_last_axis=False):
 
 def _dcoef(coef, domain):
     a, b = domain
-    d = jnp.asarray(_der_matrix(coef.shape[0]), dtype=coef.dtype)
-    return (2.0 / (b - a)) * (d @ coef)
+    return (2.0 / (b - a)) * _der_coefs(coef)
 
 
 def _chebval_impl(x, coef, domain):
@@ -88,23 +141,28 @@ class ChebSeries:
     """sum(c[k] T_k(t)), t the affine image of x taking [a, b] to [-1, 1].
 
     Plain-c0, lowest-first coefficients (the numpy.polynomial convention).
+    Frozen after construction: the recipe factories cache instances and hand
+    the same series to every caller, so mutation would corrupt the cache.
     """
 
+    _frozen = False
+
     def __init__(self, coef, domain=(-1.0, 1.0)):
-        coef = jnp.asarray(coef)
-        # shape/dtype checks only: coef may be a tracer (the *_fn paths
-        # build series from traced reconstructions), so no value checks
+        coef = _as_float_coef(coef)
         if coef.ndim != 1 or coef.shape[0] == 0:
             raise ValueError(f"coef must be a nonempty 1-D array, got shape {coef.shape}")
-        if not jnp.issubdtype(coef.dtype, jnp.floating):
-            # integer coefficients truncate under integ() and break
-            # coefficient AD with float0 tangents
-            coef = coef.astype(jnp.empty(()).dtype)
         self.coef = coef
         a, b = float(domain[0]), float(domain[1])
         if not (np.isfinite(a) and np.isfinite(b)) or not a < b:
             raise ValueError(f"domain must be finite with a < b, got ({a}, {b})")
         self.domain = (a, b)
+        object.__setattr__(self, "_frozen", True)
+
+    def __setattr__(self, name, value):
+        if self._frozen:
+            raise AttributeError(
+                f"ChebSeries is immutable (cached instances are shared); cannot set {name!r}")
+        object.__setattr__(self, name, value)
 
     @property
     def degree(self):
@@ -119,11 +177,11 @@ class ChebSeries:
     def integ(self):
         """Antiderivative vanishing at the domain midpoint."""
         a, b = self.domain
-        m = jnp.asarray(_int_matrix(self.coef.shape[0]), dtype=self.coef.dtype)
-        return ChebSeries(((b - a) / 2.0) * (m @ self.coef), self.domain)
+        return ChebSeries(((b - a) / 2.0) * _int_coefs(self.coef), self.domain)
 
     def astype(self, dtype):
         """Round the coefficients; error floor grows to ~eps(dtype)*sum|c|."""
+        _check_float_dtype(dtype)
         return ChebSeries(self.coef.astype(dtype), self.domain)
 
     def truncate(self, tol):
@@ -148,13 +206,13 @@ class ChebSeries:
         obj = object.__new__(cls)
         obj.coef = children[0]
         obj.domain = domain
+        object.__setattr__(obj, "_frozen", True)
         return obj
 
 
 def _pw_dcoef(coef, breaks):
-    d = jnp.asarray(_der_matrix(coef.shape[1]), dtype=coef.dtype)
     widths = np.diff(np.asarray(breaks))
-    return (coef @ d.T) * jnp.asarray(2.0 / widths, dtype=coef.dtype)[:, None]
+    return _der_coefs(coef) * jnp.asarray(2.0 / widths, dtype=coef.dtype)[:, None]
 
 
 def _pw_chebval_impl(x, coef, breaks):
@@ -185,22 +243,31 @@ class PiecewiseCheb:
     """Segmented series: row i of coef is a ChebSeries on [breaks[i], breaks[i+1]],
     all padded to one degree, evaluated by gather + one Clenshaw (no branches).
     x outside [breaks[0], breaks[-1]] uses the nearest end segment's polynomial.
+    Frozen after construction, like ChebSeries.
     """
 
+    _frozen = False
+
     def __init__(self, coef, breaks):
-        coef = jnp.asarray(coef)
+        coef = _as_float_coef(coef)
         self.breaks = tuple(float(t) for t in breaks)
         if len(self.breaks) < 2:
             raise ValueError("breaks needs at least two knots")
         if coef.ndim != 2 or coef.shape[0] != len(self.breaks) - 1 or coef.shape[1] == 0:
             raise ValueError("coef must have shape (len(breaks) - 1, degree + 1)")
-        if not jnp.issubdtype(coef.dtype, jnp.floating):
-            coef = coef.astype(jnp.empty(()).dtype)
         self.coef = coef
         if not all(np.isfinite(t) for t in self.breaks):
             raise ValueError("breaks must be finite")
         if not all(u < v for u, v in zip(self.breaks, self.breaks[1:])):
             raise ValueError("breaks must be strictly increasing")
+        object.__setattr__(self, "_frozen", True)
+
+    def __setattr__(self, name, value):
+        if self._frozen:
+            raise AttributeError(
+                f"PiecewiseCheb is immutable (cached instances are shared); "
+                f"cannot set {name!r}")
+        object.__setattr__(self, name, value)
 
     @property
     def degree(self):
@@ -217,6 +284,7 @@ class PiecewiseCheb:
         return PiecewiseCheb(_pw_dcoef(self.coef, self.breaks), self.breaks)
 
     def astype(self, dtype):
+        _check_float_dtype(dtype)
         return PiecewiseCheb(self.coef.astype(dtype), self.breaks)
 
     def truncate(self, tol):
@@ -240,4 +308,5 @@ class PiecewiseCheb:
         obj = object.__new__(cls)
         obj.coef = children[0]
         obj.breaks = breaks
+        object.__setattr__(obj, "_frozen", True)
         return obj

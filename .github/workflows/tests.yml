@@ -30,6 +30,23 @@ jobs:
       - name: Run full suite (includes byte-for-byte table regeneration)
         run: python -m pytest -q
 
+  x64-off:
+    # the default jax configuration (float32). The main suite forces x64 on
+    # in conftest, so without this job the configuration most users get is
+    # never tested.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install -e ".[gen,test,numpyro]"
+      - name: Default runtime (x64 off)
+        run: python -m pytest -q tests/test_x64_off.py
+      - name: Per-recipe x64-off checks
+        run: python -m pytest -q -k "x64_off or float32" tests/
+
   notebooks:
     runs-on: ubuntu-latest
     steps:

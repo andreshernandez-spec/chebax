@@ -269,3 +269,156 @@ def test_mixed_dtype_matches_piecewise():
     p = chebax.fit(np.exp, domain=(-1.0, 1.0))
     x32 = jnp.asarray(0.7, jnp.float32)
     assert abs(float(p(x32)) - float(p(jnp.asarray(np.float64(x32))))) <= 1e-15
+
+
+# ---- review 2026-08-01: aliasing over the Chebyshev modes -------------------
+# _validated used to size its grid from the candidate, so it could resample
+# the fitting grid itself and certify an alias: fit(T_29) returned -T_5 (sup
+# error 2.0) because 6 + 11 is again 17. It now validates on 2n and 4n, both
+# fixed by the fitting resolution n. T_k for k = 1..70 is the sweep that
+# catches it: aliasing shows up as a returned degree below k.
+
+
+def cheb_mode(k):
+    """T_k = cos(k arccos x), sampled in numpy or (dps builds) in mpmath."""
+    def f(x):
+        if hasattr(x, "_mpf_"):
+            import mpmath as mp
+            return mp.cos(k * mp.acos(x))
+        return np.cos(k * np.arccos(np.clip(np.asarray(x, dtype=float), -1.0, 1.0)))
+    return f
+
+
+def cheb_mode_refs(ks, m=401):
+    """T_k on a fine grid at 50 dps; float64 arccos loses digits near +-1."""
+    mp = pytest.importorskip("mpmath")
+    xs = np.linspace(-1.0, 1.0, m)
+    with mp.workdps(50):
+        th = [mp.acos(mp.mpf(float(x))) for x in xs]
+        return xs, {k: np.array([float(mp.cos(k * t)) for t in th]) for k in ks}
+
+
+def mode_sup_err(p, ref, xs):
+    return np.max(np.abs(algorithms.chebval(xs, np.asarray(p.coef, dtype=float)) - ref))
+
+
+def test_no_aliasing_float64_modes():
+    # float64 sampling, every mode up to 48 (fit(T_45) used to return degree
+    # 21, sup error 2.0). Degrees run above k here because cos(k*arccos x) is
+    # ill-conditioned near the endpoints and the chop settles at that noise
+    # plateau; worst measured sup error 2.0e-13, bar 8e-13.
+    ks = range(1, 49)
+    xs, ref = cheb_mode_refs(ks)
+    for k in ks:
+        p = chebax.fit(cheb_mode(k))
+        assert p.degree >= k, (k, p.degree)
+        assert mode_sup_err(p, ref[k], xs) <= 8e-13, k
+
+
+def test_no_aliasing_dps_modes():
+    # the modes that fooled the old grid choice, sampled exactly. Worst
+    # measured sup error 6.4e-15 (the float64 Clenshaw floor), bar 3e-14.
+    ks = [17, 29, 39, 45, 63]
+    xs, ref = cheb_mode_refs(ks)
+    for k in ks:
+        p = chebax.fit(cheb_mode(k), dps=60)
+        assert p.degree == k, (k, p.degree)
+        assert mode_sup_err(p, ref[k], xs) <= 3e-14, k
+
+
+@pytest.mark.slow
+def test_no_aliasing_dps_modes_sweep():
+    # the full sweep, ~15 s. Exact sampling, so the degree must come back as
+    # k itself. Worst measured sup error 7.2e-15, bar 3e-14.
+    ks = range(1, 71)
+    xs, ref = cheb_mode_refs(ks)
+    for k in ks:
+        p = chebax.fit(cheb_mode(k), dps=60)
+        assert p.degree == k, (k, p.degree)
+        assert mode_sup_err(p, ref[k], xs) <= 3e-14, k
+
+
+def test_validation_grids_cannot_repeat_the_fit_aliasing():
+    # the construction _validated rests on. On m first-kind points T_K
+    # samples as +-T_j with (j, sign) set by K mod 4m; below K = 15n + 1 no
+    # mode folds the same way on n, 2n and 4n onto a j the candidate can hold
+    # (j < n, the candidate comes from an n-point fit), and the three grids
+    # share no point. 15n + 1 itself folds onto j = n - 1, which only an
+    # untruncated candidate holds.
+    def fold(K, m):
+        r = K % (4 * m)
+        if r > 2 * m:
+            r = 4 * m - r
+        return (2 * m - r, -1) if r > m else (r, 1)
+
+    for n in (5, 17, 18, 33, 65, 129, 257):
+        pts = [set(algorithms.chebpts(m)) for m in (n, 2 * n, 4 * n)]
+        assert not (pts[0] & pts[1] or pts[0] & pts[2] or pts[1] & pts[2])
+        for K in range(1, 15 * n + 1):
+            j, s = fold(K, n)
+            if j == K or j >= n:
+                continue
+            assert fold(K, 2 * n) != (j, s) or fold(K, 4 * n) != (j, s), (n, K)
+
+
+def test_zero_samples_are_validated():
+    # the node polynomial of chebpts(17) is exactly zero on all 17 initial
+    # nodes, and 2^-16 * T_17 everywhere else. The zero-scale shortcut used
+    # to return the zero series from those samples without ever leaving the
+    # grid. Measured sup error 3.5e-19 against a 1.5e-5 scale, bar 1.4e-18.
+    nodes = algorithms.chebpts(17)
+
+    def node_poly(x):
+        return np.prod(np.asarray(x, dtype=float)[..., None] - nodes, axis=-1)
+
+    p = chebax.fit(node_poly, max_deg=64)
+    assert p.degree == 17
+    xs = np.linspace(-1.0, 1.0, 501)
+    assert np.max(np.abs(np.asarray(p(xs)) - node_poly(xs))) <= 1.4e-18
+    # a function that really is zero still fits as the zero series
+    q = chebax.fit(lambda x: np.zeros_like(np.asarray(x, dtype=float)))
+    assert q.degree == 0 and float(q(0.3)) == 0.0
+
+
+def test_fixed_degree_is_an_instruction():
+    # deg= skips validation on purpose: interpolating T_29 at 6 points is
+    # T_5, and at a fixed degree an unresolved f is a legitimate request, so
+    # aliasing cannot be told from under-resolution
+    p = chebax.fit(cheb_mode(29), deg=5)
+    assert p.degree == 5
+    np.testing.assert_allclose(np.asarray(p.coef), np.eye(6)[5], rtol=0, atol=1e-14)
+
+
+def test_fit_argument_validation():
+    # all of these used to be a ZeroDivisionError, a silent reinterpretation
+    # (deg=2.5 gave degree 3) or a silently ignored argument
+    def boom(x):
+        raise AssertionError("f must not be sampled before the arguments are checked")
+
+    cases = [
+        (dict(deg=-1), "deg must be a nonnegative integer"),
+        (dict(deg=2.5), "deg must be a nonnegative integer"),
+        (dict(deg=500), "above the max_deg=256"),
+        (dict(deg=5, max_deg=4), "above the max_deg=4"),
+        (dict(tol=0.0), "tol must be positive and finite"),
+        (dict(tol=-1.0), "tol must be positive and finite"),
+        (dict(tol=np.inf), "tol must be positive and finite"),
+        (dict(max_deg=0), "max_deg must be a positive integer"),
+        (dict(max_deg=-3), "max_deg must be a positive integer"),
+        (dict(max_deg=8.5), "max_deg must be a positive integer"),
+        (dict(dps=0), "dps must be a positive integer"),
+        (dict(dps=-5), "dps must be a positive integer"),
+        (dict(dps=3.5), "dps must be a positive integer"),
+        (dict(breaks=(0.0,)), "at least two knots"),
+        (dict(breaks=(0.0, 0.0)), "strictly increasing"),
+        (dict(breaks=(1.0, 0.0, 2.0)), "strictly increasing"),
+        (dict(breaks=(0.0, np.inf)), "breaks must be finite"),
+        (dict(domain=(1.0, 1.0)), "domain must be finite"),
+        (dict(domain=(0.0, np.inf)), "domain must be finite"),
+    ]
+    for kw, msg in cases:
+        with pytest.raises(ValueError, match=msg):
+            chebax.fit(boom, **kw)
+    # the edges of what is legal still fit
+    assert chebax.fit(np.exp, deg=0).degree == 0
+    assert chebax.fit(np.exp, deg=1, max_deg=1).degree == 1

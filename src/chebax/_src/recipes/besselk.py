@@ -34,6 +34,7 @@ traced nu the domain cannot be checked; keep nu in [0, 10] yourself.
 """
 
 import functools
+import math
 
 import jax
 import jax.numpy as jnp
@@ -43,6 +44,13 @@ from chebax._src.recipes import besselk_table as _kt
 from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.series import ChebSeries
+
+
+# sqrt(pi/2) and ln sqrt(pi/2) factored out: forming 2*x first overflows
+# above x ~ 9e307 (and above ~1.7e38 in f32), which sent ln K to -inf and
+# dK/dx to nan at finite x.
+_SQRT_HALF_PI = math.sqrt(math.pi / 2)
+_LOG_SQRT_HALF_PI = 0.5 * math.log(math.pi / 2)
 
 
 def _panel(v):
@@ -63,7 +71,7 @@ def _eval_k(v, x, ltil, ltail):
     xi = _xin(x)
     inner = jnp.exp(ltil(jnp.log(xi))) * jnp.power(xi / 2, -v)
     xo = _xout(x)
-    tail = jnp.exp(ltail(_kt.XS / xo)) * jnp.sqrt(jnp.pi / (2 * xo)) * jnp.exp(-xo)
+    tail = jnp.exp(ltail(_kt.XS / xo)) * (_SQRT_HALF_PI / jnp.sqrt(xo)) * jnp.exp(-xo)
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
@@ -75,7 +83,7 @@ def _eval_k_dnu(v, x, ltil, ltail, ltil_nu, ltail_nu):
     inner = inner_k * (ltil_nu(jnp.log(xi)) - jnp.log(xi / 2))
     xo = _xout(x)
     t = _kt.XS / xo
-    tail_k = jnp.exp(ltail(t)) * jnp.sqrt(jnp.pi / (2 * xo)) * jnp.exp(-xo)
+    tail_k = jnp.exp(ltail(t)) * (_SQRT_HALF_PI / jnp.sqrt(xo)) * jnp.exp(-xo)
     tail = tail_k * ltail_nu(t)
     return jnp.where(x <= _kt.XS, inner, tail)
 
@@ -155,11 +163,11 @@ def log_besselk_fn(nu, x):
     """ln K_nu(x), same contract as besselk_fn but with no underflow ceiling.
 
     besselk_fn returns K itself, which underflows to 0 past x ~ 746. The
-    tables store ln K, so the log evaluates directly: valid for arbitrarily
-    large x (ln K ~ -x), differentiable in nu and x, nu uniform per call in
-    [0, 10]. This is the log_kve shape that entropy and log-likelihood
-    pipelines want (e.g. a GIG log-normalizer needs ln K_p and its order
-    derivative).
+    tables store ln K, so the log evaluates directly: finite for every
+    finite x up to the largest double (ln K ~ -x), -inf at x = inf,
+    differentiable in nu and x, nu uniform per call in [0, 10]. This is
+    the log_kve shape that entropy and log-likelihood pipelines want
+    (e.g. a GIG log-normalizer needs ln K_p and its order derivative).
     """
     nu = jnp.asarray(nu)
     x = jnp.asarray(x)
@@ -167,7 +175,7 @@ def log_besselk_fn(nu, x):
     xi = _xin(x)
     inner = ltil(jnp.log(xi)) - nu * jnp.log(xi / 2)
     xo = _xout(x)
-    tail = ltail(_kt.XS / xo) + 0.5 * jnp.log(jnp.pi / (2 * xo)) - xo
+    tail = ltail(_kt.XS / xo) + _LOG_SQRT_HALF_PI - 0.5 * jnp.log(xo) - xo
     return jnp.where(x <= _kt.XS, inner, tail)
 
 

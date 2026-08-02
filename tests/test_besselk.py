@@ -83,6 +83,21 @@ def test_underflow_graceful():
     assert y == 0.0
 
 
+def test_nonfinite_x():
+    # K(inf) = 0, ln K(inf) = -inf, nan propagates on every path. dK/dx was
+    # nan at the top of the range because the tail prefactor formed 2*x
+    # first (inf), then 0 * inf in the jvp.
+    for f in [chebax.besselk(1.5), chebax.besselk_dnu(1.5),
+              lambda t: chebax.besselk_fn(1.5, t)]:
+        assert float(f(np.inf)) == 0.0
+        assert np.isnan(float(f(np.nan)))
+    assert float(chebax.log_besselk_fn(1.5, np.inf)) == -np.inf
+    assert np.isnan(float(chebax.log_besselk_fn(1.5, np.nan)))
+    assert np.isnan(float(jax.grad(chebax.log_besselk_fn, 1)(1.5, np.nan)))
+    assert float(jax.grad(chebax.besselk(1.5))(1e308)) == 0.0
+    assert float(jax.grad(chebax.besselk_fn, 1)(1.5, 1e308)) == 0.0
+
+
 def test_jit_and_pytree():
     kv = chebax.besselk(2.5)
     xs = jnp.asarray(XK[:10])
@@ -158,6 +173,30 @@ def test_log_besselk():
             dx = float(mp.diff(lambda t: mp.log(mp.besselk(mp.mpf(v), t)), mp.mpf(x)))
             gx = float(jax.grad(chebax.log_besselk_fn, 1)(v, x))
             assert abs(gx - dx) / max(1.0, abs(dx)) <= 1e-14, (v, x)
+
+
+def test_log_besselk_huge_x():
+    # up to the largest finite double, the range where forming 2*x in the
+    # tail prefactor used to overflow and return -inf. Errors relative to
+    # |ref| (which is ~ x here, never near zero); measured worst over this
+    # grid: value 0 (bit exact, the -x term swamps the rest), d/dx 2.2e-16.
+    # Bars 1e-15, about 4x the d/dx worst.
+    xs = jnp.asarray([1e3, 1e6, 1e20, 1e100, 1e200, 1e300, 1e308,
+                      float(np.finfo(np.float64).max)])
+    xl = [float(x) for x in xs]
+    for v in [0.0, 0.5, 1.7, 9.97]:
+        ref = np.array([float(mp.log(mp.besselk(mp.mpf(v), mp.mpf(x)))) for x in xl])
+        got = np.asarray(chebax.log_besselk_fn(v, xs))
+        assert np.all(np.isfinite(got)), v
+        assert np.max(np.abs(got - ref) / np.abs(ref)) <= 1e-15, v
+        # d/dx ln K = -(K_{v-1} + K_{v+1}) / (2 K_v), which tends to -1
+        dref = np.array([
+            float(-(mp.besselk(mp.mpf(v) - 1, mp.mpf(x))
+                    + mp.besselk(mp.mpf(v) + 1, mp.mpf(x)))
+                  / (2 * mp.besselk(mp.mpf(v), mp.mpf(x)))) for x in xl])
+        g = np.asarray(jax.vmap(jax.grad(chebax.log_besselk_fn, 1),
+                                in_axes=(None, 0))(jnp.asarray(v), xs))
+        assert np.max(np.abs(g - dref) / np.abs(dref)) <= 1e-15, v
 
 
 def _gig_log_normalizer(p, a, b):

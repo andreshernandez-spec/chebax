@@ -89,6 +89,10 @@ gammaincinv 4.0e-14; stdtr/stdtrit roundtrips ~5e-16; IFT gradients
 9.3e-15 / 2.6e-16. `gammaincinv` needs no tables at all — jax's own
 `gammainc` supplies values and the a-gradient.
 
+2026-08-01: that last sentence is stale. Increment 17 rewired the Newton
+residual onto the gammainc recipe tables for a ∈ [0.1, 10], keeping jax's
+`gammainc` only as the out-of-box fallback.
+
 ## 6 — spherical Bessel, truncated sampling, Lambert W (2026-07-30)
 
 `spherical_jn(n)`/`spherical_yn(n)` for n ∈ [0, 9] are one-line wrappers
@@ -461,3 +465,153 @@ and the bit-for-bit contract is deterministic today precisely because
 every fit stage is pure mpmath (generator docstring). Dense cost:
 ~600k coefficients, ~11 MB module. stdtr keeps its own slice tables
 (increment 21); nothing else touches the 3-D path.
+
+## 24 — hyp1f1: Kummer's M on (a, b) in [0.1, 10]^2 (2026-08-01)
+
+The recipe-candidate with a documented-unstable jax incumbent
+(jax#21503: series truncated at tol 1e-8, imprecise parameter grads).
+The naive kernel ln M fails twice at once (experiments/13): M's
+nearest zero sits at x ~ -b/a, which hugs the origin when b << a
+(x-degree past 150 at the (10, 0.1) corner), and 1F1's denominator
+poles start at b = 0, only 0.1 from the box edge (raw b-degree
+137-172). Both die with one move, the generalization of gammainc's
+1F1(1; a+1; x) trick: tabulate ln R with M = 1 + (a/b) x R. R's
+nearest zero moves out to -2(b+1)/(a+1), its b-poles start at -1
+(the same 1.1 clearance the other recipes enjoy), and the runtime
+reassembles ln M = log1p((a/b) x exp(ln R)) at full relative
+accuracy. Parameter axes go log (a: 26 vs 43 raw; b: 36 vs 50) except
+the tail's b, where raw wins (20 vs 44). The tail is the DLMF 13.7.1
+log-remainder T with t = XS/x, and XS must sit at 30, not gammainc's
+8: at x = 8 the asymptotic series is not yet asymptotic for
+|b - a| ~ 10 and t needs degree ~100. Two measurement artifacts worth
+recording: T(a, a, t) = 0 identically (M(a, a, x) = e^x), so
+diagonal fits report full degree on pure noise (max |T| = 7e-40),
+and near-diagonal strips report degrees on values ~ 1e-13 that are
+absolutely invisible in ln M ~ x >= 30 - normalize per-fit degree
+claims by the GLOBAL scale before believing them. Tables: inner
+136x32x44, tail 40x32x25, ~5.4 MB module, 11 min generation; CI
+regenerates the tail table bit-exactly as the canary, the full check
+runs behind CHEBAX_FULL_REGEN=1 (the increment-23 policy). Measured
+(sweep 9x9 pairs x 13 x, normalized by max(1, |ln M|)): values and
+log form 3.7e-13 worst, log form at deep x 1.7e-16 relative (M
+itself leaves f64 past x ~ 700; log_hyp1f1_fn is the likelihood
+form), dM/dx 9.5e-14 vs the exact (a/b) M(a+1, b+1, x) shift oracle,
+d/da and d/db 2.9e-15 vs mp.diff. x < 0 is out of scope in v1 (the
+Kummer transform e^x M(b-a, b, -x) leaves the box when b - a does).
+No performance claim: no race was run (B3 rule); the pitch is
+stability and shape gradients, not speed, until measured.
+
+## 25 — gammainc to a = 1000: the Temme zone (2026-08-01)
+
+The queued large-a extension (PROJECT.md's part (2) sketch), and the
+cheapest increment yet: ~1.3k coefficients TOTAL. Three zones of
+lambda = x/a on v = 10/a in [0.01, 1] (experiments/14): the existing
+kernels reappear in scaled coordinates and go flat (lower
+D = ln 1F1(1; a+1; a lambda), degrees 18x28; upper tail in the uniform
+variable s = (a-1)/x, 11x8), and the transition is Temme's uniform
+asymptotic with the O(1) correction kernel T(v, eta) tabulated at
+degree 20x7 (26x10 nodes): the WHOLE incomplete-gamma transition for
+three decades of a fits in 260 numbers. Runtime assembles
+Q = erfc(eta sqrt(a/2))/2 + e^(-a w)/sqrt(2 pi a) T and P from its own
+erfc side, so both tails stay relatively accurate; the log forms
+factor through erfcx (y^2 = a w exactly), staying finite past the
+linear forms' underflow. gammainc.py dispatches on one scalar cond at
+a = 10; gammaincinv's recipe residual and the JVP's dP/da follow
+(nested conds), so chi2inv serves real dof to 2000 on fixed-degree
+polynomials. Fallout fixed along the way: (1) erf_family's lazily
+cached series leaked tracers when first built inside a cond branch
+(ensure_compile_time_eval now guards it); (2) the quantile solver's
+pc < 0.01 rule always took the power-law init, which at a = 500,
+p = 1e-12 starts so far into the flat region that df underflows and
+bisection cannot finish (measured 8.5e-7 relative); both inits are
+underestimates, so v0 = max(asym, WH) picks the right regime
+everywhere, including the recorded a = 20 case. Measured (sweep +
+tests): P/Q 2.9e-16 absolute, log forms 4.5e-15/1.3e-14 on
+max(1, |ln .|), dP/da 2.8e-17, log-form shape grads 8.1e-16 vs
+mp.diff, quantile roundtrips at a = 1000 within 2e-13 relative-p to
+p = 1e-12. Generation 3.4 s; the bit-for-bit test covers the whole
+module, no canary split. The box stops at 1000 because the 40-dps
+REFERENCE does (mpmath's gammainc fails near lambda ~ 1 for a >~ 1e5;
+small-side subtraction mandatory past ~92 nats, experiments/14), not
+the representation.
+
+## 26 — the second review round (2026-08-01)
+
+Nine release blockers and a dozen smaller findings, dispositioned in
+`docs/review-2026-08-01.md`. Four themes were worth more than their bug
+reports.
+
+**The alias guard was guarding nothing.** Increment 22 added off-grid
+validation because on n first-kind points T_{2n−k} samples exactly as −T_k.
+But the validation grid was sized from the CANDIDATE (`cand.size + 11`), and
+for T₂₉ that lands on 17, the fitting grid itself: the aliased fit
+reproduced the samples bit for bit and was certified. `fit(T29, dps=60)`
+returned −T₅ with dense sup error 2.0. The fix passes the fitting
+resolution in and checks two grids, `chebpts(2n)` and `chebpts(4n)`, chosen
+so disjointness is a property of the construction rather than of the
+arithmetic that happened to come out: `chebpts(p)` and `chebpts(q)` share a
+point only when p/gcd and q/gcd are both odd, which n, 2n, 4n never are
+together. The lesson is that a validation step whose parameters are derived
+from the thing being validated is not independent evidence.
+
+**x64-off was an untested configuration, not a degraded one.** conftest
+enables x64 for the whole suite, so the DEFAULT jax setting was never
+exercised, and four inverses returned nan there: the log-space brackets were
+literal float64 edges (±745) that mean nothing in float32, where the
+exponent range stops near ±88. Everything dtype-dependent (brackets,
+iteration counts, residual bars) now derives from
+`finfo(canonical dtype)`. There is a dedicated `tests/test_x64_off.py` and a
+CI job, because the failure mode here is silence.
+
+**Absolute accuracy is not relative accuracy, and the difference decides
+what a quantile may promise.** Three findings were the same mistake in
+different places. A CDF built as 1/2 + θ/(2π) + θ·H(θ²) is accurate to a few
+eps ABSOLUTELY, so inverting it can only pin min(p, 1−p) to ~32 eps
+relative; `vonmises_icdf` was returning angles whose CDF was 37x the target
+and calling it converged. `gammaincinv` judged its residual against p even in
+the upper half, where the information is in Q. The numpyro truncations
+normalized with `fhi − flo` on ordinary CDF values, which is exactly 0 once
+both ends round to the same float. The uniform fix is to work on the side
+where the quantity is small (Q or ln Q, log-CDF or log-survival, a
+logdiffexp instead of a subtraction) and to state a floor where even that
+runs out. A false start is recorded here on purpose: the von Mises floor was
+first written in terms of the DENSITY at the solution, which made it κ
+dependent and got the ordering backwards, keeping a 4% answer at κ=2 while
+rejecting a 1e-7 one at κ=50. The limit is a property of the CDF's
+representation, not of the distribution.
+
+**Two fixes can conflict where neither agent can see it.** The gammainc
+endpoint fix carries the exact density at x = 0 through a custom_jvp whose
+primal is the literal 0. Independently, bake was hardened to refuse any
+custom_jvp that is not a series evaluation, since inlining one drops its
+derivative rule. Together they made gammainc unbakeable. The resolution is
+structural rather than name based: a custom_jvp whose call_jaxpr has no
+equations and returns a zero literal folds to 0.0, which cannot change a
+value, and bake's docstring now states the one thing it does cost, that
+one-sided slopes AT an endpoint do not survive into the artifact.
+
+Also in this round: `besseli_ratio` rebuilt on an ascending series with the
+prefactors cancelled analytically (it was dividing two independently
+underflowing scaled functions, nan in f32, and its origin slope was forced
+to 0 instead of 1/(2(ν+1))); dI/dν near ν = 0 rebuilt from the tables'
+second ν-derivative after the `I · dlogI/dν` path was found returning the
+wrong SIGN at ν = 1e-16; `2*x` overflow above x ≈ 9e307 fixed in besselk and
+besseli; `pergroup` no longer evaluates padded empty groups; Recipe,
+ChebSeries and PiecewiseCheb freeze after construction, since the factories
+hand the same object to every caller; series.py's O(n²) matrix caches
+replaced by O(n) recurrences; `log_stdtr` / `log_stdtr_sf` added and
+exported.
+
+The integration with increments 23-25 (merged the same day) was not
+mechanical, and three resolutions matter. The gammaincinv log-space
+solver gained a third recipe mode: the Temme-zone tables serve
+a in (10, 1000] through eval_large's own log forms (relatively
+accurate on both sides, so the residual seam sits at the mean), and
+the review's dtype-parameterized limits replaced both of the older
+floor constants; the max(asym, WH) init became unnecessary once the
+iteration was on ln P. The incomplete-gamma endpoint slopes apply
+AFTER the a = 10 dispatch, where they are exact for both branches,
+and the large path inherited the x = inf mask the review added to the
+small one. chebax.numpyro's gamma gate widened to the merged recipe
+box, which closes the review's TruncatedGamma deep-upper-tail gap for
+concentration in (10, 1000].

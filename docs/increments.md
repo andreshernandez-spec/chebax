@@ -649,3 +649,33 @@ worst 4.3e-12 relative on the round trip through Q, all of it at small a
 where the root sits below the gammainc tables' x = 8 seam and Q comes back
 as 1 - P (bar 2e-11). Gradients in both arguments from the implicit-function
 rule, agreeing with central differences to 3e-9.
+
+## 28 — the chop's noise floor (2026-08-02)
+
+`_chop` reads its noise floor from the last sixteenth of the
+coefficients. That window holds the TOP MODE when the fit is exact at the
+current resolution: T20 on 21 points puts c[20] = 1 there, which read as a
+floor of 2 and chopped the exact fit to one coefficient, so
+`fit(T20, max_deg=20, dps=40)` raised for want of a doubling. Recorded as
+not-addressed in the 2026-08-01 review, with the note that retuning would
+move the oscillatory cases the tests pin. It did, and the second half of
+this entry is that half of the work.
+
+The floor now applies only when the window sits under 1e-8 of the function
+scale. A genuine sampling plateau is decades below it (the settled test
+wants 1e-10 relative before it will believe one); anything nearer is
+signal, and the requested tol governs there instead.
+
+That alone regressed two pinned cases, both through `prev_rel`. The
+settled test also accepts a plateau that stopped improving under node
+doubling, and it was comparing chop LEVELS across rounds. A level is a
+measurement only when the window held noise; where the window holds signal
+it is just tol·scale, and feeding that into the comparison made the next
+round look converged (the runge segments settled a doubling early, 6.5e-13
+against a 1e-15 bar) or, going the other way, made T34's float64 fit stop
+at the first plateau it saw (degree 47 rather than 34, accurate but
+padded). `_chop` now returns the measured plateau separately, inf when
+there is none, and only that crosses rounds.
+
+Nothing in the recipes moves: the generators fit at fixed measured degrees
+through `_gen_common.dct`, never through the adaptive path.

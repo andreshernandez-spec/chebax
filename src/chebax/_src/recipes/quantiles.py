@@ -747,11 +747,20 @@ def _stdtrit_jvp(primals, tangents):
     finite = jnp.isfinite(t)
     ts = jnp.where(finite, t, 0.0)
     pdf = jnp.exp(_t_logpdf(nu_c, ts))
-    # IFT: dt/dp = 1/pdf; dt/dnu = -(dF/dnu at t)/pdf
+    # IFT: dt/dp = 1/pdf, which may legitimately overflow where the
+    # density underflows; dt/dnu = -(dF/dnu)/pdf, which may NOT, since the
+    # ratio stays finite where both parts vanish. At nu = 4, p = 1e-300
+    # both are ~1e-320 and the quotient is 5.7e76, so forming them
+    # separately gave inf (review, 2026-08-02). Take it through the logs:
+    # dF/dnu = F dlnF/dnu, so the ratio is exp(lnF - ln pdf) dlnF/dnu and
+    # nothing underflows on the way.
     t_safe = jnp.where(finite & (ts != 0.0), ts, 1.0)
-    _, dF_dnu = jax.jvp(lambda n: _stdtr_impl(n, t_safe), (nu_c,), (jnp.asarray(1.0),))
-    dF_dnu = jnp.where(finite & (ts != 0.0), dF_dnu, 0.0)
-    dt = (_canon(dp) - dF_dnu * _canon(dnu)) / pdf
+    live = finite & (ts != 0.0)
+    lnF, dlnF_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,),
+                            (jnp.asarray(1.0),))
+    dt_dnu = -jnp.exp(lnF - _t_logpdf(nu_c, t_safe)) * dlnF_dnu
+    dt_dnu = jnp.where(live, dt_dnu, 0.0)
+    dt = _canon(dp) / pdf + dt_dnu * _canon(dnu)
     dt = jnp.where(finite, dt, 0.0)
     return t, jnp.where(jnp.isnan(t), jnp.nan, dt)
 

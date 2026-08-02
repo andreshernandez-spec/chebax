@@ -106,8 +106,12 @@ def _fit_interval(f, a, b, deg, tol, max_deg, dps):
     return _adaptive(dct, sample_unit, tol, max_deg, (a, b))
 
 
+_NOISE_CEIL = 1e-8   # a window this close to the function scale is signal
+
+
 def _chop(c, tol):
-    """Truncate at the noise level; returns (candidate, absolute level).
+    """Truncate at the noise level; returns (candidate, absolute level,
+    measured plateau relative to the scale, inf when there is none).
 
     The level is max(tol, noise floor), where the noise floor is read off
     the last sixteenth of the coefficients: for a still-decaying tail those
@@ -115,12 +119,25 @@ def _chop(c, tol):
     coefficients decay through 1e-16); for a converged fit they are the
     sampling-noise plateau (sin(50x): ~5e-16 relative at n=129, edge-
     singular sampling can push higher) and doubling the largest of them
-    clears the plateau's own scatter."""
+    clears the plateau's own scatter.
+
+    That window only holds noise if the fit has room to spare, and it does
+    not when the top mode lands inside it: fitting T20 on 21 points puts
+    c[20] = 1 in the last sixteenth, which read as a noise floor of 2 and
+    chopped the exact fit down to one coefficient (with max_deg = 20 there
+    is no doubling left, so `fit(T20, max_deg=20)` then raised). A real
+    plateau sits at the sampling floor, decades under the function scale
+    (the settled test below wants 1e-10 relative before it will believe
+    one), so a window within _NOISE_CEIL of the scale is signal and the
+    requested tol governs instead."""
     scale = np.max(np.abs(c))
-    noise = 2.0 * float(np.max(np.abs(c[-max(2, c.size // 16):])))
+    win = float(np.max(np.abs(c[-max(2, c.size // 16):])))
+    measured = win <= _NOISE_CEIL * scale
+    noise = 2.0 * win if measured else 0.0
     level = max(tol * scale, noise)
     keep = np.nonzero(np.abs(c) > level)[0]
-    return (c[: keep[-1] + 1] if keep.size else c[:1]), level
+    return ((c[: keep[-1] + 1] if keep.size else c[:1]), level,
+            noise / scale if measured else np.inf)
 
 
 def _validated(cand, level, sample_unit, n):
@@ -159,14 +176,15 @@ def _adaptive(dct, sample_unit, tol, max_deg, interval):
             # chebpts(n), so the zero series is validated like any other
             cand, level, settled = np.zeros(1), 0.0, True
         else:
-            cand, level = _chop(c, tol)
-            rel = level / scale
+            cand, level, rel = _chop(c, tol)
             # The tail has settled if the chop level reached the requested
-            # tol, or if it stopped improving under node doubling while being
-            # far below the function scale: that is the sampling-noise
-            # plateau, and more nodes cannot beat it. A tail that is small but
-            # still shrinking (a segment one doubling short of converged) must
-            # escalate, not chop.
+            # tol, or if the MEASURED plateau stopped improving under node
+            # doubling while being far below the function scale: that is the
+            # sampling-noise plateau, and more nodes cannot beat it. A tail
+            # that is small but still shrinking (a segment one doubling short
+            # of converged) must escalate, not chop. rel is inf when the
+            # window held signal rather than noise, so a resolution with no
+            # plateau to report cannot seed the comparison either way.
             settled = level <= 2.0 * tol * scale or (rel <= 1e-10 and rel >= prev_rel / 4.0)
             prev_rel = rel
         at_cap = n >= max_deg + 1

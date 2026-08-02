@@ -326,6 +326,22 @@ def test_no_aliasing_dps_modes():
         assert mode_sup_err(p, ref[k], xs) <= 3e-14, k
 
 
+def test_exact_fit_at_its_own_max_deg():
+    # The noise floor reads the last sixteenth of the coefficients, which
+    # holds the TOP MODE when the fit is exact at that resolution: fitting
+    # T_20 on 21 points put c[20] = 1 in the window, read a floor of 2, and
+    # chopped the exact fit to one coefficient. With max_deg = 20 there is
+    # no doubling left, so this raised. A plateau sits decades under the
+    # function scale; a window near it is signal. Worst measured sup error
+    # 1.4e-14 (the float64 Clenshaw floor), bar 6e-14.
+    ks = [1, 5, 12, 20, 29, 33]
+    xs, ref = cheb_mode_refs(ks)
+    for k in ks:
+        p = chebax.fit(cheb_mode(k), max_deg=k, dps=40)
+        assert p.degree == k, (k, p.degree)
+        assert mode_sup_err(p, ref[k], xs) <= 6e-14, k
+
+
 @pytest.mark.slow
 def test_no_aliasing_dps_modes_sweep():
     # the full sweep, ~15 s. Exact sampling, so the degree must come back as

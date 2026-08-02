@@ -19,7 +19,8 @@ from chebax._src.recipes.gammainc import (gammainc, gammainc_fn, gammaincc,
                                           gammaincc_fn, log_gammainc_fn,
                                           log_gammaincc_fn)
 from chebax._src.recipes.quantiles import (betaincinv, chi2inv,
-                                           gammaincinv, stdtr, stdtrit)
+                                           gammaincinv, log_stdtr,
+                                           log_stdtr_sf, stdtr, stdtrit)
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
 from chebax._src.pergroup import pergroup
 from chebax._src.series import ChebSeries, PiecewiseCheb
@@ -37,7 +38,8 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "chi2inv", "dawsn", "erfcx", "fit", "gammainc", "gammainc_fn", "gammaincc",
            "gammaincc_fn", "gammaincinv", "lambertw", "log_betainc_fn",
            "matern",
-           "log_gammainc_fn", "log_gammaincc_fn", "pergroup",
+           "log_gammainc_fn", "log_gammaincc_fn", "log_stdtr", "log_stdtr_sf",
+           "pergroup",
            "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
            "__version__"]

@@ -1,7 +1,7 @@
-"""Regularized incomplete gamma P(a, x) and Q = 1 - P for a in [0.1, 1000],
+"""Regularized incomplete gamma P(a, x) and Q = 1 - P for a >= 0.1,
 x in [0, inf), from baked log-tables.
 
-a in (10, 1000] dispatches (one scalar cond) to the Temme-zone path in
+a > 10 dispatches (one scalar cond) to the Temme-zone path in
 gammainc_large; below, the original a <= 10 recipe. Two regions, one
 hard select at x = XS = 8:
 
@@ -140,7 +140,7 @@ def _series_at(a):
 
 @functools.lru_cache(maxsize=128)
 def _gammainc_cached(a, _tag):
-    a = check_range("gammainc", "a", a, _gt.ALO, _glt.AHI)
+    a = check_range("gammainc", "a", a, _gt.ALO, _gl.AHI)
     if a > _gt.AHI:
         return _gl.GammaIncLargeP(a, *_gl.series_eager(a))
     return GammaIncP(a, *_series_at(a))
@@ -148,7 +148,7 @@ def _gammainc_cached(a, _tag):
 
 @functools.lru_cache(maxsize=128)
 def _gammaincc_cached(a, _tag):
-    a = check_range("gammaincc", "a", a, _gt.ALO, _glt.AHI)
+    a = check_range("gammaincc", "a", a, _gt.ALO, _gl.AHI)
     if a > _gt.AHI:
         return _gl.GammaIncLargeQ(a, *_gl.series_eager(a))
     return GammaIncQ(a, *_series_at(a))
@@ -163,7 +163,7 @@ def _traced_series(a):
 
 def _dispatch_fn(a, x, small, kind):
     """One scalar cond at a = 10: the small-a tables or the Temme-zone
-    large-a path (a in (10, 1000], gammainc_large). Only the taken
+    large-a path (a > 10, gammainc_large). Only the taken
     branch executes; each builds its own series."""
 
     def large():
@@ -176,8 +176,9 @@ def _dispatch_fn(a, x, small, kind):
 def gammainc_fn(a, x):
     """P(a, x) with a a (traceable) scalar, differentiable in both arguments.
 
-    a must be uniform per call and inside [0.1, 1000] (unchecked under
-    trace; (10, 1000] runs on the Temme-zone tables). Reconstruction
+    a must be uniform per call and at least 0.1 (unchecked under
+    trace; above 10 it runs on the Temme-zone tables, whose v = 10/a
+    axis reaches a = inf). Reconstruction
     costs two table contractions per call, not per point; jit
     constant-folds them when a is static."""
     a = jnp.asarray(a)
@@ -255,14 +256,14 @@ def log_gammaincc_fn(a, x):
 
 
 def gammainc(a):
-    """P(a, x) on [0, inf) for a in [0.1, 1000]. Cached per a; no mpmath.
+    """P(a, x) on [0, inf) for a >= 0.1. Cached per a; no mpmath.
 
     a may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode. a in (10, 1000] runs on the Temme-zone
+    is keyed per x64 mode. a > 10 runs on the Temme-zone
     tables (gammainc_large)."""
     return _gammainc_cached(float(a), canon_tag())
 
 
 def gammaincc(a):
-    """Q(a, x) = 1 - P(a, x) on [0, inf) for a in [0.1, 1000]. Cached per a."""
+    """Q(a, x) = 1 - P(a, x) on [0, inf) for a >= 0.1. Cached per a."""
     return _gammaincc_cached(float(a), canon_tag())

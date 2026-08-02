@@ -679,3 +679,40 @@ there is none, and only that crosses rounds.
 
 Nothing in the recipes moves: the generators fit at fixed measured degrees
 through `_gen_common.dct`, never through the adaptive path.
+
+## 29 — the Temme tables to a = inf (2026-08-02)
+
+The large-a box stopped at a = 1000. That was the 40-dps REFERENCE giving
+out, not the representation: mpmath's `gammainc` stops converging near
+lambda ~ 1 around a ~ 1e5, and increment 25 said so at the time.
+
+v = 10/a = 0 is a = inf, and it is a regular point of all three kernels:
+D -> -ln(1 - lambda) and U -> -ln(1 - s) (the geometric sums their series
+become once (a+1)_n / a^n -> 1), T -> Temme's leading coefficient. So the
+v-axis simply extends to [0, 1] and the box loses its upper end.
+experiments/15 measures what that costs: nothing in the Temme table
+(eta 20, v 7, unchanged), nothing in the upper zone (s 11, v 8), and one
+coefficient in the lower zone (v 28 -> 29). First-kind nodes never sample
+v = 0 itself; the smallest is a = 2.0e4 at 36 nodes.
+
+The reference is the piece that had to be built. Q now comes from
+Legendre's continued fraction and P from the 1F1 series, each used only
+where it converges, with the erfc split still taken on its small side
+(the increment 25 rule). It agrees with mpmath to 1e-38 wherever mpmath
+still converges.
+
+Measured on the regenerated tables: log forms 5.0e-14 relative on
+max(1, |ln|) over a from 1e4 to 1e8, which is the cancelling bracket
+a ln x - x - lnGamma(a+1) at that size rather than the tables; quantile
+round trips 4.5e-12 at a up to 1e6. Values themselves underflow out
+there, as they must, and stay at the CDF absolute contract where they do
+not.
+
+AHI moved out of the table module: a ceiling of inf is a policy of the
+dispatch, not an axis of the tables, and the emitter has no literal for
+it. It lives in gammainc_large.py now, which is where the dispatch reads
+it from.
+
+This closes the last of the three gaps the 2026-08-01 review left open.
+A TruncatedGamma at concentration 1e5 on a deep upper-tail interval is
+1.3e-11 relative; it used to fall back to jax and return +inf.

@@ -49,8 +49,8 @@ betaincinv needs (a, b) inside the betainc table domain [0.1, 100].
 stdtr/stdtrit run on their own 2-D slice tables of the same kernel at
 a = 1/2 (b-panels to 100), so they cover nu in [0.2, 200] without the
 3-D tensor. gammaincinv has no table domain: its Newton residual
-evaluates the chebax gammainc recipe when a is inside [0.1, 1000]
-((10, 1000] via the Temme-zone tables; fixed-degree polynomials where
+evaluates the chebax gammainc recipe when a is at least 0.1
+(above 10 via the Temme-zone tables; fixed-degree polynomials where
 jax's gammainc re-runs a whole-array
 while_loop per Newton iteration) and falls back to jax's gammainc
 outside, picked by nested lax.conds on the scalar a. Inputs are
@@ -70,7 +70,6 @@ import numpy as np
 
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import gammainc_large as _gl
-from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import canon_float as _canon
@@ -137,7 +136,7 @@ def _dPda_recipe(a, x):
 
 
 def _dPda_recipe_large(a, x):
-    """dP/da through the Temme-zone tables, a in (10, 1000]."""
+    """dP/da through the Temme-zone tables, a > 10."""
 
     def p_of_a(t):
         tm, dl, du = _gl.series_traced(t)
@@ -181,7 +180,7 @@ def _dPda_dispatch(a, x):
     """dP/da from whichever path owns this a: the tables inside their
     boxes, jax's igamma_grad_a outside."""
     in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
-    in_large = (a > _gt.AHI) & (a <= _glt.AHI)
+    in_large = (a > _gt.AHI) & (a <= _gl.AHI)
     return jax.lax.cond(
         in_small,
         lambda: _dPda_recipe(a, x),
@@ -301,7 +300,7 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
     and selected, the way betaincinv handles its swap. use_recipe is a
     python constant (each lax.cond branch traces one): "small" takes both
     logs from the a <= 10 gammainc tables, "large" from the Temme-zone
-    path (a in (10, 1000], relatively accurate on both sides
+    path (a > 10, relatively accurate on both sides
     everywhere), each reconstructed once and closed over, so each step is
     a fixed-degree polynomial; None uses jax's gammainc and gammaincc
     (any a, but a whole-array while_loop per call).
@@ -397,10 +396,10 @@ def _gammainccinv_solve(a, yc, use_recipe):
 
 def _dispatch_solve(solve, a, tc):
     """Run solve(a, tc, mode) under the a-box conds: the small tables to
-    10, the Temme-zone tables to 1000, jax's gammainc outside. Nested
+    10, the Temme-zone tables above, jax's gammainc below 0.1. Nested
     scalar conds, so only the taken branch executes."""
     in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
-    in_large = (a > _gt.AHI) & (a <= _glt.AHI)
+    in_large = (a > _gt.AHI) & (a <= _gl.AHI)
     return jax.lax.cond(
         in_small,
         lambda: solve(a, tc, "small"),
@@ -416,9 +415,9 @@ def gammaincinv(a, p):
 
     a is a (traceable) scalar, uniform per call; p any shape. a must be
     finite and positive: anything else (0, negative, inf, nan) returns nan
-    for every p, endpoints included. For a inside [0.1, 1000] the Newton
+    for every p, endpoints included. From a = 0.1 up the Newton
     residual runs on the chebax gammainc tables (fixed-degree polynomials;
-    (10, 1000] via the Temme-zone path); outside it falls back to jax's
+    above 10 via the Temme-zone path); below it falls back to jax's
     gammainc, so the domain stays all of a > 0. The upper half is solved
     against Q, so p within rounding of 1 still resolves (P(a, x) - p there
     has no digits left).
@@ -763,8 +762,7 @@ def chi2inv(k, p):
     quantile: k a (traceable) scalar uniform per call, p any shape,
     differentiable in both, real non-integer dof included. k must be finite
     and positive, inheriting gammaincinv's check: k <= 0 (and inf, nan)
-    gives nan for every p. The recipe residual serves k up to 2000
-    (a = k/2 <= 1000 since the Temme-zone tables); beyond that the jax
-    fallback takes over. Endpoints follow gammaincinv (p = 0 -> 0,
-    p = 1 -> inf)."""
+    gives nan for every p. The recipe residual serves k from 0.2 up
+    (a = k/2 >= 0.1); below that the jax fallback takes over. Endpoints
+    follow gammaincinv (p = 0 -> 0, p = 1 -> inf)."""
     return 2.0 * gammaincinv(0.5 * _canon(k), p)

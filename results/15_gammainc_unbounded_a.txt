@@ -1,0 +1,26 @@
+reference cross-check against mpmath where mpmath still works
+  (ln P and ln Q, absolute difference)
+  a=   50 lambda=0.6: dlnP=+1.74e-39 dlnQ=+0.00e+00
+  a=  300 lambda=0.9: dlnP=-8.82e-39 dlnQ=+0.00e+00
+  a=  900 lambda=1.2: dlnP=+2.73e-38 dlnQ=-2.72e-38
+  a=  900 lambda=3.0: dlnP=+7.05e-38 dlnQ=+1.18e-38
+
+kernel limits as v -> 0 (a -> inf)
+  T(v, 0) -> -1/3;  D(v, .5) -> -ln(1-.5) = 0.693147;  U(v, 1/6) -> -ln(1-1/6) = 0.182322
+  v=1.00e+00 (a=     10.0): T=-0.333476622 D=0.562626376 U=0.178104262
+  v=1.00e-01 (a=    100.0): T=-0.333351438 D=0.674395306 U=0.181919541
+  v=1.00e-02 (a=   1000.0): T=-0.333335181 D=0.691161005 U=0.182281537
+  v=1.00e-03 (a=  10000.0): T=-0.333333518 D=0.692947320 U=0.182317557
+  v=5.30e-04 (a=  18867.9): T=-0.333333431 D=0.693041220 U=0.182319437
+
+=== v on current [0.01, 1]
+  Temme eta-direction: v=1:20 v=0.1:20 v=0.01:20 v=0.001:20
+  Temme v-direction:   eta=-0.65:7 eta=0.0:7 eta=1.0:7 eta=2.55:7
+  D: lambda 18, v 28
+  U: s 11, v 8
+
+=== v on extended [0, 1]
+  Temme eta-direction: v=1:20 v=0.1:20 v=0.01:20 v=0.001:20 v=0.0001:20
+  Temme v-direction:   eta=-0.65:7 eta=0.0:7 eta=1.0:7 eta=2.55:7
+  D: lambda 18, v 29
+  U: s 11, v 8

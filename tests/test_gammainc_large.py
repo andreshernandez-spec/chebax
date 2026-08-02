@@ -1,12 +1,19 @@
-"""Large-a gammainc acceptance: the Temme-zone path on a in (10, 1000],
+"""Large-a gammainc acceptance: the Temme-zone path on a > 10,
 x in [0, inf), plus the a = 10 dispatch seam and the quantile rewire.
 
 References mpmath at 40 dps, Q computed DIRECTLY (1 - P in mp loses the
-tail's digits; the reference artifact recorded in experiments/14). P/Q
-are CDFs: absolute error. The log forms are relative on max(1, |ln .|).
-Measured worst over a denser sweep than the grids below: P/Q 2.9e-16,
-log P 4.5e-15, log Q 1.3e-14, dP/da 2.8e-17 and the log-form shape
-gradients 8.1e-16 vs mp.diff; bars ~4x.
+tail's digits; the reference artifact recorded in experiments/14). Past
+a ~ 1e5 mpmath's gammainc stops converging near lambda ~ 1, so the
+large-a tests carry their own side-aware reference: the 1F1 series for
+P below the mean, Legendre's continued fraction for Q above it, each
+where it converges (experiments/15).
+
+P/Q are CDFs: absolute error. The log forms are relative on
+max(1, |ln .|). Measured worst over a denser sweep than the grids
+below: P/Q 2.9e-16, log P 4.5e-15, log Q 1.3e-14, dP/da 2.8e-17 and the
+log-form shape gradients 8.1e-16 vs mp.diff; at a from 1e4 to 1e8 the
+log forms reach 5.0e-14, which is the cancelling bracket
+a ln x - x - lnGamma(a+1) at that size, not the tables. Bars ~4x.
 """
 
 import numpy as np
@@ -127,8 +134,81 @@ def test_dx_against_density():
         assert np.max(np.abs(g - pdf) / np.max(pdf)) <= 1e-13, a
 
 
+def _log_q_cf(a, x):
+    """ln Q(a, x) by Legendre's continued fraction, for x > a: the
+    reference where mpmath's gammainc stops converging."""
+    a, x = mp.mpf(a), mp.mpf(x)
+    tiny = mp.mpf(10) ** (-2 * mp.mp.dps)
+    eps = mp.mpf(10) ** (-mp.mp.dps - 5)
+    b, c, d = x + 1 - a, 1 / tiny, 1 / (x + 1 - a)
+    h = d
+    for i in range(1, 100000):
+        an = -i * (i - a)
+        b += 2
+        d = an * d + b
+        d = tiny if abs(d) < tiny else d
+        c = b + an / c
+        c = tiny if abs(c) < tiny else c
+        d = 1 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1) < eps:
+            break
+    else:
+        raise RuntimeError("continued fraction stalled")
+    return a * mp.log(x) - x - mp.loggamma(a) + mp.log(h)
+
+
+def _log_p_series(a, x):
+    """ln P(a, x) from 1F1(1; a+1; x), for x < a."""
+    a, x = mp.mpf(a), mp.mpf(x)
+    s = t = mp.mpf(1)
+    n = 0
+    while abs(t) > mp.mpf(10) ** (-mp.mp.dps - 10) * abs(s):
+        t *= x / (a + 1 + n)
+        s += t
+        n += 1
+    return a * mp.log(x) - x - mp.loggamma(a + 1) + mp.log(s)
+
+
+def _ref_logs(a, x):
+    """(ln P, ln Q) at any a, each side computed where it converges."""
+    if x < a:
+        lp = _log_p_series(a, x)
+        return lp, mp.log(-mp.expm1(lp))
+    lq = _log_q_cf(a, x)
+    return mp.log(-mp.expm1(lq)), lq
+
+
+def test_unbounded_shape():
+    # The v = 10/a axis reaches v = 0, so the path has no upper end; the
+    # old a = 1000 cap was the 40-dps REFERENCE giving out, not the
+    # representation. Log metric, since P and Q themselves underflow out
+    # here. Measured worst 5.0e-14, bar 2e-13.
+    worst = 0.0
+    for a in (5e3, 1e4, 1e5, 1e6, 1e8):
+        for lam in (0.3, 0.6, 0.95, 1.0, 1.05, 2.0, 9.0):
+            x = a * lam
+            lp_ref, lq_ref = _ref_logs(a, x)
+            for got, ref in ((float(chebax.log_gammainc_fn(a, x)), lp_ref),
+                             (float(chebax.log_gammaincc_fn(a, x)), lq_ref)):
+                r = float(ref)
+                worst = max(worst, abs(got - r) / max(1.0, abs(r)))
+    assert worst <= 2e-13, worst
+    # and the quantiles still invert out there: measured worst 4.5e-12
+    # relative on the round trip, bar 2e-11
+    wq = 0.0
+    for a in (1e4, 1e6):
+        for p in (1e-30, 1e-10, 1e-3, 0.5):
+            x = float(chebax.gammaincinv(a, p))
+            wq = max(wq, abs(float(mp.exp(_ref_logs(a, x)[0])) / p - 1))
+            y = float(chebax.gammainccinv(a, p))
+            wq = max(wq, abs(float(mp.exp(_ref_logs(a, y)[1])) / p - 1))
+    assert wq <= 2e-11, wq
+
+
 def test_gammaincinv_and_chi2inv_high_a():
-    # the quantile solver's recipe residual now serves a to 1000
+    # the quantile solver's recipe residual serves every a > 10
     for a in (50.0, 500.0, 1000.0):
         ps = np.array([1e-12, 1e-4, 0.05, 0.5, 0.95, 1 - 1e-6])
         x = np.asarray(chebax.gammaincinv(a, jnp.asarray(ps)))
@@ -152,10 +232,13 @@ def test_gammaincinv_and_chi2inv_high_a():
 
 
 def test_param_out_of_range():
+    # there is no upper end any more; the lower one still bites
     with pytest.raises(ValueError, match="table covers"):
-        chebax.gammainc(1001.0)
+        chebax.gammainc(0.05)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.gammaincc(1000.5)
+        chebax.gammaincc(0.0)
+    for a in (1001.0, 1e6, 1e12):
+        assert float(chebax.gammainc(a)(a)) > 0.0
 
 
 def test_jit_and_pytree():

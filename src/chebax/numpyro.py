@@ -29,10 +29,11 @@ rejected at construction. Domains, from the underlying tables and
 checked eagerly when the value is not traced: TruncatedBeta needs
 (concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
 needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
-its normalizer falling back to jax's own gammainc pair outside chebax's
-[0.1, 1000] box (which costs the deep upper tail there, since those
-underflow; inside the box the (10, 1000] range runs on the Temme-zone
-tables). Rates, bounds and data are unrestricted.
+its normalizer falling back to jax's own gammainc pair below chebax's
+concentration = 0.1 (which costs the deep upper tail there, since jax's
+logs underflow; from 0.1 up the recipe serves every concentration, the
+Temme-zone tables taking over above 10). Rates, bounds and data are
+unrestricted.
 
 numpyro is imported here and only here (the chebax runtime proper stays
 jax + numpy). Install with:  pip install chebax[numpyro]
@@ -59,7 +60,7 @@ from jax.scipy.special import betaln, gammaln
 
 import chebax
 from chebax._src.recipes import betainc_table as _bt
-from chebax._src.recipes import gammainc_large_table as _glt
+from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import canon_float
@@ -123,9 +124,9 @@ def _check_shape_range(owner, name, v, lo, hi):
 
 
 def _in_box(a):
-    # the recipe's a-box: small tables to 10, Temme-zone tables to 1000
+    # the recipe's a-box: small tables to 10, Temme-zone tables above
     # (the public log forms dispatch between them internally)
-    return (a >= _gt.ALO) & (a <= _glt.AHI)
+    return (a >= _gt.ALO) & (a <= _gl.AHI)
 
 
 def _log_pq(a, x, use_recipe):

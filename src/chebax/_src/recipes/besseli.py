@@ -216,7 +216,12 @@ class BesselIdnu(Recipe):
         d_first = val * _dlog_i(x, self.lh_nu, self.lt_nu, self._psi)
         integ = _int_dlog2(self.v, x, self.lh2a, self.lt2a, self._psi1a,
                            self.lh2b, self.lt2b, self._psi1b)
-        return _combine_dnu(val, ratio, k0, d_first, integ)
+        out = _combine_dnu(val, ratio, k0, d_first, integ)
+        if self.scaled:
+            # e^-x I_v -> 0 at +inf and so does its order derivative; the
+            # masked tail arithmetic gave nan (review, 2026-08-02)
+            out = jnp.where(x == jnp.inf, 0.0, out)
+        return out
 
 
 @functools.lru_cache(maxsize=128)

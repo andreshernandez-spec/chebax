@@ -46,5 +46,10 @@ def matern(nu, r, lengthscale=1.0):
     z = jnp.maximum(z, _kt.XMIN)
     log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
     k = jnp.exp(log_c + nu * jnp.log(z)) * besselk_fn(nu, z)
+    # r = inf is zero correlation, not the nan the K tail produces there,
+    # and a NEGATIVE distance is a domain error rather than the r = 0
+    # branch it used to fall into and answer 1 for (review, 2026-08-02)
     out = jnp.where(pos, k, 1.0)
+    out = jnp.where(r == jnp.inf, 0.0, out)
+    out = jnp.where(r < 0.0, jnp.nan, out)
     return jnp.where(jnp.isnan(r) | jnp.isnan(nu), jnp.nan, out)

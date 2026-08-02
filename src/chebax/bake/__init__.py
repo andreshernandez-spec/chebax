@@ -59,13 +59,40 @@ from chebax.bake._jaxpr_emit import trace_and_emit
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
+# C++17 keywords that are not also python ones, plus the alternative
+# operator spellings. A name only python knows about is not enough: both
+# emitters take the same name, and name="template" produced a header that
+# would not compile (review, 2026-08-02).
+_CPP_KEYWORDS = frozenset("""
+alignas alignof asm auto bitand bitor bool catch char char16_t char32_t
+char8_t compl const consteval constexpr const_cast decltype default delete
+do double dynamic_cast enum explicit export extern float friend goto inline
+int long mutable namespace new noexcept not_eq operator or_eq private
+protected public register reinterpret_cast short signed sizeof static
+static_assert static_cast struct switch template this thread_local throw
+typedef typeid typename union unsigned using virtual void volatile wchar_t
+xor_eq
+""".split())
+
+
 def _ident(value, what):
     """Names go straight into emitted source (and into the C++ guard macro
-    as name.upper()), so reject anything but a plain identifier."""
-    if not isinstance(value, str) or not _IDENT.match(value) or keyword.iskeyword(value):
+    as name.upper()), so reject anything but a plain identifier that is
+    neither language's keyword and not a form C++ reserves: a leading
+    underscore before an uppercase letter, or a double underscore
+    anywhere, both of which belong to the implementation."""
+    if not isinstance(value, str) or not _IDENT.match(value):
         raise ValueError(
-            f"{what} must be an identifier matching [A-Za-z_][A-Za-z0-9_]* and not a "
-            f"python keyword, got {value!r}")
+            f"{what} must be an identifier matching [A-Za-z_][A-Za-z0-9_]*, "
+            f"got {value!r}")
+    if keyword.iskeyword(value) or value in _CPP_KEYWORDS:
+        raise ValueError(
+            f"{what} must not be a python or C++ keyword, got {value!r}")
+    if "__" in value or (value[:1] == "_" and value[1:2].isupper()):
+        raise ValueError(
+            f"{what} must not be a reserved C++ identifier form (double "
+            f"underscore, or a leading underscore before a capital), got "
+            f"{value!r}")
     return value
 
 

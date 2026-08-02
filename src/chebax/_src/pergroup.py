@@ -54,6 +54,10 @@ def pergroup(fn, group_idx, num_groups=None):
         raise ValueError(f"group_idx must be integers, got {idx.dtype}")
     shape = idx.shape
     flat = idx.reshape(-1)
+    if num_groups is not None and (isinstance(num_groups, bool)
+                                   or int(num_groups) != num_groups):
+        # 2.9 used to truncate to 2 in silence (review, 2026-08-02)
+        raise ValueError(f"num_groups must be an integer, got {num_groups!r}")
     g = int(flat.max()) + 1 if num_groups is None else int(num_groups)
     if flat.min() < 0 or flat.max() >= g:
         raise ValueError(f"group_idx values must lie in [0, {g}), got "

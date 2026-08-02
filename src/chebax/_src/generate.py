@@ -85,6 +85,14 @@ def fit(f, domain=(-1.0, 1.0), *, deg=None, tol=None, breaks=None, dps=None, max
         for i, c in enumerate(cs):
             coef[i, : c.size] = c
         return PiecewiseCheb(coef, br)
+    try:
+        n_dom = len(domain)
+    except TypeError:
+        n_dom = -1
+    if n_dom != 2:
+        # (1,) used to reach an IndexError and a 3-tuple silently dropped
+        # its third element (review, 2026-08-02)
+        raise ValueError(f"domain must be a pair (a, b), got {domain!r}")
     a, b = float(domain[0]), float(domain[1])
     if not (np.isfinite(a) and np.isfinite(b) and a < b):
         raise ValueError(f"domain must be finite with a < b, got ({a}, {b})")

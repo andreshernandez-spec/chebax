@@ -62,6 +62,11 @@ _UNARY = {
     "is_finite": ("jnp.isfinite({0})", "std::isfinite({0})"),
     "not":   ("jnp.logical_not({0})", "(!({0}))"),
     "lgamma": ("jax.scipy.special.gammaln({0})", "std::lgamma({0})"),
+    # the large-a gammainc path assembles its Temme correction through
+    # erfc, so a public gammainc(a > 10) hit "primitive not supported"
+    # (review, 2026-08-02)
+    "erf":   ("jax.scipy.special.erf({0})",  "std::erf({0})"),
+    "erfc":  ("jax.scipy.special.erfc({0})", "std::erfc({0})"),
 }
 
 _BINFN = {
@@ -231,13 +236,32 @@ def _evaluates_to_zero(cj):
     return True
 
 
+def _live_vars(jaxpr):
+    """Vars some later equation or the jaxpr's own output reads.
+
+    An equation nothing consumes still has to be emitted-or-refused
+    otherwise, and jax leaves such equations behind: besseli_dnu carries a
+    dead `empty` whose output goes nowhere, which is why baking it raised
+    "primitive not supported" for a primitive with no effect on the result
+    (review, 2026-08-02)."""
+    live = {id(v) for v in jaxpr.outvars if not isinstance(v, _Literal)}
+    for eqn in jaxpr.eqns:
+        for v in eqn.invars:
+            if not isinstance(v, _Literal):
+                live.add(id(v))
+    return live
+
+
 def _emit_jaxpr(em, jaxpr, env):
     def read(v):
         if isinstance(v, _Literal):
             return _lit(v.val, em.cpp, em.ctype)[0]
         return env[v]
 
+    live = _live_vars(jaxpr)
     for eqn in jaxpr.eqns:
+        if eqn.outvars and not any(id(v) in live for v in eqn.outvars):
+            continue        # dead: nothing downstream reads it
         p = eqn.primitive.name
         out = eqn.outvars[0] if eqn.outvars else None
         if p in _LOOP_PRIMS:

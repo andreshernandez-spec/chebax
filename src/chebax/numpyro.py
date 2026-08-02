@@ -191,14 +191,19 @@ class _Truncated(dist.Distribution):
         # below 1/2 and so keeps full relative accuracy. A straddling one
         # takes the lower form and hits the untruncated quantile's own limit
         # near q = 1, no worse.
+        # an invalid probability is masked before the logs, then answered
+        # with nan: the core quantiles' policy, where this used to hand
+        # back a plausible bound (icdf(-0.1) gave low; review, 2026-08-02)
+        bad = jnp.isnan(q) | (q < 0.0) | (q > 1.0)
+        q = jnp.where(bad, 0.5, q)
         lp = jnp.logaddexp(n.lo_f, jnp.log(q) + n.lnz)
         ls = jnp.logaddexp(n.hi_s, jnp.log1p(-q) + n.lnz)
         x = _pick(n.upper,
                   lambda: self._icdf_upper(jnp.exp(ls)),
                   lambda: self._icdf_lower(jnp.exp(lp)))
         x = jnp.clip(x, self.low, self.high)
-        return jnp.where(q <= 0.0, self.low,
-                         jnp.where(q >= 1.0, self.high, x))
+        x = jnp.where(q <= 0.0, self.low, jnp.where(q >= 1.0, self.high, x))
+        return jnp.where(bad, jnp.nan, x)
 
     def cdf(self, value):
         n = self._norm()

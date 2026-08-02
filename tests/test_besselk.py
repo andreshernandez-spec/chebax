@@ -274,3 +274,35 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     import pathlib
     besselk_gen.main(tmp_path)
     assert (tmp_path / "besselk_table.py").read_text() == pathlib.Path(kt.__file__).read_text()
+
+
+def test_scaled_form_survives_large_arguments():
+    # exp(log K + x) cancels its -x against +x and takes the -1/2 ln x
+    # with it: pytensor's Kve returned 1.0 at x = 1e20 for a true 1.25e-10
+    # (review, 2026-08-02). The tail table already holds e^x K, so the
+    # scaled form is the one without the e^-x factor rather than a product
+    # that puts it back. Reference is mpmath below x = 500 and the
+    # asymptotic series above; measured worst 2.1e-15 relative, bar 1e-14.
+    def ref_scaled(v, x):
+        v, x = mp.mpf(v), mp.mpf(x)
+        if x < 500:
+            return mp.besselk(v, x) * mp.e ** x
+        s, t = mp.mpf(1), mp.mpf(1)
+        for k in range(1, 30):
+            t *= (4 * v * v - (2 * k - 1) ** 2) / (8 * k * x)
+            s += t
+            if abs(t) < mp.mpf(10) ** -35:
+                break
+        return mp.sqrt(mp.pi / (2 * x)) * s
+
+    worst = 0.0
+    for v, x in ((2.5, 1e20), (2.5, 5.0), (0.0, 1e6), (3.0, 800.0),
+                 (2.5, 1e-3), (1.0, 1e300), (10.0, 1e4)):
+        got = float(chebax.besselk_fn(v, x, scaled=True))
+        worst = max(worst, abs(got / float(ref_scaled(v, x)) - 1))
+    assert worst <= 1e-14, worst
+    # and it is exactly e^x K where K itself is representable
+    for v, x in ((2.5, 5.0), (0.0, 3.0)):
+        k = float(chebax.besselk_fn(v, x))
+        assert abs(float(chebax.besselk_fn(v, x, scaled=True))
+                   / (k * np.exp(x)) - 1) <= 1e-14

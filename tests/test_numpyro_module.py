@@ -411,9 +411,16 @@ def test_validate_args_accepts_the_default_bounds():
 
 
 def test_shape_parameters_checked_at_construction():
-    with pytest.raises(ValueError, match=r"concentration1 in \[0.1, 10"):
-        TruncatedBeta(20.0, 3.0)
-    with pytest.raises(ValueError, match=r"concentration0 in \[0.1, 10"):
+    # The box these check is chebax.domains.BETAINC, read off the table
+    # module that governs the computation. This test used to codify the
+    # OBSOLETE [0.1, 10] panel constant, so TruncatedBeta(20, 3) raised
+    # long after the tables reached 100 (review, 2026-08-02).
+    from chebax.domains import BETAINC
+    assert BETAINC.hi == 100.0
+    assert float(TruncatedBeta(20.0, 3.0, low=0.1, high=0.9).log_prob(0.5)) < 0
+    with pytest.raises(ValueError, match=r"concentration1 in \[0.1, 100"):
+        TruncatedBeta(200.0, 3.0)
+    with pytest.raises(ValueError, match=r"concentration0 in \[0.1, 100"):
         TruncatedBeta(2.0, 0.01)
     with pytest.raises(ValueError, match=r"df in \[0.2, 200"):
         TruncatedStudentT(500.0)

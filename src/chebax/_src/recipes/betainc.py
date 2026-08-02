@@ -181,8 +181,9 @@ class BetaInc(Recipe):
 
 @functools.lru_cache(maxsize=128)
 def _betainc_cached(a, b, _tag):
-    a = check_range("betainc", "a", a, _bw.ALO, _bw.AHI)
-    b = check_range("betainc", "b", b, _bw.ALO, _bw.AHI)
+    from chebax import domains as _dom
+    a = check_range("betainc", "a", a, *_dom.BETAINC[:2])
+    b = check_range("betainc", "b", b, *_dom.BETAINC[:2])
     return BetaInc(a, b, *_eager_series_pair(a, b))
 
 

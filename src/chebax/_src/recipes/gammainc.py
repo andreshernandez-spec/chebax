@@ -128,7 +128,8 @@ def _series_at(a):
 
 @functools.lru_cache(maxsize=128)
 def _gammainc_cached(a, _tag):
-    a = check_range("gammainc", "a", a, _gt.ALO, _gl.AHI)
+    from chebax import domains as _dom
+    a = check_range("gammainc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeP(a, *_gl.series_eager(a))
     return GammaIncP(a, *_series_at(a))
@@ -136,7 +137,8 @@ def _gammainc_cached(a, _tag):
 
 @functools.lru_cache(maxsize=128)
 def _gammaincc_cached(a, _tag):
-    a = check_range("gammaincc", "a", a, _gt.ALO, _gl.AHI)
+    from chebax import domains as _dom
+    a = check_range("gammaincc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeQ(a, *_gl.series_eager(a))
     return GammaIncQ(a, *_series_at(a))

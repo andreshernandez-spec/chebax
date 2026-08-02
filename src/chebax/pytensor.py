@@ -25,7 +25,7 @@ What gets registered, and the contracts:
 - Ive: chebax.besseli_fn(scaled=True) for a scalar order v in [0, 10]
   and x >= 0; nan outside (I_{-v} differs from I_v, so negative orders
   are not folded). Batched orders fall back as above.
-- Kve: exp(log_besselk_fn(|v|, x) + x) for scalar |v| <= 10, x >= 1e-6
+- Kve: besselk_fn(|v|, x, scaled=True) for scalar |v| <= 10, x >= 1e-6
   (K_{-v} = K_v). nan outside; batched orders fall back as above.
 - BetaInc: values stay jax's own betainc on every domain; a custom_jvp
   adds the a/b derivatives (the "Betainc gradient with respect to a and
@@ -42,8 +42,9 @@ from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
                                   GammaIncCInv, GammaIncInv, Ive, Kve)
 
 import chebax
+from chebax import domains as _dom
 
-_BOX_LO, _BOX_HI = 0.1, 100.0
+_BOX_LO, _BOX_HI = _dom.BETAINC.lo, _dom.BETAINC.hi
 
 
 def _is_uniform(p):
@@ -152,7 +153,7 @@ def _jax_funcify_Kve(op, **kwargs):
         v = jnp.abs(_as_scalar(v))  # K_{-v} = K_v
         ok = (v <= 10.0) & (x >= 1e-6)
         xs = jnp.where(x >= 1e-6, x, 1e-6)
-        out = jnp.exp(chebax.log_besselk_fn(jnp.clip(v, 0.0, 10.0), xs) + xs)
+        out = chebax.besselk_fn(jnp.clip(v, 0.0, 10.0), xs, scaled=True)
         return jnp.where(ok, out, jnp.nan)
 
     return kve

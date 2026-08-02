@@ -41,7 +41,8 @@ import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
-from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
+from chebax._src.recipes._common import (canon_float, canon_tag, check_range,
+                                         param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.series import ChebSeries
 
@@ -67,11 +68,22 @@ def _xout(x):
     return jnp.where(x <= _kt.XS, _kt.XS, x)
 
 
-def _eval_k(v, x, ltil, ltail):
+def _eval_k(v, x, ltil, ltail, scaled=False):
+    """K_v(x), or e^x K_v(x) when scaled.
+
+    The tail is built from e^x K in the first place, so the scaled form is
+    the one WITHOUT the e^-x factor rather than a product that reinstates
+    it: exp(log K + x) loses the -x + x to rounding and takes the
+    -1/2 ln x with it (pytensor's Kve gave 1.0 at x = 1e20 for a true
+    1.25e-10; review, 2026-08-02)."""
     xi = _xin(x)
     inner = jnp.exp(ltil(jnp.log(xi))) * jnp.power(xi / 2, -v)
+    if scaled:
+        inner = inner * jnp.exp(xi)
     xo = _xout(x)
-    tail = jnp.exp(ltail(_kt.XS / xo)) * (_SQRT_HALF_PI / jnp.sqrt(xo)) * jnp.exp(-xo)
+    tail = jnp.exp(ltail(_kt.XS / xo)) * (_SQRT_HALF_PI / jnp.sqrt(xo))
+    if not scaled:
+        tail = tail * jnp.exp(-xo)
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
@@ -147,16 +159,21 @@ def _traced_series(nu):
     return (ChebSeries(c_in, (_kt.U0, _kt.U1)), ChebSeries(c_tl, (0.0, 1.0)))
 
 
-def besselk_fn(nu, x):
+def besselk_fn(nu, x, scaled=False):
     """K_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
 
     nu must be uniform per call and inside [0, 10] (unchecked under trace).
     Costs the coefficient reconstruction (~10k flops) once per call, not per
     point; jit constant-folds it when nu is static.
+
+    scaled=True returns e^x K_nu(x), which stays finite where K itself
+    underflows (past x ~ 746) and is what a kve wants. It is the tail
+    table's own quantity, not exp(log K + x): that product cancels its
+    -x against +x and loses the -1/2 ln x underneath.
     """
-    nu = jnp.asarray(nu)
+    nu = canon_float(nu)
     ltil, ltail = _traced_series(nu)
-    return _eval_k(nu, jnp.asarray(x), ltil, ltail)
+    return _eval_k(nu, canon_float(x), ltil, ltail, bool(scaled))
 
 
 def log_besselk_fn(nu, x):

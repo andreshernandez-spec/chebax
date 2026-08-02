@@ -745,3 +745,47 @@ The queue named the Matern demo as first customer. It is not one:
 besselk could take the same option, but a Matern kernel's
 z = sqrt(2 nu) r / lengthscale window is data-dependent rather than
 static, so it would have to be declared by the caller like this one is.
+
+## 31 — the third review round (2026-08-02)
+
+Disposition in `docs/review-2026-08-02.md`. Three findings are worth
+carrying here because they say something about the library rather than
+about one function.
+
+**A validation grid can have a structural blind spot.** The adaptive fit
+checked its candidate on the n, 2n and 4n Chebyshev grids, and T_{16n} is
+exactly +1 on all three, so `fit(T272)` returned the constant 1 with sup
+error 2. The 2026-08-01 round had closed this with an argument bounding
+the SMALLEST common alias, which is true and irrelevant: the family above
+the bound is infinite. Validation now uses points that are the nodes of no
+Chebyshev grid, `cos(pi (i + PHI)/m)` with PHI irrational, where an alias
+would need `2 q PHI` in Z. The lesson is in the docstring now: a finite
+point set detects gross errors and proves nothing, and saying so is what
+keeps the next argument honest.
+
+**An integer parameter is not a differentiable type.** `stdtr(4, t)` is
+how anyone writes it, and jax hands a custom_jvp rule float0 tangents for
+integer primals, which the rules' arithmetic cannot touch. Four public
+functions failed outright. The fix is one policy rather than seven
+patches: the rule lives on a private name, the public entry point promotes
+its arguments first (`_common.float_params`). Anything inside the rule is
+too late, because by then the tangent exists.
+
+**A domain that lives in an implementation panel drifts.** chebax.numpyro
+imported betainc's [0.1, 10] panel constant and kept rejecting
+TruncatedBeta(20, 3) long after the tables reached 100, while its own
+docstring advertised the wide box. `chebax/domains.py` reads each family's
+box off the table module that governs it, and the recipes, the numpyro
+constraints and the pytensor gate all consume it.
+
+Also in this round: bake folds only chebax's own endpoint-slope rule, by
+name and defining module and after evaluating the primal, and discloses
+the dropped slope in the artifact; betainc and hyp1f1 carry their exact
+endpoint densities; stdtrit's shape gradient goes through the logs, since
+the ratio is finite where both its parts underflow; besselk_fn takes
+scaled=True so pytensor's Kve stops forming exp(log K + x); erfc and dead
+equations no longer stop the emitter, and every public Recipe class is
+covered; ChebSeries and PiecewiseCheb refuse deletion, evaluate on extreme
+finite domains through midpoint/half-width, and validate truncate's
+tolerance; matern, the spherical Bessels and scaled besseli_dnu return
+their limits at +inf, and a negative Matern distance is nan rather than 1.

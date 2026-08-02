@@ -27,9 +27,11 @@ publishing action and stays Andres's.
 **Status:** live. Public at https://github.com/andreshernandez-spec/chebax;
 0.2.0 released on PyPI 2026-07-31 (0.3.0 pending: pergroup, the gammainc
 recipe, chebax.numpyro, matern, the log-CDF forms, the quantile-solver
-rewire; nineteen increments in `docs/increments.md`). Open: betainc box
-widening (feasibility unmeasured), the GPJax Matern play, gammainc a > 10,
-upstream outreach (local notes in `drafts/`). Parent evidence lives in
+rewire, the betainc widening, hyp1f1, gammainc to a = inf, gammainccinv,
+the narrow-domain besselj, and two review rounds; thirty-one increments in
+`docs/increments.md`). Open: the GPJax Matern play, upstream outreach
+(local notes in `drafts/`), and Wright Bessel, which is measured and
+specified in M6 but not built. Parent evidence lives in
 `../bessel/` (Track B); this project generalizes B1 into a library.
 **Owner:** Andres
 **Last verified:** 2026-08-01, experiments run locally (see `results/`); upstream

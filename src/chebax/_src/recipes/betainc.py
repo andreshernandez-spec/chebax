@@ -208,7 +208,7 @@ def log_betainc_fn(a, b, x):
     For x <= 1/2 the tables already hold the log (betainc_fn exponentiates
     it), so ln I evaluates directly: valid to arbitrarily negative values
     (ln I ~ a ln x as x -> 0), differentiable in a, b and x, shapes
-    uniform per call in [0.1, 10]^2. For x > 1/2 the reflection gives
+    uniform per call in [0.1, 100]^2. For x > 1/2 the reflection gives
     ln(1 - exp(.)) via log1p: absolutely accurate in I, so the error in
     ln I is ~eps/I there - fine where I is O(1), NOT a deep-tail path.
     Both deep tails at full log accuracy: lower tail directly (x <= 1/2),

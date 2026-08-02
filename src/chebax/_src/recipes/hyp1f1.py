@@ -26,8 +26,10 @@ call, inside [0.1, 10], unchecked under trace): jax.grad works with
 respect to a and b through the tables' log-mapped parameter axes and
 gammaln. dM/dx is AD through the formula; its exact value is
 (a/b) M(a+1, b+1, x), which the tests use as an oracle where a+1, b+1
-stay in the box. The gradient at exactly x = 0 flows through the hard
-select's masked lane and returns 0, not the true limit a/b.
+stay in the box. x = 0 rides the inner lane rather than a select on the
+value (log1p is exactly 0 there), so the gradient at the origin is the
+exact a/b. M diverges at x = +inf for every a in the box, and both forms
+say so.
 
 jax.scipy.special.hyp1f1 truncates a term-recurrence at tolerance 1e-8
 and is documented-unstable (jax#21503); this recipe is fixed-degree

@@ -61,7 +61,6 @@ from jax.scipy.special import betaln, gammaln
 import chebax
 from chebax import domains as _dom
 from chebax._src.recipes._common import canon_float
-# the log-CDF pair for the Student-t is not re-exported at the top level yet
 from chebax._src.recipes.quantiles import (_t_logpdf, log_stdtr,
                                            log_stdtr_sf)
 

@@ -42,7 +42,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
 | quantiles | — | `betaincinv`, `gammaincinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
-| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept for the C++ bake path |
+| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
@@ -59,7 +59,11 @@ gammainccinv, erfcx, erfcinv, ive, kve — and adds betainc gradients in its
 shape parameters, so censored or truncated StudentT/Beta likelihoods with a
 latent scalar shape sample instead of raising. Shape parameters must be
 scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
-return nan, never silently wrong numbers.
+return nan, never silently wrong numbers. One inherited limit worth knowing
+before you rely on it: `gammainccinv` is solved at `1 - p`, so upper-tail
+probabilities below ~1e-17 collapse to 1 and return inf even where the
+quantile is perfectly finite. Call `gammaincinv(a, p)` directly for the
+lower tail, which has no such floor.
 
 For numpyro users: `from chebax.numpyro import TruncatedGamma, TruncatedBeta,
 TruncatedStudentT` (installs with `pip install chebax[numpyro]`) gives the
@@ -67,8 +71,11 @@ truncated distributions numpyro's location-scale machinery cannot cover
 (numpyro#969, numpyro#1365): full Distribution classes with reparameterized
 inverse-CDF sampling (`has_rsample`), truncation-normalized `log_prob`, and
 gradients through every parameter including the shapes, so NUTS and SVI work
-with a latent concentration or df. Shape parameters are uniform per call;
-domain boxes are in the module docstring.
+with a latent concentration or df. The truncation is normalized in log space,
+so an interval whose two ends land in the same tail still works: `Gamma(3)`
+truncated to [50, 51] has mass ~3e-20 and returns an ordinary density.
+Shape parameters are uniform per call; domain boxes are in the module
+docstring and checked at construction.
 
 `notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
 the Bessel family with a learnable Matérn kernel, differentiable quantiles,

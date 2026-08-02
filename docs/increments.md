@@ -89,6 +89,10 @@ gammaincinv 4.0e-14; stdtr/stdtrit roundtrips ~5e-16; IFT gradients
 9.3e-15 / 2.6e-16. `gammaincinv` needs no tables at all — jax's own
 `gammainc` supplies values and the a-gradient.
 
+2026-08-01: that last sentence is stale. Increment 17 rewired the Newton
+residual onto the gammainc recipe tables for a ∈ [0.1, 10], keeping jax's
+`gammainc` only as the out-of-box fallback.
+
 ## 6 — spherical Bessel, truncated sampling, Lambert W (2026-07-30)
 
 `spherical_jn(n)`/`spherical_yn(n)` for n ∈ [0, 9] are one-line wrappers
@@ -433,3 +437,70 @@ representability caveat stated (K(100) ~ 5e-45 is below the f32
 subnormal floor; that is the format, not the kernel). Tables always
 source from the f64 instance and round at emission. Option (3),
 fpminimax polish, stays dead per the earlier 2% measurement.
+
+## 23 — the second review round (2026-08-01)
+
+Nine release blockers and a dozen smaller findings, dispositioned in
+`docs/review-2026-08-01.md`. Four themes were worth more than their bug
+reports.
+
+**The alias guard was guarding nothing.** Increment 22 added off-grid
+validation because on n first-kind points T_{2n−k} samples exactly as −T_k.
+But the validation grid was sized from the CANDIDATE (`cand.size + 11`), and
+for T₂₉ that lands on 17, the fitting grid itself: the aliased fit
+reproduced the samples bit for bit and was certified. `fit(T29, dps=60)`
+returned −T₅ with dense sup error 2.0. The fix passes the fitting
+resolution in and checks two grids, `chebpts(2n)` and `chebpts(4n)`, chosen
+so disjointness is a property of the construction rather than of the
+arithmetic that happened to come out: `chebpts(p)` and `chebpts(q)` share a
+point only when p/gcd and q/gcd are both odd, which n, 2n, 4n never are
+together. The lesson is that a validation step whose parameters are derived
+from the thing being validated is not independent evidence.
+
+**x64-off was an untested configuration, not a degraded one.** conftest
+enables x64 for the whole suite, so the DEFAULT jax setting was never
+exercised, and four inverses returned nan there: the log-space brackets were
+literal float64 edges (±745) that mean nothing in float32, where the
+exponent range stops near ±88. Everything dtype-dependent (brackets,
+iteration counts, residual bars) now derives from
+`finfo(canonical dtype)`. There is a dedicated `tests/test_x64_off.py` and a
+CI job, because the failure mode here is silence.
+
+**Absolute accuracy is not relative accuracy, and the difference decides
+what a quantile may promise.** Three findings were the same mistake in
+different places. A CDF built as 1/2 + θ/(2π) + θ·H(θ²) is accurate to a few
+eps ABSOLUTELY, so inverting it can only pin min(p, 1−p) to ~32 eps
+relative; `vonmises_icdf` was returning angles whose CDF was 37x the target
+and calling it converged. `gammaincinv` judged its residual against p even in
+the upper half, where the information is in Q. The numpyro truncations
+normalized with `fhi − flo` on ordinary CDF values, which is exactly 0 once
+both ends round to the same float. The uniform fix is to work on the side
+where the quantity is small (Q or ln Q, log-CDF or log-survival, a
+logdiffexp instead of a subtraction) and to state a floor where even that
+runs out. A false start is recorded here on purpose: the von Mises floor was
+first written in terms of the DENSITY at the solution, which made it κ
+dependent and got the ordering backwards, keeping a 4% answer at κ=2 while
+rejecting a 1e-7 one at κ=50. The limit is a property of the CDF's
+representation, not of the distribution.
+
+**Two fixes can conflict where neither agent can see it.** The gammainc
+endpoint fix carries the exact density at x = 0 through a custom_jvp whose
+primal is the literal 0. Independently, bake was hardened to refuse any
+custom_jvp that is not a series evaluation, since inlining one drops its
+derivative rule. Together they made gammainc unbakeable. The resolution is
+structural rather than name based: a custom_jvp whose call_jaxpr has no
+equations and returns a zero literal folds to 0.0, which cannot change a
+value, and bake's docstring now states the one thing it does cost, that
+one-sided slopes AT an endpoint do not survive into the artifact.
+
+Also in this round: `besseli_ratio` rebuilt on an ascending series with the
+prefactors cancelled analytically (it was dividing two independently
+underflowing scaled functions, nan in f32, and its origin slope was forced
+to 0 instead of 1/(2(ν+1))); dI/dν near ν = 0 rebuilt from the tables'
+second ν-derivative after the `I · dlogI/dν` path was found returning the
+wrong SIGN at ν = 1e-16; `2*x` overflow above x ≈ 9e307 fixed in besselk and
+besseli; `pergroup` no longer evaluates padded empty groups; Recipe,
+ChebSeries and PiecewiseCheb freeze after construction, since the factories
+hand the same object to every caller; series.py's O(n²) matrix caches
+replaced by O(n) recurrences; `log_stdtr` / `log_stdtr_sf` added and
+exported.

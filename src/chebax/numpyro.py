@@ -166,10 +166,17 @@ def _qinv_solve(a, sc, use_recipe):
         # increasing in v, as newton_bisect wants; slope is x pdf(x)/Q
         return lq_t - lq, jnp.exp(a * v - x - lga - lq)
 
-    # Wilson-Hilferty for the bulk, and below s = 1e-4 the exact tail
-    # asymptotic ln Q = (a-1) ln x - x - lnGamma(a), inverted by three
-    # fixed-point passes (WH drifts off by a factor there). The clamp only
-    # guards the start's own log; the bracket recovers a bad one.
+    # Wilson-Hilferty, or the exact tail asymptotic
+    # ln Q = (a-1) ln x - x - lnGamma(a) inverted by three fixed-point
+    # passes, whichever starts HIGHER. The asymptotic needs x >> a: once
+    # ln(1/s) < lnGamma(a) its iteration collapses to the 1e-3 floor, and
+    # a start that far under the root costs one e-fold per Newton step to
+    # recover (the recipe's logs are finite everywhere, so the safeguard
+    # never bisects), which 40 steps cannot pay at moderate a (measured:
+    # a = 50, s = 1e-8 stopped 5.8e-10 short). WH is good there; where WH
+    # overshoots instead (small a, deep tail), it is only by a few
+    # e-folds, which the crawl absorbs. The clamp only guards the start's
+    # own log; the bracket recovers a bad one.
     z = -ndtri(sc)
     wh = a * (1.0 - 1.0 / (9.0 * a) + z / (3.0 * jnp.sqrt(a))) ** 3
     r = -lq_t - lga
@@ -178,7 +185,7 @@ def _qinv_solve(a, sc, use_recipe):
         xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
     pos = wh > 0.0
     v_wh = jnp.where(pos, jnp.log(jnp.where(pos, wh, 1.0)), jnp.log(xa))
-    v0 = jnp.clip(jnp.where(sc < 1e-4, jnp.log(xa), v_wh), lim.lo, lim.v_hi)
+    v0 = jnp.clip(jnp.maximum(v_wh, jnp.log(xa)), lim.lo, lim.v_hi)
     v = newton_bisect(f_and_df, v0, jnp.full_like(sc, lim.lo),
                       jnp.full_like(sc, lim.v_hi), lim.n_gamma)
 
@@ -202,9 +209,11 @@ def _gammaqinv(a, s):
     keeps every digit of s. Same shape of solve as gammaincinv's, sharing
     its constants: safeguarded Newton on v = ln x, fixed count, bracketed
     by the canonical dtype's own exponent range. Measured against
-    mpmath at 50 dps over a in [0.05, 500] and s in [1e-300, 1/2]: worst
-    1.9e-12 float64, 3.9e-4 float32, the latter in the wedge x just below
-    8 at small a, where Q is 1 - P and only absolutely accurate."""
+    mpmath at 50 dps over a in [0.05, 1200] and s in [1e-300, 1/2]
+    (re-measured 2026-08-02 with a in (10, 1000] on the Temme-zone
+    tables): worst 4.3e-12 float64, 3.9e-4 float32, the latter in the
+    wedge x just below 8 at small a, where Q is 1 - P and only
+    absolutely accurate."""
     a, s = canon_float(a), canon_float(s)
     lim = _limits(canon_tag())
     interior = (s > 0.0) & (s < 1.0)

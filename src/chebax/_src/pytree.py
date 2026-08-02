@@ -9,11 +9,17 @@ the coefficient dtype.
 
 Subclasses register themselves with the standard
 @jax.tree_util.register_pytree_node_class decorator at the class site.
+
+Instances are frozen once _post_init returns. The factories hand the SAME
+object to every caller asking for the same parameters (they are lru_cached),
+so a caller mutating one would corrupt every later call served from that
+slot; build a new instance instead.
 """
 
 class Recipe:
     _static_fields = ()
     _series_fields = ()
+    _frozen = False
 
     def __init__(self, *args):
         names = self._static_fields + self._series_fields
@@ -22,6 +28,21 @@ class Recipe:
         for name, val in zip(names, args):
             setattr(self, name, val)
         self._post_init()
+        object.__setattr__(self, "_frozen", True)
+
+    def __setattr__(self, name, value):
+        if self._frozen:
+            raise AttributeError(
+                f"{type(self).__name__} is immutable (cached instances are shared); "
+                f"cannot set {name!r}")
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name):
+        if self._frozen:
+            raise AttributeError(
+                f"{type(self).__name__} is immutable (cached instances are shared); "
+                f"cannot delete {name!r}")
+        object.__delattr__(self, name)
 
     def _post_init(self):
         pass
@@ -62,4 +83,5 @@ class Recipe:
         for name, val in zip(cls._series_fields, children):
             setattr(obj, name, val)
         obj._post_init()
+        object.__setattr__(obj, "_frozen", True)
         return obj

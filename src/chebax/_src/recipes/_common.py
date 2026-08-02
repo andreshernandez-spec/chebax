@@ -36,6 +36,25 @@ def canon_float(x):
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
 
 
+@jax.custom_jvp
+def edge_slope(s, x):
+    """Zero, carrying slope s in x.
+
+    A CDF-like recipe picks its endpoint values with a hard select, and
+    both branches there are constants, so AD sees no slope AT the endpoint
+    even where the true one-sided derivative is exact and finite (the
+    density). Adding this zero splices that slope back in without touching
+    a value. bake knows this rule by name and folds it, which costs the
+    artifact exactly that endpoint slope and is disclosed there."""
+    return jnp.zeros_like(x)
+
+
+@edge_slope.defjvp
+def _edge_slope_jvp(primals, tangents):
+    s, x = primals
+    return jnp.zeros_like(x), s * tangents[1]
+
+
 def float_params(impl):
     """Public entry point for a custom_jvp'd implementation: promote every
     argument to the canonical float dtype before the rule sees it.

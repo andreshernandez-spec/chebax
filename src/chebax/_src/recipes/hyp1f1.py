@@ -76,8 +76,14 @@ def _coefs_traced(tensor, sa, sb):
 
 
 def _eval_logs(a, b, x, lnr, ltail):
-    """(ln M inner, ln M tail), masked lanes fed finite dummies."""
-    xd = jnp.where((x > 0.0) & (x <= _ht.XS), x, 1.0)
+    """(ln M inner, ln M tail), masked lanes fed finite dummies.
+
+    x = 0 belongs to the INNER lane, not to a hard select on the value:
+    log1p there is exactly 0, so the value is unchanged, and its
+    derivative is the exact a/b instead of the 0 a constant branch gives
+    (review, 2026-08-02: grad of hyp1f1_fn(2, 3, .) at 0 was 0 for a true
+    2/3)."""
+    xd = jnp.where((x >= 0.0) & (x <= _ht.XS), x, 1.0)
     lm_in = jnp.log1p(a / b * xd * jnp.exp(lnr(xd)))
     xo = jnp.where(x > _ht.XS, x, 2.0 * _ht.XS)
     lm_tl = (jax.scipy.special.gammaln(b) - jax.scipy.special.gammaln(a)
@@ -89,8 +95,12 @@ def eval_hyp1f1(a, b, x, lnr, ltail, log):
     x = jnp.asarray(x)
     lm_in, lm_tl = _eval_logs(a, b, x, lnr, ltail)
     lm = jnp.where(x <= _ht.XS, lm_in, lm_tl)
-    lm = jnp.where(x == 0.0, 0.0, lm)
-    out = lm if log else jnp.exp(lm)
+    # M ~ Gamma(b)/Gamma(a) e^x x^(a-b) grows without bound for every a > 0
+    # in the box, but the tail bracket is inf + (a-b) inf at x = inf, which
+    # is nan when a = b: mask it and set the limit by hand
+    big = x == jnp.inf
+    out = lm if log else jnp.exp(jnp.where(big, 0.0, lm))
+    out = jnp.where(big, jnp.inf, out)
     out = jnp.where(x < 0.0, jnp.nan, out)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b),
                      jnp.nan, out)

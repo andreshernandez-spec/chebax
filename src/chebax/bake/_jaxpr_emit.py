@@ -188,7 +188,7 @@ def _match_series(inst, const):
 # with derivative 1 has that shape too, and folding it silently turns a
 # gradient of 1 into 0 (review, 2026-08-02). Identity by function name AND
 # defining module, so nothing outside chebax can present itself as this.
-_ENDPOINT_JVP = ("_edge_slope", "chebax/_src/recipes/gammainc.py")
+_ENDPOINT_JVP = ("edge_slope", "chebax/_src/recipes/_common.py")
 
 
 def _is_endpoint_slope_jvp(eqn):

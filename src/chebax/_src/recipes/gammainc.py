@@ -50,7 +50,8 @@ from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
+from chebax._src.recipes._common import (canon_tag, check_range, edge_slope,
+                                         param_coefs,
                                          traced_coefs)
 from chebax._src.series import ChebSeries
 
@@ -70,19 +71,6 @@ def _eval_logs(a, x, lser, ltail):
     return lp_in, jnp.where(big, -jnp.inf, lq_tl)
 
 
-@jax.custom_jvp
-def _edge_slope(s, x):
-    """Zero, carrying slope s in x. Both value branches at x = 0 are
-    constants, so AD sees no slope there; the true one-sided one is s."""
-    return jnp.zeros_like(x)
-
-
-@_edge_slope.defjvp
-def _edge_slope_jvp(primals, tangents):
-    s, x = primals
-    return jnp.zeros_like(x), s * tangents[1]
-
-
 def _density0(a):
     """Gamma density at x = 0: inf below a = 1, 1 at it, 0 above."""
     return jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, 1.0))
@@ -99,7 +87,7 @@ def eval_gammainc(a, x, lser, ltail, lower):
         core = jnp.where(x <= _gt.XS, 1.0 - jnp.exp(lp_in), jnp.exp(lq_tl))
         out = jnp.where(x > 0.0, core, 1.0)
         d0 = -d0
-    out = out + _edge_slope(jnp.where(x == 0.0, d0, 0.0), x)
+    out = out + edge_slope(jnp.where(x == 0.0, d0, 0.0), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 
 
@@ -226,7 +214,7 @@ def log_gammainc_fn(a, x):
 
     out = _dispatch_fn(a, x, small, "logp")
     # d ln P/dx = density/P ~ a/x, so the slope at x = 0 is inf for every a
-    return out + _edge_slope(jnp.where(x == 0.0, jnp.inf, 0.0), x)
+    return out + edge_slope(jnp.where(x == 0.0, jnp.inf, 0.0), x)
 
 
 def log_gammaincc_fn(a, x):
@@ -252,7 +240,7 @@ def log_gammaincc_fn(a, x):
 
     out = _dispatch_fn(a, x, small, "logq")
     # Q = 1 at x = 0, so d ln Q/dx there is just -density
-    return out + _edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
+    return out + edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
 
 
 def gammainc(a):

@@ -155,3 +155,19 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     assert ((tmp_path / "hyp1f1_table.py").read_text()
             == pathlib.Path(ht.__file__).read_text())
     assert ht.META["dps"] == hyp1f1_gen.DPS
+
+
+def test_origin_slope_and_infinity():
+    # x = 0 used to be a hard select on the value, so its derivative read
+    # 0 where the exact one is a/b; it now rides the inner lane, where
+    # log1p(0) is 0 exactly and the slope falls out (review, 2026-08-02).
+    for a, b in ((2.0, 3.0), (0.5, 1.5), (9.0, 2.0)):
+        got = float(jax.grad(lambda x: chebax.hyp1f1_fn(a, b, x))(0.0))
+        assert abs(got - a / b) <= 1e-14 * (a / b), (a, b, got)
+        assert float(chebax.hyp1f1_fn(a, b, 0.0)) == 1.0
+        assert float(chebax.log_hyp1f1_fn(a, b, 0.0)) == 0.0
+    # M ~ Gamma(b)/Gamma(a) e^x x^(a-b) diverges for every a in the box;
+    # the tail bracket was inf + (a - b) inf, which is nan at a = b
+    for a, b in ((1.0, 1.0), (2.0, 3.0), (0.5, 0.5)):
+        assert np.isposinf(float(chebax.hyp1f1_fn(a, b, np.inf))), (a, b)
+        assert np.isposinf(float(chebax.log_hyp1f1_fn(a, b, np.inf))), (a, b)

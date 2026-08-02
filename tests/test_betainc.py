@@ -213,3 +213,22 @@ def test_wide_tables_regenerate_bit_for_bit(tmp_path):
     betainc_wide_gen.main(tmp_path)
     assert ((tmp_path / "betainc_wide_table.py").read_text()
             == pathlib.Path(bw.__file__).read_text())
+
+
+def test_endpoint_derivatives_are_the_density():
+    # Both endpoint values come from a hard select, so AD read a slope of
+    # 0 there even where the density is exact and finite: grad of
+    # betainc_fn(1, 3, .) at 0 gave 0 for a true 3 (review, 2026-08-02).
+    # f(0) = 1/B(1, b) = b when a = 1, f(1) = 1/B(a, 1) = a when b = 1;
+    # 0 above the 1, infinite below it. Values are unchanged.
+    assert float(jax.grad(lambda x: chebax.betainc_fn(1.0, 3.0, x))(0.0)) == 3.0
+    assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 1.0, x))(1.0)) == 3.0
+    assert float(jax.grad(lambda x: chebax.betainc_fn(2.0, 3.0, x))(0.0)) == 0.0
+    assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 2.0, x))(1.0)) == 0.0
+    assert np.isposinf(float(jax.grad(
+        lambda x: chebax.betainc_fn(0.5, 3.0, x))(0.0)))
+    assert np.isposinf(float(jax.grad(
+        lambda x: chebax.betainc_fn(3.0, 0.5, x))(1.0)))
+    for a, b in ((1.0, 3.0), (2.5, 0.5)):
+        assert float(chebax.betainc_fn(a, b, 0.0)) == 0.0
+        assert float(chebax.betainc_fn(a, b, 1.0)) == 1.0

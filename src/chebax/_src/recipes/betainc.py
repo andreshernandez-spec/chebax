@@ -45,7 +45,7 @@ from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import betainc_wide_table as _bw
-from chebax._src.recipes._common import canon_tag, check_range
+from chebax._src.recipes._common import canon_tag, check_range, edge_slope
 from chebax._src.series import ChebSeries, _chebval
 
 
@@ -147,7 +147,21 @@ def eval_betainc(a, b, x, cab, cba):
     reflected = 1.0 - jnp.exp(_log_direct(b, a, yd, cba))
     core = jnp.where(xi <= _bt.XSPLIT, direct, reflected)
     out = jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
+    out = out + edge_slope(_edge_density(a, b, x), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
+
+
+def _edge_density(a, b, x):
+    """The Beta density AT an endpoint, 0 in between.
+
+    Both endpoint values are picked by a hard select, so AD reads a slope
+    of 0 there even where the density is exact and finite: grad of
+    betainc_fn(1, 3, .) at x = 0 gave 0 for a true 3 (review,
+    2026-08-02). f(0) = 1/B(1, b) = b when a = 1, and f(1) = 1/B(a, 1) = a
+    when b = 1; either side is 0 above its 1 and infinite below it."""
+    d0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, b))
+    d1 = jnp.where(b < 1.0, jnp.inf, jnp.where(b > 1.0, 0.0, a))
+    return jnp.where(x == 0.0, d0, jnp.where(x == 1.0, d1, 0.0))
 
 
 @jax.tree_util.register_pytree_node_class

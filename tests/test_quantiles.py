@@ -432,6 +432,59 @@ def test_gammaincinv_deep_tail_large_shape():
             assert abs(float(got) / p - 1) <= 7e-13, (a, p, x)
 
 
+def test_gammainccinv_against_mpmath():
+    # The survival quantile takes y directly, so the deep upper tail that
+    # gammaincinv(a, 1 - y) collapses onto x(1) stays resolved. Contract is
+    # the round trip through Q: measured worst 4.3e-12 relative over
+    # a in [0.05, 1200] and y down to 1e-300, all of it at small a where
+    # the root sits below the gammainc tables' x = 8 seam and Q comes back
+    # as 1 - P; bar 2e-11.
+    worst = 0.0
+    for a in [0.05, 0.5, 3.0, 9.9, 10.5, 50.0, 300.0, 1000.0, 1200.0]:
+        ys = [0.9, 0.5, 1e-4, 1e-16, 1e-50, 1e-300]
+        xs = np.asarray(chebax.gammainccinv(a, np.asarray(ys)))
+        assert np.all(np.isfinite(xs)), (a, xs)
+        for y, x in zip(ys, xs):
+            got = mp.gammainc(mp.mpf(a), mp.mpf(float(x)), mp.inf,
+                              regularized=True)
+            worst = max(worst, abs(float(got) / y - 1))
+    assert worst <= 2e-11, worst
+
+
+def test_gammainccinv_matches_gammaincinv_in_the_bulk():
+    # where 1 - y is exact both routes solve the same equation
+    ys = np.asarray([0.25, 0.5, 0.75])
+    for a in [0.3, 5.0, 50.0, 700.0]:
+        got = np.asarray(chebax.gammainccinv(a, ys))
+        ref = np.asarray(chebax.gammaincinv(a, 1.0 - ys))
+        assert np.allclose(got, ref, rtol=1e-14, atol=0.0), (a, got, ref)
+
+
+def test_gammainccinv_endpoints_and_gradients():
+    assert np.isposinf(float(chebax.gammainccinv(2.5, 0.0)))
+    assert float(chebax.gammainccinv(2.5, 1.0)) == 0.0
+    for a in [0.0, -1.0, np.inf, np.nan]:
+        assert np.isnan(float(chebax.gammainccinv(a, 0.25))), a
+    for y in [-0.1, 1.5, np.nan]:
+        assert np.isnan(float(chebax.gammainccinv(2.5, y))), y
+    # dx/dy = -1/pdf(x) and dx/da = (dQ/da)/pdf(x) = -(dP/da)/pdf(x), both
+    # against the mp reference (its a-derivative by central difference).
+    # Measured worst 3e-9 relative, the difference step's own floor;
+    # bar 1e-7.
+    for a, y in [(0.7, 0.3), (4.0, 1e-3), (40.0, 1e-8)]:
+        gy = float(jax.grad(chebax.gammainccinv, argnums=1)(a, y))
+        ga = float(jax.grad(chebax.gammainccinv, argnums=0)(a, y))
+        x = mp.findroot(lambda t: mp.gammainc(mp.mpf(a), t, mp.inf,
+                                              regularized=True) - y,
+                        mp.mpf(float(chebax.gammainccinv(a, y))))
+        pdf = mp.exp((a - 1) * mp.log(x) - x - mp.loggamma(a))
+        ry = float(-1 / pdf)
+        rq = mp.diff(lambda t: mp.gammainc(t, x, mp.inf, regularized=True), a)
+        ra = float(rq / pdf)
+        assert abs(gy / ry - 1) <= 1e-7, (a, y, gy, ry)
+        assert abs(ga / ra - 1) <= 1e-7, (a, y, ga, ra)
+
+
 def test_gammaincinv_shape_domain():
     # a <= 0 and non-finite a are nan for every p, endpoints included; they
     # used to return 0.0 for interior p and inf at p = 1
@@ -495,7 +548,10 @@ def test_log_stdtr():
             assert abs(got - ref) <= 5e-15 * max(1.0, abs(ref)), (nu, t, got)
             # symmetry, so the survival side needs no 1 - F anywhere
             assert float(log_stdtr_sf(nu, -t)) == got, (nu, t)
-    assert float(chebax.stdtr(4.0, -1e80)) == 0.0
+    # the true value is e^-735.73, subnormal: XLA's CPU runtime flushes it
+    # to zero, the GPU keeps 3e-320. Either way it carries no digits, which
+    # is the point; the bound is device-independent, "== 0.0" was not
+    assert float(chebax.stdtr(4.0, -1e80)) <= 1e-315
     assert abs(float(log_stdtr(4.0, -1e80)) + 735.7286174694265) <= 1e-11
     assert float(log_stdtr(4.0, 0.0)) == -float(np.log(2.0))
     assert float(log_stdtr(4.0, -np.inf)) == -np.inf

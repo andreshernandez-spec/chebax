@@ -41,7 +41,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ∈ [0.1, 1000] ((10, 1000] via Temme-zone tables), x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`) |
 | `hyp1f1` | `hyp1f1(a, b)` | `hyp1f1_fn`, `log_hyp1f1_fn` | via `grad` of `_fn` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
-| quantiles | — | `betaincinv`, `gammaincinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
+| quantiles | — | `betaincinv`, `gammaincinv`, `gammainccinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
 | erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
@@ -60,11 +60,10 @@ gammainccinv, erfcx, erfcinv, ive, kve — and adds betainc gradients in its
 shape parameters, so censored or truncated StudentT/Beta likelihoods with a
 latent scalar shape sample instead of raising. Shape parameters must be
 scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
-return nan, never silently wrong numbers. One inherited limit worth knowing
-before you rely on it: `gammainccinv` is solved at `1 - p`, so upper-tail
-probabilities below ~1e-17 collapse to 1 and return inf even where the
-quantile is perfectly finite. Call `gammaincinv(a, p)` directly for the
-lower tail, which has no such floor.
+return nan, never silently wrong numbers. `gammainccinv` takes its
+upper-tail probability directly (it used to be solved at `1 - p`, which
+collapsed everything below ~1e-17 onto one point), so both tails resolve to
+the same depth.
 
 For numpyro users: `from chebax.numpyro import TruncatedGamma, TruncatedBeta,
 TruncatedStudentT` (installs with `pip install chebax[numpyro]`) gives the

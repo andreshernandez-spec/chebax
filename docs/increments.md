@@ -615,3 +615,37 @@ and the large path inherited the x = inf mask the review added to the
 small one. chebax.numpyro's gamma gate widened to the merged recipe
 box, which closes the review's TruncatedGamma deep-upper-tail gap for
 concentration in (10, 1000].
+
+## 27 — gammainccinv, the survival quantile (2026-08-02)
+
+The review's gamma survival-inverse was a real solver sitting in
+`chebax/numpyro.py`, a wiring module. It is now `chebax.gammainccinv`, the
+x with Q(a, x) = y, and `chebax.numpyro` calls it like any other quantile.
+
+Both inverses run on one core, `_gammainv_core`, which solves against the
+LOG probability and takes its target already in logs: gammaincinv passes
+(ln p, log1p(-p)), gammainccinv passes (log1p(-y), ln y), each side handing
+in the exact one. That is the whole point of the second function.
+`gammaincinv(a, 1 - y)` cannot serve the upper tail, since 1 - y is exactly
+1 for every y below eps, and neither can ndtri(1 - y) for the start, which
+saturates the same way; the core takes z from the caller for that reason.
+
+The a-box dispatch (small tables to 10, Temme zone to 1000, jax outside)
+and the dP/da dispatch behind the JVP were each duplicated three ways by
+this point and are now `_dispatch_solve` and `_dPda_dispatch`.
+
+One defect fell out of writing it. The upper-tail asymptotic start needs
+x >> a, and once ln(1/y) < lnGamma(a) its fixed point collapses to the
+floor. A start far BELOW the root is the expensive miss: the recipe's logs
+are finite everywhere, so the safeguard never bisects and Newton crawls one
+e-fold per step (jax's hard -inf used to force bisection instead, which is
+why the fallback path never showed it). 40 steps stopped 5.8e-10 short at
+a = 50, y = 1e-8, inside the 1e-6 residual bar. Both tails now start from
+whichever of Wilson-Hilferty and their own asymptotic is higher; overshoot
+costs a few steps, undershoot costs the answer.
+
+Measured against mpmath at 50 dps, a in [0.05, 1200], y down to 1e-300:
+worst 4.3e-12 relative on the round trip through Q, all of it at small a
+where the root sits below the gammainc tables' x = 8 seam and Q comes back
+as 1 - P (bar 2e-11). Gradients in both arguments from the implicit-function
+rule, agreeing with central differences to 3e-9.

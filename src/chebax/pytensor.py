@@ -13,11 +13,12 @@ What gets registered, and the contracts:
 
 - Erfcx, Erfcinv: pure jax (native erfcx; erfcinv via ndtri). No chebax
   tables, no tfp, no restrictions.
-- GammaIncInv, GammaIncCInv: chebax.gammaincinv for a SCALAR shape
-  (0-d or size-1; that is what a sampled scalar RV lowers to). The
-  complemented inverse is solved at 1 - p, so its upper-tail depth is
-  limited to ~eps. Batched shape arrays fall back to tfp when
-  installed, else raise NotImplementedError at trace time.
+- GammaIncInv, GammaIncCInv: chebax.gammaincinv / chebax.gammainccinv
+  for a SCALAR shape (0-d or size-1; that is what a sampled scalar RV
+  lowers to). The complemented inverse takes p directly, so the upper
+  tail resolves as deep as the lower one. Batched shape arrays fall
+  back to tfp when installed, else raise NotImplementedError at trace
+  time.
 - BetaIncInv: chebax.betaincinv for scalar (a, b) inside chebax's
   domain box (a, b) in [0.1, 100]^2; outside the box the result is nan
   (loud, never silently wrong). Batched shapes fall back as above.
@@ -100,8 +101,7 @@ def _jax_funcify_GammaIncCInv(op, **kwargs):
     def gammainccinv(a, p):
         if not _is_uniform(a):
             return _tfp_fallback(op, "igammacinv", (jnp.shape(a), jnp.shape(p)))(a, p)
-        # solved at 1 - p: upper-tail resolution is limited to ~eps of 1
-        return chebax.gammaincinv(_as_scalar(a), 1.0 - p)
+        return chebax.gammainccinv(_as_scalar(a), p)
 
     return gammainccinv
 

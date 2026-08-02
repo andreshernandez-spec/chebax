@@ -125,3 +125,62 @@ def test_x_large_smoke():
 
 # regeneration of besselj_table_ext.py is covered by the full-file test in
 # test_besselj.py (one besselj_gen.main run emits and checks both tables)
+
+
+# ---- domain-limited instances (PROJECT.md's queued narrow-domain build) ----
+# besselj(v, domain=(lo, hi)) keeps only the regions covering [lo, hi]. The
+# contract is that it computes the SAME numbers as the full instance inside
+# the domain (same tables, the other regions' arithmetic simply dropped) and
+# nan outside it. Speed is measured in experiments/04, not here.
+
+def test_domain_matches_the_full_instance_exactly():
+    for v in (0.0, 2.5, 9.97):
+        full = chebax.besselj(float(v))
+        for lo, hi, regions in [(0.0, 8.0, ("in",)),
+                                (1e-6, 7.9, ("in",)),
+                                (9.0, 29.0, ("mid",)),
+                                (31.0, 1e4, ("out",)),
+                                (2.0, 20.0, ("in", "mid")),
+                                (20.0, 100.0, ("mid", "out"))]:
+            trimmed = chebax.besselj(float(v), domain=(lo, hi))
+            assert trimmed.regions == regions, (v, lo, hi, trimmed.regions)
+            xs = np.linspace(lo, hi, 97)
+            got = np.asarray(trimmed(xs))
+            ref = np.asarray(full(xs))
+            assert np.array_equal(got, ref), (v, lo, hi,
+                                              np.max(np.abs(got - ref)))
+
+
+def test_domain_is_nan_outside():
+    t = chebax.besselj(2.5, domain=(2.0, 8.0))
+    xs = np.array([0.0, 1.0, 1.999, 2.0, 5.0, 8.0, 8.001, 40.0])
+    got = np.asarray(t(xs))
+    assert np.all(np.isnan(got[[0, 1, 2, 6, 7]])), got
+    assert np.all(np.isfinite(got[[3, 4, 5]])), got
+
+
+def test_domain_gradients_and_jit():
+    full = chebax.besselj(3.0)
+    trimmed = chebax.besselj(3.0, domain=(0.0, 8.0))
+    for x in (0.5, 3.0, 7.5):
+        assert float(jax.grad(trimmed)(x)) == float(jax.grad(full)(x)), x
+    # a nan lane must not poison the gradient of a live one
+    g = jax.grad(lambda xs: jnp.sum(jnp.where(xs <= 8.0, trimmed(xs), 0.0)))(
+        jnp.asarray([1.0, 4.0]))
+    assert np.all(np.isfinite(np.asarray(g))), g
+    # a few ulp, not equality: jit fusion may reassociate the Clenshaw
+    xs = jnp.linspace(0.1, 7.9, 16)
+    y = jax.jit(lambda q, z: q(z))(trimmed, xs)
+    np.testing.assert_allclose(np.asarray(y), np.asarray(trimmed(xs)),
+                               rtol=0, atol=5e-15)
+
+
+def test_domain_dnu_and_validation():
+    full = chebax.besselj_dnu(2.5)
+    trimmed = chebax.besselj_dnu(2.5, domain=(0.1, 8.0))
+    xs = np.linspace(0.1, 8.0, 33)
+    assert np.array_equal(np.asarray(trimmed(xs)), np.asarray(full(xs)))
+    assert np.isnan(float(trimmed(20.0)))
+    for bad in [(8.0, 2.0), (-1.0, 5.0), (3.0, 3.0)]:
+        with pytest.raises(ValueError, match="domain"):
+            chebax.besselj(2.5, domain=bad)

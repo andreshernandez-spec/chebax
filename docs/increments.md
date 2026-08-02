@@ -716,3 +716,32 @@ it from.
 This closes the last of the three gaps the 2026-08-01 review left open.
 A TruncatedGamma at concentration 1e5 on a deep upper-tail interval is
 1.3e-11 relative; it used to fall back to jax and return +inf.
+
+## 30 — domain-limited besselj (2026-08-02)
+
+`besselj(v, domain=(lo, hi))`, the narrow-domain build PROJECT.md queued
+after experiments/04 measured a single-region evaluation at 2.5x (f64) /
+3.0x (f32) against the full three-region select.
+
+The instance keeps only the regions covering [lo, hi] and `__call__`
+picks its shape from that static tuple: one region means one polynomial
+and no selects, two means one select instead of two. Nothing about the
+tables or their accuracy changes, and inside the domain a trimmed
+instance returns bit-identical numbers to the full one (asserted in
+tests, not approximated). Outside it the answer is nan: the regions that
+would have answered are the ones that were dropped, and extrapolating a
+region's polynomial past its seam is silently wrong rather than loudly
+so. The guard masks the OUTPUT, the branch inputs staying clamped as
+before, so no gradient reaches a lane it should not.
+
+experiments/04 now times the SHIPPED instance rather than only the
+private inner evaluation. On the 3080 at N = 2^24, v = 2.5, x ~ U(0, 8):
+full 55.0 ms, domain= 21.7 ms (2.54x) in f64; 1.33 ms vs 0.51 ms (2.59x)
+in f32. The nan guard is the difference between that and the raw inner
+kernel, about 9% of the f64 narrow time and nothing measurable in f32.
+
+The queue named the Matern demo as first customer. It is not one:
+`matern` runs on besselk, a different recipe with its own two regions.
+besselk could take the same option, but a Matern kernel's
+z = sqrt(2 nu) r / lengthscale window is data-dependent rather than
+static, so it would have to be declared by the caller like this one is.

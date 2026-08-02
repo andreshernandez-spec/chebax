@@ -32,7 +32,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 
 | family | factory | traced params | param derivative | notes |
 |---|---|---|---|---|
-| `besselj` | `besselj(v)` | — | `besselj_dnu(v)` | x ≥ 0, validated to 1e4 |
+| `besselj` | `besselj(v)`, `besselj(v, domain=(lo, hi))` | — | `besselj_dnu(v)` | x ≥ 0, validated to 1e4; `domain=` keeps only the regions covering the window and drops the rest of the evaluation, measured 2.5x f64 / 2.6x f32 (`experiments/04`), nan outside it |
 | `bessely` | `bessely(v)` | — (structural) | `bessely_dnu(v)` | x ≥ 1e-6 |
 | `besseli` | `besseli(v, scaled=)` | `besseli_fn`, `besseli_ratio` | `besseli_dnu(v, scaled=)` | `scaled` = scipy's ive; the ratio I_{v+1}/I_v is the circular-statistics workhorse |
 | `besselk` | `besselk(v)` | `besselk_fn`, `log_besselk_fn` | `besselk_dnu(v)` | x ≥ 1e-6; the log form has no underflow ceiling |

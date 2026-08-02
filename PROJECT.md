@@ -220,8 +220,13 @@ measured there. Never claim "memory-bound" for f64 on GeForce-class parts.
 **Narrow-domain race — measured 2026-07-31** (`experiments/04`, was queued 2026-07-29):
 the single-region inner evaluation beats the full three-region select besselj **2.5×
 (f64) / 3.0× (f32)** on x ~ U(0, 8), matching the a-third-the-arithmetic prediction.
-Verdict: worth offering. **Queued build:** a domain-limited `besselj(v, domain=(a, b))`
-that trims to the covering region(s); first customer the Matérn demo.
+Verdict: worth offering. **DELIVERED 2026-08-02, increment 30:**
+`besselj(v, domain=(lo, hi))` keeps only the covering regions, returns
+bit-identical values inside the window and nan outside it, and measures 2.5× f64 /
+2.6× f32 as shipped (`experiments/04`, re-run against the public instance). The
+Matérn demo is NOT its first customer after all: `matern` runs on besselk, whose
+own regions would need the same option and a caller-declared window, since a
+kernel's z-range is data-dependent.
 
 **gammainc work (2026-07-30, Andres): part (1) benchmark DONE 2026-07-31**
 (`experiments/05`): XLA's looped `igamma` vs a mock fixed-degree kernel
@@ -259,19 +264,20 @@ emitters take truncate_tol and xsf_header takes dtype="float" (f-suffixed
 literals, float arrays and locals, templated Clenshaw), compile-verified at
 f32 grade. Option (3), fpminimax, stays dead per the 2% measurement.
 
-**Queued per-group parameter API (2026-07-30, Andres; strictly after the B3
-benchmark study, scheduled 2026-07-31 in `../bessel/`):** a wrapper over the
-traced-parameter path serving *per-group* parameters: G unique parameter values
-plus a static group-index array; build the G coefficient tables under `vmap`
-(~3k FLOPs each, differentiable, inside `jit`), gather per element. This
-relaxes uniform-per-call to "per-group, grouping static, values free to change
-every iteration" — the hierarchical-model regime (numpyro
-`Beta(alpha[group_idx], ...)`, censored likelihoods with per-group shapes,
-mixtures, multi-kernel GPs), which is where the adoption map's constraint
-caveat actually bites (`docs/adoption-map.md`). Cost is
-G × (reconstruction + n_g × polynomial); B3 must measure the crossover n per
-group where reconstruction overhead disappears before any API is designed or
-claimed. The per-element contract (one parameter per point, scipy's
+**Per-group parameter API — DELIVERED** (`chebax.pergroup`, `tests/test_pergroup.py`;
+crossover measured 2026-07-31 in `experiments/07`). A static integer group index plus
+one parameter set per group: the G coefficient tables are built under `vmap` inside
+`jit`, differentiably, and gathered per element. This relaxes uniform-per-call to
+"per-group, grouping static, values free to change every iteration", the
+hierarchical-model regime the adoption map's constraint caveat is about. Measured:
+reconstruction overhead within 1.07× of the uniform floor at n/group ≥ 16k (betainc,
+N = 2^24), besselk within 1.08× down to n/group = 1024, and against jax's own betainc
+the per-group path wins every measured cell (worst 7.3× at 16384 groups of 64,
+44–98× at MCMC scale). The 2026-08-01 review closed its one defect: padded empty
+groups were evaluated, so reverse mode could produce 0·NaN; empty groups now borrow a
+live group's element before the vmap.
+
+The per-element contract (one parameter per point, scipy's
 `jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
 wrapper changes its arithmetic.
 

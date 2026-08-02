@@ -43,11 +43,29 @@ from chebax._src.recipes._common import (canon_tag, check_range, digamma64,
 from chebax._src.series import ChebSeries
 
 
+def _regions_for(domain):
+    """The regions covering [lo, hi], as a tuple of "in", "mid", "out"."""
+    if domain is None:
+        return ("in", "mid", "out")
+    lo, hi = domain
+    regs = []
+    if lo <= _ext.MID_X0:
+        regs.append("in")
+    if hi > _ext.MID_X0 and lo <= _ext.MID_X1:
+        regs.append("mid")
+    if hi > _ext.MID_X1:
+        regs.append("out")
+    return tuple(regs)
+
+
 class _JBase(Recipe):
     """Shared v-derived constants and the three-region plumbing."""
 
     def _post_init(self):
         self.v = float(self.v)
+        if getattr(self, "domain", None) is not None:
+            self.domain = (float(self.domain[0]), float(self.domain[1]))
+        self.regions = _regions_for(getattr(self, "domain", None))
         self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
         phi = (self.v / 2 + 0.25) * math.pi
         self._cphi = math.cos(phi)
@@ -87,43 +105,65 @@ class _JBase(Recipe):
     def _select(x, inner, mid, outer):
         return jnp.where(x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer))
 
+    def _trim(self, x, y):
+        """nan outside a declared domain. A trimmed instance evaluates
+        only its own regions, so anything outside them would come back as
+        that region's polynomial extrapolated, which is silently wrong;
+        the whole point of naming a domain is that the caller promised to
+        stay inside it. The branch inputs are already clamped, so this
+        masks the OUTPUT and no gradient reaches a lane it should not."""
+        if self.domain is None:
+            return y
+        lo, hi = self.domain
+        return jnp.where((x >= lo) & (x <= hi), y, jnp.nan)
+
 
 @jax.tree_util.register_pytree_node_class
 class BesselJ(_JBase):
-    """Callable J_v on x >= 0. Build with besselj(v)."""
+    """Callable J_v on x >= 0, or on `domain` when one was given.
+    Build with besselj(v) or besselj(v, domain=(lo, hi))."""
 
-    _static_fields = ("v",)
+    _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q")
 
-    def __call__(self, x):
-        x = jnp.asarray(x)
+    def _outer(self, x):
         xo, P, Q = self._outer_pq(x)
         a = P * self._cphi + Q * self._sphi
         b = P * self._sphi - Q * self._cphi
-        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.cos(xo) * a + jnp.sin(xo) * b)
-        return self._select(x, self._inner(x), self._mid(x), outer)
+        return ((jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo))
+                * (jnp.cos(xo) * a + jnp.sin(xo) * b))
+
+    def __call__(self, x):
+        x = jnp.asarray(x)
+        if self.regions == ("in",):
+            return self._trim(x, self._inner(x))
+        if self.regions == ("mid",):
+            return self._trim(x, self._mid(x))
+        if self.regions == ("out",):
+            return self._trim(x, self._outer(x))
+        return self._trim(x, self._select(x, self._inner(x), self._mid(x),
+                                          self._outer(x)))
 
 
 @jax.tree_util.register_pytree_node_class
 class BesselJdnu(_JBase):
-    """Callable dJ_v/dv on x > 0. Build with besselj_dnu(v)."""
+    """Callable dJ_v/dv on x > 0, or on `domain` when one was given.
+    Build with besselj_dnu(v) or besselj_dnu(v, domain=(lo, hi))."""
 
-    _static_fields = ("v",)
+    _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q", "gnu", "jmnu", "pnu", "qnu")
 
     def _post_init(self):
         super()._post_init()
         self._psi = digamma64(self.v + 1.0)
 
-    def __call__(self, x):
-        x = jnp.asarray(x)
+    def _inner_dnu(self, x):
         xi = self._xin(x)
         z = xi * xi
         pref = self._inv_gamma * jnp.power(xi / 2, self.v)
-        inner = pref * ((jnp.log(xi / 2) - self._psi) * self.g(z) + self.gnu(z))
+        return pref * ((jnp.log(xi / 2) - self._psi) * self.g(z) + self.gnu(z))
 
-        mid = self.jmnu(self._xmid(x))
-
+    def _outer_dnu(self, x):
         xo, P, Q = self._outer_pq(x)
         s = _ext.XS / xo
         Pn = self.pnu(s * s)
@@ -132,8 +172,20 @@ class BesselJdnu(_JBase):
         b = P * self._sphi - Q * self._cphi
         an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
         bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
-        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.cos(xo) * an + jnp.sin(xo) * bn)
-        return self._select(x, inner, mid, outer)
+        return ((jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo))
+                * (jnp.cos(xo) * an + jnp.sin(xo) * bn))
+
+    def __call__(self, x):
+        x = jnp.asarray(x)
+        if self.regions == ("in",):
+            return self._trim(x, self._inner_dnu(x))
+        if self.regions == ("mid",):
+            return self._trim(x, self.jmnu(self._xmid(x)))
+        if self.regions == ("out",):
+            return self._trim(x, self._outer_dnu(x))
+        return self._trim(x, self._select(x, self._inner_dnu(x),
+                                          self.jmnu(self._xmid(x)),
+                                          self._outer_dnu(x)))
 
 
 def _series_at(v):
@@ -145,25 +197,45 @@ def _series_at(v):
     )
 
 
+def _canon_domain(name, domain):
+    if domain is None:
+        return None
+    lo, hi = (float(d) for d in domain)
+    if not (0.0 <= lo < hi):
+        raise ValueError(f"{name} needs domain=(lo, hi) with 0 <= lo < hi, "
+                         f"got ({lo}, {hi})")
+    return (lo, hi)
+
+
 @functools.lru_cache(maxsize=128)
-def _besselj_cached(v, _tag):
+def _besselj_cached(v, domain, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
-    return BesselJ(v, *_series_at(v))
+    return BesselJ(v, domain, *_series_at(v))
 
 
-def besselj(v):
+def besselj(v, domain=None):
     """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath.
 
     v may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode."""
-    return _besselj_cached(float(v), canon_tag())
+    is keyed per x64 mode.
+
+    domain=(lo, hi) narrows the instance to the regions covering [lo, hi]
+    and drops the rest of the evaluation: the full callable computes all
+    three regions and selects, so an x-range inside one of them pays
+    about three times the arithmetic it needs (measured 2.5x f64 / 3.0x
+    f32 for the inner region alone, experiments/04). Outside the declared
+    domain the result is nan, since the regions that would have answered
+    are the ones that were dropped. The tables and their accuracy are
+    unchanged; this only removes work."""
+    return _besselj_cached(float(v), _canon_domain("besselj", domain),
+                           canon_tag())
 
 
 @functools.lru_cache(maxsize=128)
-def _besselj_dnu_cached(v, _tag):
+def _besselj_dnu_cached(v, domain, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJdnu(
-        v, *_series_at(v),
+        v, domain, *_series_at(v),
         ChebSeries(param_coefs_der(_tab.TABLE, 0.0, _tab.VMAX, v), (0.0, _tab.ZMAX)),
         ChebSeries(param_coefs_der(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)),
         ChebSeries(param_coefs_der(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
@@ -171,6 +243,9 @@ def _besselj_dnu_cached(v, _tag):
     )
 
 
-def besselj_dnu(v):
-    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient)."""
-    return _besselj_dnu_cached(float(v), canon_tag())
+def besselj_dnu(v, domain=None):
+    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient).
+
+    domain=(lo, hi) trims the regions exactly as besselj's does."""
+    return _besselj_dnu_cached(float(v), _canon_domain("besselj_dnu", domain),
+                               canon_tag())

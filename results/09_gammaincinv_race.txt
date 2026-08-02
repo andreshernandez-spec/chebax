@@ -2,17 +2,23 @@ jax 0.11.0 on cuda:0, N = 1048576, reps = 15 (medians), 40 Newton iterations per
 
 case                        jax-resid    recipe  ratio  max rel diff (x)
 ------------------------------------------------------------------------
-a=0.5,  p~U(1e-6,1-..)      2329.93ms   99.07ms  23.5x  2.2e-12
-a=3.5,  p~U(1e-6,1-..)       851.43ms   99.12ms   8.6x  1.4e-14
-a=9.9,  p~U(1e-6,1-..)       626.06ms   99.06ms   6.3x  2.2e-14
-a=3.5,  p~U(1e-12,1e-2)      139.26ms   98.98ms   1.4x  3.7e-15
+a=0.5,  p~U(1e-6,1-..)      5252.29ms  138.99ms  37.8x  1.8e-12
+a=3.5,  p~U(1e-6,1-..)      1758.64ms  123.46ms  14.2x  1.1e-14
+a=9.9,  p~U(1e-6,1-..)      1301.27ms  125.30ms  10.4x  6.9e-15
+a=3.5,  p~U(1e-12,1e-2)      296.69ms  124.81ms   2.4x  2.8e-15
+a=50,   p~U(1e-6,1-..)      2334.40ms  400.19ms   5.8x  7.6e-15
+a=500,  p~U(1e-6,1-..)      5924.75ms  402.36ms  14.7x  2.8e-14
+a=500,  p~U(1e-12,1e-2)     2001.81ms  376.39ms   5.3x  8.9e-15
 
 dP/da term                 igamma_grad_a    recipe  ratio  max|diff|
 --------------------------------------------------------------------
-a= 0.5, x~Gamma(3.5)              74.41ms    4.87ms  15.3x  1.4e-14
-a= 3.5, x~Gamma(3.5)              25.26ms    4.80ms   5.3x  3.6e-15
-a= 9.9, x~Gamma(3.5)              19.05ms    4.80ms   4.0x  9.0e-16
+a=  0.5, x~Gamma(a)               78.08ms    5.10ms  15.3x  1.7e-14
+a=  3.5, x~Gamma(a)               26.91ms    5.09ms   5.3x  4.2e-15
+a=  9.9, x~Gamma(a)               20.04ms    4.93ms   4.1x  1.1e-15
+a= 50.0, x~Gamma(a)               36.04ms    7.21ms   5.0x  1.0e-14
+a=500.0, x~Gamma(a)               89.69ms    7.23ms  12.4x  1.3e-14
 
 Both columns run the SAME solver; only the residual CDF differs.
-chebax.gammaincinv end-to-end takes the recipe column for a in
-[0.1, 10] (one lax.cond) and the jax column outside.
+chebax.gammaincinv end-to-end takes the recipe column for every
+a >= 0.1 (one lax.cond, small tables to 10 and the Temme zone
+above) and the jax column below that.

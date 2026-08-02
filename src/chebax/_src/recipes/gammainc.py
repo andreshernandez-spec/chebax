@@ -18,7 +18,8 @@ transition, Q in the tail) and 1-minus-the-other on the side where it is
 relatively accurate where they decay, except that Q loses relative (not
 absolute) accuracy in the wedge x just below 8 with a small, where Q can
 reach ~1e-6 before the tail region takes over. x <= 0 returns the CDF
-limit (P = 0, Q = 1); nan propagates.
+limit (P = 0, Q = 1) and x = +inf the other one (P = 1, Q = 0); nan
+propagates.
 
 gammainc(a)/gammaincc(a) are eager cached instances (numpy
 reconstruction). gammainc_fn(a, x)/gammaincc_fn(a, x) take a as a traced
@@ -26,7 +27,11 @@ scalar (uniform per call, inside [0.1, 10], unchecked under trace):
 jax.grad works with respect to a through the table's parameter axis and
 gammaln - one polynomial evaluation, where jax's own igamma_grad_a runs a
 third lockstep looped series. dP/dx is AD through the formula; its exact
-value is the Gamma density, which the tests use as an oracle.
+value is the Gamma density, which the tests use as an oracle. At x = 0
+the formula's bracket is 0 * inf, so the density there (inf below a = 1,
+1 at it, 0 above) is spliced in by hand; below a = 1 that slope is a real
+infinity, so a zero cotangent on an x = 0 lane gives nan, the same way
+jnp.sqrt does at 0. x < 0 and x = +inf are flat.
 
 Unlike jax.scipy.special.gammainc (two whole-array while loops run to the
 worst element's trip count, a fusion barrier), evaluation here is
@@ -52,21 +57,45 @@ def _eval_logs(a, x, lser, ltail):
     xd = jnp.where(pos & (x <= _gt.XS), x, 1.0)
     lp_in = (a * jnp.log(xd) - xd - jax.scipy.special.gammaln(a + 1.0)
              + lser(xd))
-    xo = jnp.where(x > _gt.XS, x, 2.0 * _gt.XS)
+    # at x = inf the tail bracket is inf - inf, so mask it out and set the
+    # limit ln Q = -inf by hand; all four entry points read it off that.
+    big = x == jnp.inf
+    xo = jnp.where((x > _gt.XS) & ~big, x, 2.0 * _gt.XS)
     lq_tl = ((a - 1.0) * jnp.log(xo) - xo - jax.scipy.special.gammaln(a)
              + ltail(_gt.XS / xo))
-    return lp_in, lq_tl
+    return lp_in, jnp.where(big, -jnp.inf, lq_tl)
+
+
+@jax.custom_jvp
+def _edge_slope(s, x):
+    """Zero, carrying slope s in x. Both value branches at x = 0 are
+    constants, so AD sees no slope there; the true one-sided one is s."""
+    return jnp.zeros_like(x)
+
+
+@_edge_slope.defjvp
+def _edge_slope_jvp(primals, tangents):
+    s, x = primals
+    return jnp.zeros_like(x), s * tangents[1]
+
+
+def _density0(a):
+    """Gamma density at x = 0: inf below a = 1, 1 at it, 0 above."""
+    return jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, 1.0))
 
 
 def eval_gammainc(a, x, lser, ltail, lower):
     x = jnp.asarray(x)
     lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+    d0 = _density0(a)
     if lower:
         core = jnp.where(x <= _gt.XS, jnp.exp(lp_in), 1.0 - jnp.exp(lq_tl))
         out = jnp.where(x > 0.0, core, 0.0)
     else:
         core = jnp.where(x <= _gt.XS, 1.0 - jnp.exp(lp_in), jnp.exp(lq_tl))
         out = jnp.where(x > 0.0, core, 1.0)
+        d0 = -d0
+    out = out + _edge_slope(jnp.where(x == 0.0, d0, 0.0), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 
 
@@ -151,13 +180,15 @@ def log_gammainc_fn(a, x):
     (ln P ~ a ln x as x -> 0, arbitrarily negative). For x > 8 it is
     log1p(-exp(ln Q)): absolutely accurate in P, error in ln P is
     ~eps Q/P, small everywhere there since Q <= 0.3 in the box. x <= 0
-    returns -inf."""
+    returns -inf, x = inf returns 0."""
     a = jnp.asarray(a)
     x = jnp.asarray(x)
     lser, ltail = _traced_series(a)
     lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
     core = jnp.where(x <= _gt.XS, lp_in, jnp.log1p(-jnp.exp(lq_tl)))
     out = jnp.where(x > 0.0, core, -jnp.inf)
+    # d ln P/dx = density/P ~ a/x, so the slope at x = 0 is inf for every a
+    out = out + _edge_slope(jnp.where(x == 0.0, jnp.inf, 0.0), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 
 
@@ -170,14 +201,16 @@ def log_gammaincc_fn(a, x):
     past x ~ 700). For x <= 8 it is log1p(-exp(ln P)): absolutely
     accurate in Q, so the error in ln Q is ~eps/Q in the wedge x -> 8 at
     small a where Q reaches ~1e-6 (the same wedge gammaincc_fn's
-    docstring notes). x <= 0 returns 0. This is the log survival
-    function a deeply-censored likelihood wants."""
+    docstring notes). x <= 0 returns 0, x = inf returns -inf. This is the
+    log survival function a deeply-censored likelihood wants."""
     a = jnp.asarray(a)
     x = jnp.asarray(x)
     lser, ltail = _traced_series(a)
     lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
     core = jnp.where(x <= _gt.XS, jnp.log1p(-jnp.exp(lp_in)), lq_tl)
     out = jnp.where(x > 0.0, core, 0.0)
+    # Q = 1 at x = 0, so d ln Q/dx there is just -density
+    out = out + _edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 
 

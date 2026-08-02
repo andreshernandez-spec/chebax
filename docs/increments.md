@@ -461,3 +461,72 @@ and the bit-for-bit contract is deterministic today precisely because
 every fit stage is pure mpmath (generator docstring). Dense cost:
 ~600k coefficients, ~11 MB module. stdtr keeps its own slice tables
 (increment 21); nothing else touches the 3-D path.
+
+## 24 — hyp1f1: Kummer's M on (a, b) in [0.1, 10]^2 (2026-08-01)
+
+The recipe-candidate with a documented-unstable jax incumbent
+(jax#21503: series truncated at tol 1e-8, imprecise parameter grads).
+The naive kernel ln M fails twice at once (experiments/13): M's
+nearest zero sits at x ~ -b/a, which hugs the origin when b << a
+(x-degree past 150 at the (10, 0.1) corner), and 1F1's denominator
+poles start at b = 0, only 0.1 from the box edge (raw b-degree
+137-172). Both die with one move, the generalization of gammainc's
+1F1(1; a+1; x) trick: tabulate ln R with M = 1 + (a/b) x R. R's
+nearest zero moves out to -2(b+1)/(a+1), its b-poles start at -1
+(the same 1.1 clearance the other recipes enjoy), and the runtime
+reassembles ln M = log1p((a/b) x exp(ln R)) at full relative
+accuracy. Parameter axes go log (a: 26 vs 43 raw; b: 36 vs 50) except
+the tail's b, where raw wins (20 vs 44). The tail is the DLMF 13.7.1
+log-remainder T with t = XS/x, and XS must sit at 30, not gammainc's
+8: at x = 8 the asymptotic series is not yet asymptotic for
+|b - a| ~ 10 and t needs degree ~100. Two measurement artifacts worth
+recording: T(a, a, t) = 0 identically (M(a, a, x) = e^x), so
+diagonal fits report full degree on pure noise (max |T| = 7e-40),
+and near-diagonal strips report degrees on values ~ 1e-13 that are
+absolutely invisible in ln M ~ x >= 30 - normalize per-fit degree
+claims by the GLOBAL scale before believing them. Tables: inner
+136x32x44, tail 40x32x25, ~5.4 MB module, 11 min generation; CI
+regenerates the tail table bit-exactly as the canary, the full check
+runs behind CHEBAX_FULL_REGEN=1 (the increment-23 policy). Measured
+(sweep 9x9 pairs x 13 x, normalized by max(1, |ln M|)): values and
+log form 3.7e-13 worst, log form at deep x 1.7e-16 relative (M
+itself leaves f64 past x ~ 700; log_hyp1f1_fn is the likelihood
+form), dM/dx 9.5e-14 vs the exact (a/b) M(a+1, b+1, x) shift oracle,
+d/da and d/db 2.9e-15 vs mp.diff. x < 0 is out of scope in v1 (the
+Kummer transform e^x M(b-a, b, -x) leaves the box when b - a does).
+No performance claim: no race was run (B3 rule); the pitch is
+stability and shape gradients, not speed, until measured.
+
+## 25 — gammainc to a = 1000: the Temme zone (2026-08-01)
+
+The queued large-a extension (PROJECT.md's part (2) sketch), and the
+cheapest increment yet: ~1.3k coefficients TOTAL. Three zones of
+lambda = x/a on v = 10/a in [0.01, 1] (experiments/14): the existing
+kernels reappear in scaled coordinates and go flat (lower
+D = ln 1F1(1; a+1; a lambda), degrees 18x28; upper tail in the uniform
+variable s = (a-1)/x, 11x8), and the transition is Temme's uniform
+asymptotic with the O(1) correction kernel T(v, eta) tabulated at
+degree 20x7 (26x10 nodes): the WHOLE incomplete-gamma transition for
+three decades of a fits in 260 numbers. Runtime assembles
+Q = erfc(eta sqrt(a/2))/2 + e^(-a w)/sqrt(2 pi a) T and P from its own
+erfc side, so both tails stay relatively accurate; the log forms
+factor through erfcx (y^2 = a w exactly), staying finite past the
+linear forms' underflow. gammainc.py dispatches on one scalar cond at
+a = 10; gammaincinv's recipe residual and the JVP's dP/da follow
+(nested conds), so chi2inv serves real dof to 2000 on fixed-degree
+polynomials. Fallout fixed along the way: (1) erf_family's lazily
+cached series leaked tracers when first built inside a cond branch
+(ensure_compile_time_eval now guards it); (2) the quantile solver's
+pc < 0.01 rule always took the power-law init, which at a = 500,
+p = 1e-12 starts so far into the flat region that df underflows and
+bisection cannot finish (measured 8.5e-7 relative); both inits are
+underestimates, so v0 = max(asym, WH) picks the right regime
+everywhere, including the recorded a = 20 case. Measured (sweep +
+tests): P/Q 2.9e-16 absolute, log forms 4.5e-15/1.3e-14 on
+max(1, |ln .|), dP/da 2.8e-17, log-form shape grads 8.1e-16 vs
+mp.diff, quantile roundtrips at a = 1000 within 2e-13 relative-p to
+p = 1e-12. Generation 3.4 s; the bit-for-bit test covers the whole
+module, no canary split. The box stops at 1000 because the 40-dps
+REFERENCE does (mpmath's gammainc fails near lambda ~ 1 for a >~ 1e5;
+small-side subtraction mandatory past ~92 nats, experiments/14), not
+the representation.

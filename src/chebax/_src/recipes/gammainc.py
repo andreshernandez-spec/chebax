@@ -1,7 +1,9 @@
-"""Regularized incomplete gamma P(a, x) and Q = 1 - P for a in [0.1, 10],
+"""Regularized incomplete gamma P(a, x) and Q = 1 - P for a in [0.1, 1000],
 x in [0, inf), from baked log-tables.
 
-Two regions, one hard select at x = XS = 8:
+a in (10, 1000] dispatches (one scalar cond) to the Temme-zone path in
+gammainc_large; below, the original a <= 10 recipe. Two regions, one
+hard select at x = XS = 8:
 
 - x in [0, 8]:  P = exp(a ln x - x - lnGamma(a+1) + L(a, x)), where
                 L = ln 1F1(1; a+1; x) is tabulated directly in x (entire,
@@ -40,6 +42,8 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
+from chebax._src.recipes import gammainc_large as _gl
+from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
                                          traced_coefs)
@@ -107,13 +111,17 @@ def _series_at(a):
 
 @functools.lru_cache(maxsize=128)
 def _gammainc_cached(a, _tag):
-    a = check_range("gammainc", "a", a, _gt.ALO, _gt.AHI)
+    a = check_range("gammainc", "a", a, _gt.ALO, _glt.AHI)
+    if a > _gt.AHI:
+        return _gl.GammaIncLargeP(a, *_gl.series_eager(a))
     return GammaIncP(a, *_series_at(a))
 
 
 @functools.lru_cache(maxsize=128)
 def _gammaincc_cached(a, _tag):
-    a = check_range("gammaincc", "a", a, _gt.ALO, _gt.AHI)
+    a = check_range("gammaincc", "a", a, _gt.ALO, _glt.AHI)
+    if a > _gt.AHI:
+        return _gl.GammaIncLargeQ(a, *_gl.series_eager(a))
     return GammaIncQ(a, *_series_at(a))
 
 
@@ -124,23 +132,46 @@ def _traced_series(a):
                        (0.0, 1.0)))
 
 
+def _dispatch_fn(a, x, small, kind):
+    """One scalar cond at a = 10: the small-a tables or the Temme-zone
+    large-a path (a in (10, 1000], gammainc_large). Only the taken
+    branch executes; each builds its own series."""
+
+    def large():
+        tm, dl, du = _gl.series_traced(a)
+        return _gl.eval_large(a, x, tm, dl, du, kind)
+
+    return jax.lax.cond(a <= _gt.AHI, small, large)
+
+
 def gammainc_fn(a, x):
     """P(a, x) with a a (traceable) scalar, differentiable in both arguments.
 
-    a must be uniform per call and inside [0.1, 10] (unchecked under
-    trace). Reconstruction costs two table contractions per call, not per
-    point; jit constant-folds them when a is static."""
+    a must be uniform per call and inside [0.1, 1000] (unchecked under
+    trace; (10, 1000] runs on the Temme-zone tables). Reconstruction
+    costs two table contractions per call, not per point; jit
+    constant-folds them when a is static."""
     a = jnp.asarray(a)
-    lser, ltail = _traced_series(a)
-    return eval_gammainc(a, jnp.asarray(x), lser, ltail, lower=True)
+    x = jnp.asarray(x)
+
+    def small():
+        lser, ltail = _traced_series(a)
+        return eval_gammainc(a, x, lser, ltail, lower=True)
+
+    return _dispatch_fn(a, x, small, "p")
 
 
 def gammaincc_fn(a, x):
     """Q(a, x) = 1 - P(a, x), same contract as gammainc_fn; relatively
-    accurate for x >= 8 (the tail is computed directly, not as 1 - P)."""
+    accurate in the upper tail (computed directly, not as 1 - P)."""
     a = jnp.asarray(a)
-    lser, ltail = _traced_series(a)
-    return eval_gammainc(a, jnp.asarray(x), lser, ltail, lower=False)
+    x = jnp.asarray(x)
+
+    def small():
+        lser, ltail = _traced_series(a)
+        return eval_gammainc(a, x, lser, ltail, lower=False)
+
+    return _dispatch_fn(a, x, small, "q")
 
 
 def log_gammainc_fn(a, x):
@@ -151,14 +182,19 @@ def log_gammainc_fn(a, x):
     (ln P ~ a ln x as x -> 0, arbitrarily negative). For x > 8 it is
     log1p(-exp(ln Q)): absolutely accurate in P, error in ln P is
     ~eps Q/P, small everywhere there since Q <= 0.3 in the box. x <= 0
-    returns -inf."""
+    returns -inf. For a > 10 the large path assembles in log space
+    through erfcx, valid past the linear form's underflow."""
     a = jnp.asarray(a)
     x = jnp.asarray(x)
-    lser, ltail = _traced_series(a)
-    lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
-    core = jnp.where(x <= _gt.XS, lp_in, jnp.log1p(-jnp.exp(lq_tl)))
-    out = jnp.where(x > 0.0, core, -jnp.inf)
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+    def small():
+        lser, ltail = _traced_series(a)
+        lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+        core = jnp.where(x <= _gt.XS, lp_in, jnp.log1p(-jnp.exp(lq_tl)))
+        out = jnp.where(x > 0.0, core, -jnp.inf)
+        return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+    return _dispatch_fn(a, x, small, "logp")
 
 
 def log_gammaincc_fn(a, x):
@@ -174,21 +210,26 @@ def log_gammaincc_fn(a, x):
     function a deeply-censored likelihood wants."""
     a = jnp.asarray(a)
     x = jnp.asarray(x)
-    lser, ltail = _traced_series(a)
-    lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
-    core = jnp.where(x <= _gt.XS, jnp.log1p(-jnp.exp(lp_in)), lq_tl)
-    out = jnp.where(x > 0.0, core, 0.0)
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+    def small():
+        lser, ltail = _traced_series(a)
+        lp_in, lq_tl = _eval_logs(a, x, lser, ltail)
+        core = jnp.where(x <= _gt.XS, jnp.log1p(-jnp.exp(lp_in)), lq_tl)
+        out = jnp.where(x > 0.0, core, 0.0)
+        return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
+
+    return _dispatch_fn(a, x, small, "logq")
 
 
 def gammainc(a):
-    """P(a, x) on [0, inf) for a in [0.1, 10]. Cached per a; no mpmath.
+    """P(a, x) on [0, inf) for a in [0.1, 1000]. Cached per a; no mpmath.
 
     a may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode."""
+    is keyed per x64 mode. a in (10, 1000] runs on the Temme-zone
+    tables (gammainc_large)."""
     return _gammainc_cached(float(a), canon_tag())
 
 
 def gammaincc(a):
-    """Q(a, x) = 1 - P(a, x) on [0, inf) for a in [0.1, 10]. Cached per a."""
+    """Q(a, x) = 1 - P(a, x) on [0, inf) for a in [0.1, 1000]. Cached per a."""
     return _gammaincc_cached(float(a), canon_tag())

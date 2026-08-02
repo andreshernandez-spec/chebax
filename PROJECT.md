@@ -358,6 +358,24 @@ finding. All release-blocking and high-severity items are fixed; the disposition
 table, including the still-open maintainability items, is
 `docs/review-2026-07-30.md`.
 
+**gammainc large-a extension (2026-08-01): DELIVERED** (increment 25,
+`experiments/14`; the part (2) sketch above, built). a to 1000 via three
+tiny 2-D tables on v = 10/a (the Temme correction kernel is 26×10 nodes;
+~1.3k coefficients total, 3.4 s generation). gammaincinv/chi2inv follow:
+real dof to 2000 on fixed-degree polynomials. Two latent bugs found by the
+integration: erf_family's cached series leaked tracers when first built
+inside a cond, and the quantile solver's tail init rule collapsed to
+bisection at large a (v0 = max(asym, WH) now). Box ends at 1000 because
+the mpmath reference does, not the representation.
+
+**hyp1f1 recipe (2026-08-01): DELIVERED** (increment 24, `experiments/13`).
+Kummer's M on (a, b) ∈ [0.1, 10]², x ≥ 0, via a ln R inner kernel
+(M = 1 + (a/b)xR, the gammainc trick generalized) and a DLMF 13.7.1
+log-remainder tail split at x = 30. The adoption-map capability gap with a
+ready audience: jax's hyp1f1 is documented-unstable (jax#21503). Worst
+3.7e-13 at the max(1, |ln M|)-normalized metric; no performance claim until
+a race is run.
+
 ---
 
 ## 5. Risks

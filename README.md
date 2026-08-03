@@ -84,7 +84,8 @@ docstring and checked at construction.
 `notebooks/` holds themed, executed walkthroughs: why Chebyshev nodes work,
 the Bessel family with a learnable Matérn kernel, differentiable quantiles,
 truncated and circular distributions in numpyro, Gaussian tails / Lambert W /
-binomial reliability, copulas, and baking. The numpyro and plotting
+binomial reliability, copulas, baking, and per-group shape parameters in a
+hierarchical model under NUTS. The numpyro and plotting
 dependencies install with `pip install chebax[examples]`. `examples/` holds
 plain scripts: a few of the notebook workflows in copy-paste form, plus
 integration examples with no notebook counterpart (a GIG distribution for

@@ -20,6 +20,7 @@ from pytensor.graph.fg import FunctionGraph  # noqa: E402
 from pytensor.link.jax.dispatch import jax_funcify  # noqa: E402
 from scipy import special as sps  # noqa: E402
 
+import chebax  # noqa: E402
 import chebax.pytensor  # noqa: E402,F401  (importing registers the dispatches)
 
 
@@ -56,6 +57,51 @@ def test_betainc_values_and_shape_gradients():
     assert abs(float(gx) - pdf) <= 1e-10
 
 
+def test_betainc_values_drop_the_loop_in_box():
+    # betainc VALUES used to stay jax's on every domain (only the a/b
+    # gradients came from chebax), so the measured 79-133x reached no PyMC
+    # user at all. Same lax.cond as the gamma pair: in box the loop is
+    # gone, outside it jax's answers, and select would run both.
+    from chebax.pytensor import _betainc_scalar_ab
+
+    xs = jnp.zeros(8)
+    in_box = jax.jit(lambda x: _betainc_scalar_ab(jnp.float64(2.5),
+                                                  jnp.float64(3.5), x))
+    assert in_box.lower(xs).compile().as_text().count("while(") == 0
+    out_box = jax.jit(lambda x: _betainc_scalar_ab(jnp.float64(150.0),
+                                                   jnp.float64(3.5), x))
+    assert out_box.lower(xs).compile().as_text().count("while(") > 0
+    plain = jax.jit(lambda x: jax.scipy.special.betainc(jnp.full(8, 2.5),
+                                                        jnp.full(8, 3.5), x))
+    assert plain.lower(xs).compile().as_text().count("while(") > 0
+
+
+def test_forward_ops_keep_a_float32_graph_float32():
+    # The tables are f64, so chebax answers f64 whatever it is handed. A
+    # cond whose branches disagree does not trace AT ALL, so a
+    # floatX="float32" model died where the op was lowered; widening to
+    # f64 to make it trace would silently change the model's dtype
+    # instead. Both cond'd registrations answer in jax's own dtype.
+    a, b = pt.fscalar("a"), pt.fscalar("b")
+    x = pt.fvector("x")
+    xv = np.linspace(0.05, 0.95, 5, dtype=np.float32)
+    # bar is absolute, the CDF convention; measured worst 5.0e-7 (betainc)
+    # and 7.8e-7 (gammainc), which is the f32 round-trip and not the tables
+    fb = jaxify([a, b, x], pt.betainc(a, b, x))
+    got = fb(np.float32(2.5), np.float32(3.5), xv)
+    assert got.dtype == np.float32
+    np.testing.assert_allclose(np.asarray(got, np.float64),
+                               sps.betainc(2.5, 3.5, xv.astype(np.float64)),
+                               atol=5e-6)
+    fg = jaxify([a, x], pt.gammainc(a, x))
+    xg = np.linspace(0.5, 5.0, 5, dtype=np.float32)
+    gotg = fg(np.float32(3.0), xg)
+    assert gotg.dtype == np.float32
+    np.testing.assert_allclose(np.asarray(gotg, np.float64),
+                               sps.gammainc(3.0, xg.astype(np.float64)),
+                               atol=5e-6)
+
+
 def test_betainc_out_of_box_values_fine_grads_nan():
     a, b = pt.dscalar("a"), pt.dscalar("b")
     x = pt.dvector("x")
@@ -65,6 +111,21 @@ def test_betainc_out_of_box_values_fine_grads_nan():
     np.testing.assert_allclose(got, sps.betainc(150.0, 3.5, xv), rtol=1e-12)
     ga = jax.grad(lambda av: jnp.sum(f(av, 3.5, jnp.asarray(xv))))(150.0)
     assert np.isnan(float(ga))
+
+
+def test_betainc_batched_shapes_keep_plain_jax():
+    # a betainc with per-element (a, b) has no scalar predicate to branch
+    # on, so it stays jax's op: values right everywhere, a/b gradients
+    # missing exactly as in stock pytensor. Unlike the inverse CDFs this
+    # never raises, because the plain jax op is a complete answer.
+    a, b = pt.dvector("a"), pt.dvector("b")
+    x = pt.dvector("x")
+    f = jaxify([a, b, x], pt.betainc(a, b, x))
+    av = np.array([2.5, 9.0])
+    bv = np.array([3.5, 1.5])
+    xv = np.array([0.3, 0.7])
+    np.testing.assert_allclose(np.asarray(f(av, bv, xv)),
+                               sps.betainc(av, bv, xv), rtol=1e-12)
 
 
 def test_quantile_ops_values_and_gradients():
@@ -140,3 +201,64 @@ def test_mode_jax_end_to_end():
     pv = np.array([0.2, 0.8])
     np.testing.assert_allclose(np.asarray(fn(2.0, 3.0, pv)),
                                sps.betaincinv(2.0, 3.0, pv), rtol=1e-10)
+
+
+def test_forward_gamma_cdfs_values_and_gradients():
+    # The forward pair was unregistered, so every censored or truncated
+    # Gamma, Poisson, ChiSquared or NegativeBinomial on PyMC's JAX path kept
+    # jax's looped igamma (experiments/19). Metric is absolute, the CDF
+    # convention; measured worst 4.9e-14 at a = 60, bar 1e-12.
+    a = pt.dscalar("a")
+    x = pt.dvector("x")
+    xs = jnp.asarray([0.05, 0.5, 2.0, 7.0, 30.0])
+    for op, ref in ((pt.gammainc, sps.gammainc), (pt.gammaincc, sps.gammaincc)):
+        f = jaxify([a, x], op(a, x))
+        for av in (0.5, 3.0, 60.0):
+            got = np.asarray(f(jnp.float64(av), xs))
+            assert np.max(np.abs(got - ref(av, np.asarray(xs)))) <= 1e-12, (op, av)
+    # dP/da through jax.grad of the LOWERED function, which is how PyMC's
+    # JAX samplers differentiate a logp. pt.grad is a different path: it
+    # builds pytensor's own ScalarLoop gradient graph, which has no JAX
+    # dispatch (pytensor#299, open since 2023) and is not what this
+    # registration touches. Reference is jax's own igamma_grad_a.
+    f = jaxify([a, x], pt.gammainc(a, x))
+
+    def total(av):
+        return jnp.sum(f(av, xs))
+
+    for av in (0.5, 3.0, 60.0):
+        got = float(jax.grad(total)(jnp.float64(av)))
+        ref = float(jnp.sum(jax.lax.igamma_grad_a(jnp.full(xs.shape, av), xs)))
+        assert abs(got - ref) <= 1e-10 * max(1.0, abs(ref)), (av, got, ref)
+
+
+def test_forward_gamma_falls_back_below_the_box():
+    # a plain forward function must answer everywhere, so below chebax's
+    # a >= 0.1 box this hands off to jax's igamma rather than returning nan
+    # the way an inverse CDF does. lax.cond, never lax.select: select would
+    # evaluate jax's while_loop on every lane and give back exactly what the
+    # registration removes.
+    a = pt.dscalar("a")
+    x = pt.dvector("x")
+    xs = jnp.asarray([0.01, 0.2, 1.0])
+    f = jaxify([a, x], pt.gammainc(a, x))
+    for av in (0.05, 0.02):
+        got = np.asarray(f(jnp.float64(av), xs))
+        assert np.all(np.isfinite(got)), (av, got)
+        assert np.max(np.abs(got - sps.gammainc(av, np.asarray(xs)))) <= 1e-12
+
+
+def test_forward_gamma_drops_the_loop_for_a_concrete_shape():
+    # the point of the registration. A concrete shape lets XLA fold the
+    # predicate and delete jax's branch; a TRACED shape (the sampled-alpha
+    # case) keeps it in the module, where the conditional does not execute
+    # it. Both are correct; only the first is visible in the HLO.
+    from chebax.pytensor import _forward_gamma
+
+    fwd = _forward_gamma(None, "igamma", chebax.gammainc_fn,
+                         jax.scipy.special.gammainc)
+    xs = jnp.zeros(8)
+    concrete = jax.jit(lambda x: fwd(jnp.float64(3.0), x))
+    assert concrete.lower(xs).compile().as_text().count("while(") == 0
+    plain = jax.jit(lambda x: jax.scipy.special.gammainc(jnp.full(8, 3.0), x))
+    assert plain.lower(xs).compile().as_text().count("while(") > 0

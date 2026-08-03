@@ -58,7 +58,11 @@ pytensor ops that otherwise need tfp-nightly under
 `pm.sample(nuts_sampler="numpyro"|"blackjax")` — betaincinv, gammaincinv,
 gammainccinv, erfcx, erfcinv, ive, kve — and adds betainc gradients in its
 shape parameters, so censored or truncated StudentT/Beta likelihoods with a
-latent scalar shape sample instead of raising. Shape parameters must be
+latent scalar shape sample instead of raising. The forward CDFs `gammainc`,
+`gammaincc` and `betainc` take their VALUES off the tables too, which is
+where the loop-free evaluation shows up for censored and truncated models;
+outside the table box they fall back to jax's own, since a forward function
+has to answer everywhere. Shape parameters must be
 scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
 return nan, never silently wrong numbers. `gammainccinv` takes its
 upper-tail probability directly (it used to be solved at `1 - p`, which

@@ -789,3 +789,39 @@ covered; ChebSeries and PiecewiseCheb refuse deletion, evaluate on extreme
 finite domains through midpoint/half-width, and validate truncate's
 tolerance; matern, the spherical Bessels and scaled besseli_dnu return
 their limits at +inf, and a negative Matern distance is nan rather than 1.
+## 32 — the forward CDFs on the pytensor path (2026-08-03)
+
+`import chebax.pytensor` lowered the inverse CDFs and gave BetaInc the a/b
+gradients pytensor has never had, and stopped there. The forward pair was
+unregistered and BetaInc's VALUES stayed jax's own on every domain, which
+is half a registration: `pm.logcdf` of Gamma and ChiSquared emits
+`GammaInc`, Poisson emits `GammaIncC`, and Beta, StudentT and
+NegativeBinomial all emit `BetaInc`, so every censored or truncated model
+in that list kept jax's while_loop and the betainc and igamma speedups
+reached no PyMC user at all. Three things came out of closing it.
+
+**A gradient without its value is half a win.** The a/b derivatives were
+the interesting part, so the values were left alone and the omission read
+as deliberate ("values stay jax's own betainc on every domain" was in the
+docstring for a month). It cost nothing to check and would have cost the
+whole speedup to ship.
+
+**cond, never select.** A forward CDF has to answer everywhere, so
+out-of-box parameters fall back to jax instead of returning nan the way an
+inverse CDF does. `lax.select` evaluates both sides, which puts the loop
+back on every lane and hands back exactly what the registration removes.
+`lax.cond` executes one branch, and it is available because the dispatch
+already requires a scalar parameter, so the predicate is scalar too. The
+cost is measured, not assumed (experiments/19).
+
+**A lowering must not move the graph's dtypes.** The tables are f64, so
+the recipes answer f64 whatever they are handed, and a cond whose two
+branches disagree does not trace AT ALL: the gamma registration raised on
+any floatX="float32" model. Widening to f64 would have made it trace and
+silently changed the dtype of the user's sample instead. Both cond'd
+registrations now answer in the dtype plain jax would have given.
+
+Also here: the in-box branch takes a clipped parameter, since vmap turns a
+cond with a batched predicate into a select that evaluates both sides,
+where a nan would poison the gradient through the select.
+

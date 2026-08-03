@@ -1,0 +1,55 @@
+device: cuda:0   N = 4194304   f64   best of 7
+
+=== gammainc, x ~ Gamma(a, 1), the favourable case
+     a    chebax     +cond       jax  cond/bare  jax/cond     agree
+   0.5    26.76m    25.90m   253.16m       0.97      9.78   3.8e-15
+     3    25.84m    25.81m    33.18m       1.00      1.29   2.8e-15
+    12    25.17m    25.14m    57.48m       1.00      2.29   4.2e-15
+    60    24.82m    25.06m   117.09m       1.01      4.67   4.9e-14
+
+=== gammainc, x ~ Uniform(0, 4a), a wider spread
+     a    chebax     +cond       jax  cond/bare  jax/cond     agree
+   0.5    25.77m    25.08m   246.80m       0.97      9.84   4.4e-15
+     3    25.53m    25.87m    36.76m       1.01      1.42   2.8e-15
+    12    25.00m    25.87m    57.41m       1.03      2.22   4.0e-15
+    60    25.85m    25.10m   115.50m       0.97      4.60   4.8e-14
+
+=== gammainc d/da (igamma_grad_a is jax's expensive path)
+     a    chebax     +cond       jax  cond/bare  jax/cond
+   0.5    37.58m    22.58m   309.14m       0.60     13.69
+     3    36.54m    23.23m   127.17m       0.64      5.47
+    12    42.83m    35.00m    75.00m       0.82      2.14
+    60    41.23m    33.96m   143.50m       0.82      4.23
+
+=== betainc, x ~ Beta(a, b), the favourable case
+     a      b    chebax     +cond       jax  cond/bare  jax/cond     agree
+   2.5    3.5    11.69m    11.13m  1200.43m       0.95    107.83   1.5e-14
+   0.5    0.5    10.89m    11.01m  1200.22m       1.01    109.02   1.3e-14
+   9.5    0.2     9.38m     9.40m  1229.45m       1.00    130.82   3.8e-14
+
+=== betainc, x ~ Uniform(0, 1), a wider spread
+     a      b    chebax     +cond       jax  cond/bare  jax/cond     agree
+   2.5    3.5    10.97m    10.59m  1199.76m       0.97    113.30   1.5e-14
+   0.5    0.5    11.22m    11.08m  1200.90m       0.99    108.42   1.4e-14
+   9.5    0.2    10.99m    11.16m  1202.97m       1.02    107.76   3.6e-14
+
+=== betainc d/da (jax has NO a-gradient: this is the new capability)
+     a      b    chebax     +cond  cond/bare
+   2.5    3.5   133.46m    21.01m       0.16
+   0.5    0.5   132.93m    20.86m       0.16
+   9.5    0.2   131.90m    19.07m       0.14
+
+=== f32 graph (chebax computes f64 and casts down)
+                op    chebax       jax  jax/chebax
+      gammainc a=3    14.90m    14.85m        1.00
+   betainc 2.5,3.5     6.44m    92.13m       14.30
+
+=== while loops in the COMPILED program
+  gammainc concrete in box   0
+  gammainc concrete out box  2
+  gammainc traced shape      2   <- the sampled-alpha case
+  plain jax igamma           2
+  betainc concrete in box    0
+  betainc concrete out box   1
+  betainc traced shapes      1   <- the sampled-(a,b) case
+  plain jax betainc          1

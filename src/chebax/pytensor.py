@@ -27,19 +27,44 @@ What gets registered, and the contracts:
   are not folded). Batched orders fall back as above.
 - Kve: besselk_fn(|v|, x, scaled=True) for scalar |v| <= 10, x >= 1e-6
   (K_{-v} = K_v). nan outside; batched orders fall back as above.
-- BetaInc: values stay jax's own betainc on every domain; a custom_jvp
-  adds the a/b derivatives (the "Betainc gradient with respect to a and
-  b not supported" gap) from forward mode through chebax.betainc_fn,
-  valid for scalar (a, b) in [0.1, 100]^2 and nan outside; the x
-  derivative is the exact Beta density. Batched shapes keep the plain
-  jax op (values fine, a/b gradients raise as before).
+- GammaInc, GammaIncC: chebax.gammainc_fn / gammaincc_fn for a SCALAR
+  shape from a = 0.1 up, jax's own igamma below that through a lax.cond
+  (never a select, which would evaluate the loop on every lane). These
+  are plain forward functions a user may call anywhere, so unlike the
+  inverse CDFs they answer everywhere rather than nan out of box. The
+  loop leaves the compiled program for a concrete shape; for a traced one
+  it stays in the module and the conditional does not execute it.
+  Measured (experiments/19, RTX 3080, f64, N = 4.2M): values 1.3-9.8x
+  vs jax's igamma depending on the shape, dP/da 2.1-13.7x, the cond
+  itself free (0.97-1.03x on values). Batched shapes fall back as above.
+- BetaInc: chebax.betainc_fn for scalar (a, b) in [0.1, 100]^2, jax's
+  own betainc outside the box, through the same lax.cond as the gamma
+  pair and for the same reason. A custom_jvp adds the a/b derivatives
+  (the "Betainc gradient with respect to a and b not supported" gap)
+  from forward mode off the same tables, nan outside the box; the x
+  derivative is the exact Beta density and is right everywhere.
+  Measured (same run): values 108-131x vs jax's betainc, agreement
+  <= 3.8e-14, the cond free again (0.95-1.02x). The a-derivative runs
+  6-7x faster than jax.grad of chebax.betainc_fn itself, because the
+  rule pushes one forward-mode tangent through the reconstruction
+  where reverse mode transposes the whole contraction.
+  Batched shapes keep the plain jax op (values fine, a/b gradients
+  raise as before).
+
+Both cond'd registrations answer in the dtype plain jax would have
+given, so a float32 model stays float32: the tables are f64 and the
+cond will not even trace with the two branches disagreeing. A float32
+graph therefore still evaluates in f64 and casts down, which is a real
+cost on a consumer part: betainc still wins 14.3x there, gammainc is a
+wash (1.00x) at a = 3, which is jax's most favourable shape.
 """
 
 import jax
 import jax.numpy as jnp
 from pytensor.link.jax.dispatch import jax_funcify
 from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
-                                  GammaIncCInv, GammaIncInv, Ive, Kve)
+                                  GammaInc, GammaIncC, GammaIncCInv,
+                                  GammaIncInv, Ive, Kve)
 
 import chebax
 from chebax import domains as _dom
@@ -53,6 +78,22 @@ def _is_uniform(p):
 
 def _as_scalar(p):
     return jnp.reshape(jnp.asarray(p), ())
+
+
+def _out_dtype(*args):
+    """The dtype plain jax would have given this call.
+
+    The tables are f64, so gammainc_fn and betainc_fn answer in f64
+    whatever they are handed. Feeding that straight into a lax.cond
+    against jax's own branch does not trace at all on a float32 graph
+    (the two branches disagree), and widening to f64 to make it trace
+    would quietly change the dtype of a pm.sample the user set up as
+    float32. Registering chebax must not move a graph's dtypes, so both
+    branches land here. jax sends all-integer arguments to the default
+    float, so do the same.
+    """
+    dt = jnp.result_type(*args)
+    return dt if jnp.issubdtype(dt, jnp.inexact) else jnp.result_type(float)
 
 
 def _tfp_fallback(op, name, shapes):
@@ -107,6 +148,51 @@ def _jax_funcify_GammaIncCInv(op, **kwargs):
     return gammainccinv
 
 
+@jax_funcify.register(GammaInc)
+def _jax_funcify_GammaInc(op, **kwargs):
+    return _forward_gamma(op, "igamma", chebax.gammainc_fn,
+                          jax.scipy.special.gammainc)
+
+
+@jax_funcify.register(GammaIncC)
+def _jax_funcify_GammaIncC(op, **kwargs):
+    return _forward_gamma(op, "igammac", chebax.gammaincc_fn,
+                          jax.scipy.special.gammaincc)
+
+
+def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
+    """P(a, x) or Q(a, x): chebax's tables in box, jax's loop outside.
+
+    Unlike the inverse CDFs, these are plain forward functions a user may
+    call anywhere, so answering nan outside the table box is not
+    defensible here. The fallback is a lax.cond and NOT a select: cond
+    executes one branch, select would evaluate jax's while_loop on every
+    lane and give back exactly what this registration removes. It can be
+    a cond because the shape is already required to be scalar, so the
+    predicate is scalar too and no lane can disagree with another.
+
+    In box, the loop is gone: fixed-degree polynomial evaluation, which
+    is the whole point (measured 2.4-2.9x end to end on a truncated Gamma
+    with a sampled shape, six HLO whiles to zero; experiments/18).
+    """
+    def forward(a, x):
+        if not _is_uniform(a):
+            return _tfp_fallback(op, tfp_name, (jnp.shape(a), jnp.shape(x)))(a, x)
+        dt = _out_dtype(a, x)
+        a_s = _as_scalar(a).astype(dt)
+        xs = jnp.asarray(x, dt)
+        # clipped so the untaken branch stays finite: vmap turns a cond
+        # with a batched predicate into a select, which evaluates both,
+        # and a nan there would poison the gradient through the select
+        lo = jnp.maximum(a_s, _dom.GAMMAINC.lo)
+        return jax.lax.cond(
+            a_s >= _dom.GAMMAINC.lo,
+            lambda: cheb_fn(lo, xs).astype(dt),
+            lambda: jax_fn(jnp.broadcast_to(a_s, jnp.shape(xs)), xs).astype(dt))
+
+    return forward
+
+
 def _in_box(*params):
     ok = jnp.asarray(True)
     for p in params:
@@ -159,29 +245,46 @@ def _jax_funcify_Kve(op, **kwargs):
     return kve
 
 
+def _jax_betainc(a, b, x, dt):
+    return jax.scipy.special.betainc(a, b, x).astype(dt)
+
+
 @jax.custom_jvp
 def _betainc_scalar_ab(a, b, x):
-    return jax.scipy.special.betainc(a, b, x)
+    dt = _out_dtype(a, b, x)
+    return jax.lax.cond(
+        _in_box(a, b),
+        lambda: chebax.betainc_fn(_clip_box(a), _clip_box(b), x).astype(dt),
+        lambda: _jax_betainc(a, b, x, dt))
 
 
 @_betainc_scalar_ab.defjvp
 def _betainc_scalar_ab_jvp(primals, tangents):
     a, b, x = primals
     da, db, dx = tangents
-    p = jax.scipy.special.betainc(a, b, x)
+    dt = _out_dtype(a, b, x)
+
+    def in_box():
+        # value and both shape derivatives off the same tables, forward mode
+        ac, bc = _clip_box(a), _clip_box(b)
+        one = jnp.ones_like(ac)
+        p, ga = jax.jvp(lambda t: chebax.betainc_fn(t, bc, x), (ac,), (one,))
+        _, gb = jax.jvp(lambda t: chebax.betainc_fn(ac, t, x), (bc,), (one,))
+        return p.astype(dt), ga.astype(dt), gb.astype(dt)
+
+    def out_of_box():
+        # jax's value, and nan rather than a wrong shape derivative
+        p = _jax_betainc(a, b, x, dt)
+        nan = jnp.full(jnp.shape(p), jnp.nan, dt)
+        return p, nan, nan
+
+    p, ga, gb = jax.lax.cond(_in_box(a, b), in_box, out_of_box)
     # d/dx is the Beta density, exact and valid for all a, b > 0
-    xs = jnp.clip(x, 1e-300, 1.0 - 1e-16)
+    fi = jnp.finfo(dt)
+    xs = jnp.clip(x, fi.tiny, 1.0 - fi.eps)
     log_pdf = ((a - 1.0) * jnp.log(xs) + (b - 1.0) * jnp.log1p(-xs)
                - jax.scipy.special.betaln(a, b))
-    d_dx = jnp.exp(log_pdf)
-    # d/da, d/db from forward mode through chebax's table representation,
-    # valid inside the box, nan outside
-    ac, bc = _clip_box(a), _clip_box(b)
-    _, ga = jax.jvp(lambda t: chebax.betainc_fn(t, bc, x), (ac,), (jnp.ones_like(ac),))
-    _, gb = jax.jvp(lambda t: chebax.betainc_fn(ac, t, x), (bc,), (jnp.ones_like(bc),))
-    inbox = _in_box(a, b)
-    ga = jnp.where(inbox, ga, jnp.nan)
-    gb = jnp.where(inbox, gb, jnp.nan)
+    d_dx = jnp.exp(log_pdf).astype(dt)
     return p, ga * da + gb * db + d_dx * dx
 
 
@@ -191,6 +294,9 @@ def _jax_funcify_BetaInc(op, **kwargs):
         if not (_is_uniform(a) and _is_uniform(b)):
             # values are fine everywhere; a/b gradients raise as in plain jax
             return jax.scipy.special.betainc(a, b, x)
-        return _betainc_scalar_ab(_as_scalar(a), _as_scalar(b), x)
+        dt = _out_dtype(a, b, x)
+        return _betainc_scalar_ab(_as_scalar(a).astype(dt),
+                                  _as_scalar(b).astype(dt),
+                                  jnp.asarray(x, dt))
 
     return betainc

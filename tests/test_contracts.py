@@ -90,6 +90,7 @@ def test_emitted_names_are_valid_in_both_languages(tmp_path):
 
 
 def test_truncated_icdf_rejects_invalid_probabilities():
+    pytest.importorskip("numpyro")   # the 3.11 CI job installs gen,test only
     from chebax.numpyro import TruncatedGamma
     d = TruncatedGamma(3.0, 1.0, low=1.0, high=5.0)
     for bad in (-0.1, 1.1, np.nan):

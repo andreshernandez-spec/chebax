@@ -49,6 +49,9 @@ class _SphericalJ(Recipe):
         xs = jnp.where(inner_region, 1.0, x)  # masked lanes get a safe dummy
         outer = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
         out = jnp.where(inner_region, inner, outer)
+        # j_n decays like sin(x - n pi/2)/x, so the limit at +inf is 0;
+        # the masked outer evaluation gave nan there
+        out = jnp.where(x == jnp.inf, 0.0, out)
         return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 
@@ -67,6 +70,7 @@ class _SphericalY(Recipe):
         xc = jnp.where(x < _yt.XMIN, _yt.XMIN, x)
         val = jnp.sqrt(jnp.pi / (2 * xc)) * self.inst(xc)
         out = jnp.where(x > 0, val, -jnp.inf)
+        out = jnp.where(x == jnp.inf, 0.0, out)      # same 1/x decay
         return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 

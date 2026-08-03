@@ -326,6 +326,31 @@ def test_no_aliasing_dps_modes():
         assert mode_sup_err(p, ref[k], xs) <= 3e-14, k
 
 
+def test_no_aliasing_harmonic_family():
+    # Found in review 2026-08-02. The validation grids were n, 2n and 4n,
+    # all first-kind, and T_{16n} is exactly +1 on every one of them: with
+    # the initial n = 17, fit(T272) returned the constant 1 with sup error
+    # 2.0. The 15n+1 argument in review-2026-08-01 bounded the SMALLEST
+    # common alias and said nothing about the harmonic family above it.
+    # Validation now runs on points that are not the nodes of any
+    # Chebyshev grid (see _offgrid), where an alias needs 2 q PHI in Z.
+    # Worst measured sup error 2.2e-13 at degree 544, bar 1e-12.
+    ks = [16 * 17, 8 * 17, 32 * 17, 4 * 17]
+    xs, ref = cheb_mode_refs(ks, m=1201)
+    for k in ks:
+        p = chebax.fit(cheb_mode(k), max_deg=1024, dps=40)
+        assert p.degree == k, (k, p.degree)
+        assert mode_sup_err(p, ref[k], xs) <= 1e-12, k
+
+
+def test_aliased_family_is_not_silently_certified():
+    # the same modes under the DEFAULT cap, which they exceed: the honest
+    # answer is the loud one, never a low-degree fit that validated
+    for k in (272, 544):
+        with pytest.raises(ValueError, match="no validated convergence"):
+            chebax.fit(cheb_mode(k))
+
+
 def test_exact_fit_at_its_own_max_deg():
     # The noise floor reads the last sixteenth of the coefficients, which
     # holds the TOP MODE when the fit is exact at that resolution: fitting

@@ -87,6 +87,18 @@ def _as_float_coef(coef):
     return jnp.asarray(out)
 
 
+def _check_tol(tol):
+    """A truncation tolerance must be a finite, nonnegative real.
+
+    A negative one was a silent no-op and nan or inf silently collapsed a
+    nonconstant series to degree zero, both of which bake forwards
+    straight into an artifact (review, 2026-08-02)."""
+    t = float(tol)
+    if not np.isfinite(t) or t < 0.0:
+        raise ValueError(f"tol must be finite and nonnegative, got {tol!r}")
+    return t
+
+
 def _check_float_dtype(dtype):
     if not jnp.issubdtype(dtype, jnp.floating):
         raise ValueError(f"astype needs a floating dtype, got {np.dtype(dtype)}")
@@ -107,7 +119,9 @@ def _clenshaw(t, coef, coef_last_axis=False):
 
 def _dcoef(coef, domain):
     a, b = domain
-    return (2.0 / (b - a)) * _der_coefs(coef)
+    # 1/half-width, formed the same way as the map: 2/(b - a) is 0 on an
+    # extreme finite domain, which silently zeroed every derivative
+    return (1.0 / (0.5 * b - 0.5 * a)) * _der_coefs(coef)
 
 
 def _chebval_impl(x, coef, domain):
@@ -117,7 +131,13 @@ def _chebval_impl(x, coef, domain):
     # so the traced graph of the normal path is unchanged); asarray, not
     # astype, since x may arrive as a scalar literal without methods
     x = jnp.asarray(x, dtype=jnp.result_type(x, coef))
-    t = (2 * x - (b + a)) / (b - a)
+    # midpoint/half-width, not (2x - (b+a))/(b-a): both b + a and b - a
+    # overflow on a legal domain like (-1e308, 1e308), where this form
+    # gives t = 0 and +-1 at the endpoints as it should (review,
+    # 2026-08-02, which measured nan at both ends)
+    mid = 0.5 * a + 0.5 * b
+    half = 0.5 * b - 0.5 * a
+    t = (x - mid) / half
     return _clenshaw(t, coef)
 
 
@@ -164,6 +184,16 @@ class ChebSeries:
                 f"ChebSeries is immutable (cached instances are shared); cannot set {name!r}")
         object.__setattr__(self, name, value)
 
+    def __delattr__(self, name):
+        # deleting a coefficient array from a CACHED instance corrupts
+        # every later caller sharing the slot; assignment was guarded and
+        # deletion was not (review, 2026-08-02)
+        if self._frozen:
+            raise AttributeError(
+                f"ChebSeries is immutable (cached instances are shared); "
+                f"cannot delete {name!r}")
+        object.__delattr__(self, name)
+
     @property
     def degree(self):
         return self.coef.shape[0] - 1
@@ -190,6 +220,7 @@ class ChebSeries:
         astype(float32) at tol ~ 1e-7, where the f64 fit carries roughly
         twice the terms f32 accuracy needs. Concrete coefficients only
         (a traced tail has no static length)."""
+        tol = _check_tol(tol)
         c = np.asarray(self.coef)
         keep = np.nonzero(np.abs(c) > tol * np.abs(c).max())[0]
         n = int(keep.max()) + 1 if keep.size else 1
@@ -211,8 +242,9 @@ class ChebSeries:
 
 
 def _pw_dcoef(coef, breaks):
-    widths = np.diff(np.asarray(breaks))
-    return _der_coefs(coef) * jnp.asarray(2.0 / widths, dtype=coef.dtype)[:, None]
+    br = np.asarray(breaks)
+    half = 0.5 * br[1:] - 0.5 * br[:-1]     # see _dcoef on the overflow
+    return _der_coefs(coef) * jnp.asarray(1.0 / half, dtype=coef.dtype)[:, None]
 
 
 def _pw_chebval_impl(x, coef, breaks):
@@ -221,7 +253,8 @@ def _pw_chebval_impl(x, coef, breaks):
     idx = jnp.clip(jnp.searchsorted(jnp.asarray(br), x, side="right") - 1, 0, len(breaks) - 2)
     a = jnp.asarray(br[:-1], dtype)[idx]
     b = jnp.asarray(br[1:], dtype)[idx]
-    t = (2 * x.astype(dtype) - (b + a)) / (b - a)
+    mid = 0.5 * a + 0.5 * b                 # see _chebval_impl on the overflow
+    t = (x.astype(dtype) - mid) / (0.5 * b - 0.5 * a)
     return _clenshaw(t, coef[idx], coef_last_axis=True)
 
 
@@ -269,6 +302,13 @@ class PiecewiseCheb:
                 f"cannot set {name!r}")
         object.__setattr__(self, name, value)
 
+    def __delattr__(self, name):
+        if self._frozen:
+            raise AttributeError(
+                f"PiecewiseCheb is immutable (cached instances are shared); "
+                f"cannot delete {name!r}")
+        object.__delattr__(self, name)
+
     @property
     def degree(self):
         return self.coef.shape[1] - 1
@@ -290,6 +330,7 @@ class PiecewiseCheb:
     def truncate(self, tol):
         """Drop trailing coefficient COLUMNS below tol * max|c| across all
         segments (rows share one degree by construction)."""
+        tol = _check_tol(tol)
         c = np.asarray(self.coef)
         col = np.abs(c).max(axis=0)
         keep = np.nonzero(col > tol * col.max())[0]

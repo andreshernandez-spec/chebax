@@ -45,7 +45,7 @@ from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import betainc_wide_table as _bw
-from chebax._src.recipes._common import canon_tag, check_range
+from chebax._src.recipes._common import canon_tag, check_range, edge_slope
 from chebax._src.series import ChebSeries, _chebval
 
 
@@ -150,6 +150,29 @@ def eval_betainc(a, b, x, cab, cba):
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
+def with_edge_slopes(a, b, x, out):
+    """Splice the endpoint densities into an already-evaluated CDF.
+
+    Applied OUTSIDE the panel switch: a custom_jvp inside a lax.switch
+    branch has no transpose under vmap, which is how the per-group path
+    reaches it (measured: pergroup + grad raised a broadcast_in_dim shape
+    error). The values are untouched either way."""
+    return out + edge_slope(_edge_density(a, b, x), x)
+
+
+def _edge_density(a, b, x):
+    """The Beta density AT an endpoint, 0 in between.
+
+    Both endpoint values are picked by a hard select, so AD reads a slope
+    of 0 there even where the density is exact and finite: grad of
+    betainc_fn(1, 3, .) at x = 0 gave 0 for a true 3 (review,
+    2026-08-02). f(0) = 1/B(1, b) = b when a = 1, and f(1) = 1/B(a, 1) = a
+    when b = 1; either side is 0 above its 1 and infinite below it."""
+    d0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, b))
+    d1 = jnp.where(b < 1.0, jnp.inf, jnp.where(b > 1.0, 0.0, a))
+    return jnp.where(x == 0.0, d0, jnp.where(x == 1.0, d1, 0.0))
+
+
 @jax.tree_util.register_pytree_node_class
 class BetaInc(Recipe):
     """Callable I_x(a, b) on x in [0, 1]. Build with betainc(a, b)."""
@@ -162,13 +185,16 @@ class BetaInc(Recipe):
         self.b = float(self.b)
 
     def __call__(self, x):
-        return eval_betainc(self.a, self.b, x, self.cab, self.cba)
+        return with_edge_slopes(self.a, self.b, x,
+                                eval_betainc(self.a, self.b, x, self.cab,
+                                             self.cba))
 
 
 @functools.lru_cache(maxsize=128)
 def _betainc_cached(a, b, _tag):
-    a = check_range("betainc", "a", a, _bw.ALO, _bw.AHI)
-    b = check_range("betainc", "b", b, _bw.ALO, _bw.AHI)
+    from chebax import domains as _dom
+    a = check_range("betainc", "a", a, *_dom.BETAINC[:2])
+    b = check_range("betainc", "b", b, *_dom.BETAINC[:2])
     return BetaInc(a, b, *_eager_series_pair(a, b))
 
 
@@ -182,8 +208,9 @@ def betainc_fn(a, b, x):
     a = jnp.asarray(a)
     b = jnp.asarray(b)
     x = jnp.asarray(x)
-    return with_panel_series(a, b,
-                             lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+    out = with_panel_series(a, b,
+                            lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+    return with_edge_slopes(a, b, x, out)
 
 
 def log_betainc_fn(a, b, x):
@@ -193,7 +220,7 @@ def log_betainc_fn(a, b, x):
     For x <= 1/2 the tables already hold the log (betainc_fn exponentiates
     it), so ln I evaluates directly: valid to arbitrarily negative values
     (ln I ~ a ln x as x -> 0), differentiable in a, b and x, shapes
-    uniform per call in [0.1, 10]^2. For x > 1/2 the reflection gives
+    uniform per call in [0.1, 100]^2. For x > 1/2 the reflection gives
     ln(1 - exp(.)) via log1p: absolutely accurate in I, so the error in
     ln I is ~eps/I there - fine where I is O(1), NOT a deep-tail path.
     Both deep tails at full log accuracy: lower tail directly (x <= 1/2),

@@ -667,3 +667,25 @@ def test_x64_off_quantiles(tmp_path):
                          capture_output=True, text=True, env=env)
     assert out.returncode == 0, out.stderr[-2000:]
     assert float(out.stdout) <= 7e-6
+
+
+def test_stdtrit_shape_gradient_in_the_deep_tail():
+    # dt/dnu = -(dF/dnu)/pdf. At nu = 4, p = 1e-300 both parts are ~1e-320
+    # and the quotient is 5.7e76, so forming them separately returned inf
+    # (review, 2026-08-02). It goes through the logs now:
+    # dF/dnu = F dlnF/dnu, so the ratio is exp(lnF - ln pdf) dlnF/dnu.
+    # Metric is agreement with a central difference, whose own floor is
+    # what the bar is set by: measured worst 2.4e-7, bar 1e-6.
+    worst = 0.0
+    for nu, p in ((4.0, 1e-300), (2.0, 1e-100), (0.5, 1e-30), (4.0, 1e-20),
+                  (4.0, 0.3), (20.0, 0.7)):
+        g = float(jax.grad(lambda n: chebax.stdtrit(n, p))(nu))
+        assert np.isfinite(g), (nu, p, g)
+        h = nu * 1e-6
+        fd = (float(chebax.stdtrit(nu + h, p))
+              - float(chebax.stdtrit(nu - h, p))) / (2 * h)
+        worst = max(worst, abs(g / fd - 1))
+    assert worst <= 1e-6, worst
+    # the probability derivative may still overflow, and legitimately does
+    assert np.isposinf(float(jax.grad(
+        lambda q: chebax.stdtrit(4.0, q))(1e-300)))

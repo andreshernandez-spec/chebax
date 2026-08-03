@@ -59,19 +59,15 @@ from jax import lax, random
 from jax.scipy.special import betaln, gammaln
 
 import chebax
-from chebax._src.recipes import betainc_table as _bt
-from chebax._src.recipes import gammainc_large as _gl
-from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes import stdtr_table as _st
+from chebax import domains as _dom
 from chebax._src.recipes._common import canon_float
-# the log-CDF pair for the Student-t is not re-exported at the top level yet
 from chebax._src.recipes.quantiles import (_t_logpdf, log_stdtr,
                                            log_stdtr_sf)
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT"]
 
 _LN2 = math.log(2.0)
-_DF_LO, _DF_HI = 2.0 * _st.BLO, 2.0 * _st.BHI      # nu = 2 hb, hb the table's b
+_DF_LO, _DF_HI = _dom.STUDENT_T_DF.lo, _dom.STUDENT_T_DF.hi
 _REAL_OR_INF = constraints.interval(-jnp.inf, jnp.inf)
 
 
@@ -126,7 +122,7 @@ def _check_shape_range(owner, name, v, lo, hi):
 def _in_box(a):
     # the recipe's a-box: small tables to 10, Temme-zone tables above
     # (the public log forms dispatch between them internally)
-    return (a >= _gt.ALO) & (a <= _gl.AHI)
+    return (a >= _dom.GAMMAINC.lo) & (a <= _dom.GAMMAINC.hi)
 
 
 def _log_pq(a, x, use_recipe):
@@ -194,14 +190,19 @@ class _Truncated(dist.Distribution):
         # below 1/2 and so keeps full relative accuracy. A straddling one
         # takes the lower form and hits the untruncated quantile's own limit
         # near q = 1, no worse.
+        # an invalid probability is masked before the logs, then answered
+        # with nan: the core quantiles' policy, where this used to hand
+        # back a plausible bound (icdf(-0.1) gave low; review, 2026-08-02)
+        bad = jnp.isnan(q) | (q < 0.0) | (q > 1.0)
+        q = jnp.where(bad, 0.5, q)
         lp = jnp.logaddexp(n.lo_f, jnp.log(q) + n.lnz)
         ls = jnp.logaddexp(n.hi_s, jnp.log1p(-q) + n.lnz)
         x = _pick(n.upper,
                   lambda: self._icdf_upper(jnp.exp(ls)),
                   lambda: self._icdf_lower(jnp.exp(lp)))
         x = jnp.clip(x, self.low, self.high)
-        return jnp.where(q <= 0.0, self.low,
-                         jnp.where(q >= 1.0, self.high, x))
+        x = jnp.where(q <= 0.0, self.low, jnp.where(q >= 1.0, self.high, x))
+        return jnp.where(bad, jnp.nan, x)
 
     def cdf(self, value):
         n = self._norm()
@@ -284,8 +285,10 @@ class TruncatedBeta(_Truncated):
     """
 
     arg_constraints = {
-        "concentration1": constraints.interval(_bt.ALO, _bt.AHI),
-        "concentration0": constraints.interval(_bt.ALO, _bt.AHI),
+        "concentration1": constraints.interval(_dom.BETAINC.lo,
+                                              _dom.BETAINC.hi),
+        "concentration0": constraints.interval(_dom.BETAINC.lo,
+                                               _dom.BETAINC.hi),
         "low": constraints.unit_interval,
         "high": constraints.unit_interval,
     }
@@ -296,7 +299,8 @@ class TruncatedBeta(_Truncated):
         for name, c in (("concentration1", concentration1),
                         ("concentration0", concentration0)):
             _check_scalar("TruncatedBeta", name, c)
-            _check_shape_range("TruncatedBeta", name, c, _bt.ALO, _bt.AHI)
+            _check_shape_range("TruncatedBeta", name, c, _dom.BETAINC.lo,
+                               _dom.BETAINC.hi)
         self.concentration1 = jnp.asarray(concentration1)
         self.concentration0 = jnp.asarray(concentration0)
         self.low, self.high = promote_shapes(jnp.asarray(low),

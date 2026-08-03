@@ -25,6 +25,9 @@ import sys
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pathlib
+import tempfile
+
 import pytest
 
 import chebax
@@ -485,3 +488,95 @@ def test_cpp_sign_matches_jnp(tmp_path, ctype, fmt):
     rtol = 5e-15 if ctype == "double" else 1e-6
     np.testing.assert_allclose(got[fin], exact, rtol=rtol)
     assert np.all(np.signbit(got[fin]) == np.signbit(ref[fin]))
+
+
+# ---- review 2026-08-02: bake must not fold a custom_jvp it does not own --
+
+_TMP = pathlib.Path(tempfile.mkdtemp())
+
+
+def test_bake_refuses_a_foreign_zero_custom_jvp():
+    # The fold used to be purely structural ("primal is a zero literal"),
+    # which a rule returning zero with derivative 1 satisfies just as well:
+    # runtime gradient 1, baked gradient 0, and the artifact still claimed
+    # plain AD gave the derivative. Now the fold takes chebax's own
+    # endpoint helper by name AND defining module, and only after checking
+    # the primal really is zero.
+    from chebax._src.pytree import Recipe
+    from chebax._src.series import ChebSeries
+
+    @jax.custom_jvp
+    def sneaky(x):
+        return jnp.zeros_like(x)
+
+    @sneaky.defjvp
+    def _sneaky_jvp(primals, tangents):
+        return jnp.zeros_like(primals[0]), tangents[0]
+
+    @jax.tree_util.register_pytree_node_class
+    class Sneaky(Recipe):
+        _static_fields = ()
+        _series_fields = ("s",)
+
+        def __call__(self, x):
+            return self.s(x) + sneaky(x)
+
+    inst = Sneaky(ChebSeries(np.array([1.0, 0.5]), (0.0, 1.0)))
+    assert float(jax.grad(inst)(0.5)) != 0.0
+    with pytest.raises(NotImplementedError, match="custom_jvp"):
+        bake.jax_module(inst, str(_TMP / "sneaky.py"), name="sneaky")
+
+
+def test_baked_artifact_discloses_a_dropped_endpoint_slope(tmp_path):
+    # the flag was recorded and never reached the generated documentation
+    p = tmp_path / "g.py"
+    bake.jax_module(chebax.gammainc(1.0), str(p), name="g")
+    head = p.read_text()[:1200]
+    assert "one-sided slope" in head, head[:400]
+    q = tmp_path / "b.py"
+    bake.jax_module(chebax.besselj(2.5), str(q), name="b")
+    assert "one-sided slope" not in q.read_text()[:1200]
+
+
+# every public Recipe class, not a sample of them (review, 2026-08-02:
+# besseli_dnu hit a dead `empty` equation and the large-a gammainc hit an
+# unsupported erfc, both of which the old coverage missed)
+_ALL_RECIPES = [
+    ("besselj", lambda: chebax.besselj(2.5)),
+    ("besselj_dnu", lambda: chebax.besselj_dnu(2.5)),
+    ("besselj_narrow", lambda: chebax.besselj(2.5, domain=(0.0, 8.0))),
+    ("besselk", lambda: chebax.besselk(1.5)),
+    ("besselk_dnu", lambda: chebax.besselk_dnu(1.5)),
+    ("besseli", lambda: chebax.besseli(2.0)),
+    ("besseli_dnu", lambda: chebax.besseli_dnu(2.5)),
+    ("bessely", lambda: chebax.bessely(1.0)),
+    ("bessely_dnu", lambda: chebax.bessely_dnu(1.0)),
+    ("betainc", lambda: chebax.betainc(2.0, 3.0)),
+    ("betainc_wide", lambda: chebax.betainc(30.0, 3.0)),
+    ("gammainc", lambda: chebax.gammainc(2.5)),
+    ("gammaincc", lambda: chebax.gammaincc(2.5)),
+    ("gammainc_large", lambda: chebax.gammainc(50.0)),
+    ("gammaincc_large", lambda: chebax.gammaincc(50.0)),
+    ("hyp1f1", lambda: chebax.hyp1f1(2.0, 3.0)),
+    ("spherical_jn", lambda: chebax.spherical_jn(2)),
+    ("spherical_yn", lambda: chebax.spherical_yn(2)),
+]
+
+
+@pytest.mark.parametrize("name,build", _ALL_RECIPES,
+                         ids=[r[0] for r in _ALL_RECIPES])
+def test_every_public_recipe_bakes(name, build, tmp_path):
+    import importlib.util
+
+    inst = build()
+    path = tmp_path / f"{name}.py"
+    bake.jax_module(inst, str(path), name=name)
+    spec = importlib.util.spec_from_file_location(name, str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    xs = np.array([0.5, 1.5, 3.0, 7.0])
+    got = np.asarray(getattr(mod, name)(xs))
+    ref = np.asarray(inst(xs))
+    both = np.isfinite(got) & np.isfinite(ref)
+    assert np.array_equal(got[both], ref[both]), (name, got, ref)
+    assert np.array_equal(np.isfinite(got), np.isfinite(ref)), (name, got, ref)

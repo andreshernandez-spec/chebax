@@ -40,7 +40,8 @@ import numpy as np
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besseli_table as _it
-from chebax._src.recipes._common import (canon_tag, check_range, digamma64, param_coefs,
+from chebax._src.recipes._common import (canon_float, canon_tag, check_range,
+                                         digamma64, param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.recipes.besselk import besselk, besselk_fn
 from chebax._src.series import ChebSeries
@@ -215,7 +216,12 @@ class BesselIdnu(Recipe):
         d_first = val * _dlog_i(x, self.lh_nu, self.lt_nu, self._psi)
         integ = _int_dlog2(self.v, x, self.lh2a, self.lt2a, self._psi1a,
                            self.lh2b, self.lt2b, self._psi1b)
-        return _combine_dnu(val, ratio, k0, d_first, integ)
+        out = _combine_dnu(val, ratio, k0, d_first, integ)
+        if self.scaled:
+            # e^-x I_v -> 0 at +inf and so does its order derivative; the
+            # masked tail arithmetic gave nan (review, 2026-08-02)
+            out = jnp.where(x == jnp.inf, 0.0, out)
+        return out
 
 
 @functools.lru_cache(maxsize=128)
@@ -304,7 +310,7 @@ def besseli_fn(nu, x, scaled=False):
     near nu = 0 comes from the small-order path (exact -K_0(x) at nu = 0,
     clamped below x = 1e-6 with the K table), so it is also correct to
     second order in nu."""
-    return _besseli_fn(jnp.asarray(nu), jnp.asarray(x), bool(scaled))
+    return _besseli_fn(canon_float(nu), canon_float(x), bool(scaled))
 
 
 def besseli(v, scaled=False):
@@ -357,7 +363,7 @@ def besseli_ratio(nu, x):
     1/(2(nu+1)); from x = 2 up the quotient of the scaled besseli_fn
     values, whose (x/2)^nu prefactors are >= 1 there and whose e^x factors
     cancel."""
-    nu = jnp.asarray(nu)
+    nu = canon_float(nu)
     x = jnp.asarray(x)
     near = x <= _RATIO_XS
     xs = jnp.where(near, x, 0.0)

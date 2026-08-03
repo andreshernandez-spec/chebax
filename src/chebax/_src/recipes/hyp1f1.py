@@ -26,8 +26,10 @@ call, inside [0.1, 10], unchecked under trace): jax.grad works with
 respect to a and b through the tables' log-mapped parameter axes and
 gammaln. dM/dx is AD through the formula; its exact value is
 (a/b) M(a+1, b+1, x), which the tests use as an oracle where a+1, b+1
-stay in the box. The gradient at exactly x = 0 flows through the hard
-select's masked lane and returns 0, not the true limit a/b.
+stay in the box. x = 0 rides the inner lane rather than a select on the
+value (log1p is exactly 0 there), so the gradient at the origin is the
+exact a/b. M diverges at x = +inf for every a in the box, and both forms
+say so.
 
 jax.scipy.special.hyp1f1 truncates a term-recurrence at tolerance 1e-8
 and is documented-unstable (jax#21503); this recipe is fixed-degree
@@ -76,8 +78,14 @@ def _coefs_traced(tensor, sa, sb):
 
 
 def _eval_logs(a, b, x, lnr, ltail):
-    """(ln M inner, ln M tail), masked lanes fed finite dummies."""
-    xd = jnp.where((x > 0.0) & (x <= _ht.XS), x, 1.0)
+    """(ln M inner, ln M tail), masked lanes fed finite dummies.
+
+    x = 0 belongs to the INNER lane, not to a hard select on the value:
+    log1p there is exactly 0, so the value is unchanged, and its
+    derivative is the exact a/b instead of the 0 a constant branch gives
+    (review, 2026-08-02: grad of hyp1f1_fn(2, 3, .) at 0 was 0 for a true
+    2/3)."""
+    xd = jnp.where((x >= 0.0) & (x <= _ht.XS), x, 1.0)
     lm_in = jnp.log1p(a / b * xd * jnp.exp(lnr(xd)))
     xo = jnp.where(x > _ht.XS, x, 2.0 * _ht.XS)
     lm_tl = (jax.scipy.special.gammaln(b) - jax.scipy.special.gammaln(a)
@@ -89,8 +97,12 @@ def eval_hyp1f1(a, b, x, lnr, ltail, log):
     x = jnp.asarray(x)
     lm_in, lm_tl = _eval_logs(a, b, x, lnr, ltail)
     lm = jnp.where(x <= _ht.XS, lm_in, lm_tl)
-    lm = jnp.where(x == 0.0, 0.0, lm)
-    out = lm if log else jnp.exp(lm)
+    # M ~ Gamma(b)/Gamma(a) e^x x^(a-b) grows without bound for every a > 0
+    # in the box, but the tail bracket is inf + (a-b) inf at x = inf, which
+    # is nan when a = b: mask it and set the limit by hand
+    big = x == jnp.inf
+    out = lm if log else jnp.exp(jnp.where(big, 0.0, lm))
+    out = jnp.where(big, jnp.inf, out)
     out = jnp.where(x < 0.0, jnp.nan, out)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b),
                      jnp.nan, out)
@@ -121,8 +133,9 @@ def _series_at(a, b):
 
 @functools.lru_cache(maxsize=128)
 def _hyp1f1_cached(a, b, _tag):
-    a = check_range("hyp1f1", "a", a, _ht.ALO, _ht.AHI)
-    b = check_range("hyp1f1", "b", b, _ht.ALO, _ht.AHI)
+    from chebax import domains as _dom
+    a = check_range("hyp1f1", "a", a, *_dom.HYP1F1[:2])
+    b = check_range("hyp1f1", "b", b, *_dom.HYP1F1[:2])
     return Hyp1F1(a, b, *_series_at(a, b))
 
 

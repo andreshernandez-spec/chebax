@@ -45,7 +45,7 @@ import numpy as np
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import hyp1f1_table as _ht
-from chebax._src.recipes._common import canon_tag, check_range
+from chebax._src.recipes._common import canon_param, canon_tag, check_range
 from chebax._src.series import ChebSeries, _chebval
 
 _LNLO, _LNHI = float(np.log(_ht.ALO)), float(np.log(_ht.AHI))
@@ -153,7 +153,8 @@ def hyp1f1_fn(a, b, x):
     a and b must be uniform per call and inside [0.1, 10] (unchecked
     under trace). Reconstruction costs two tensor contractions per call,
     not per point; jit constant-folds them when a and b are static."""
-    a, b = jnp.asarray(a), jnp.asarray(b)
+    a = canon_param(a, "hyp1f1_fn", "a")
+    b = canon_param(b, "hyp1f1_fn", "b")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=False)
 
@@ -162,7 +163,8 @@ def log_hyp1f1_fn(a, b, x):
     """ln M(a, b, x), same contract as hyp1f1_fn but with no overflow
     ceiling: valid for arbitrarily large x (ln M ~ x), where M itself
     leaves f64 past x ~ 700. This is the form a likelihood wants."""
-    a, b = jnp.asarray(a), jnp.asarray(b)
+    a = canon_param(a, "log_hyp1f1_fn", "a")
+    b = canon_param(b, "log_hyp1f1_fn", "b")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=True)
 

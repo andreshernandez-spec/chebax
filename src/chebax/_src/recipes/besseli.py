@@ -40,7 +40,7 @@ import numpy as np
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besseli_table as _it
-from chebax._src.recipes._common import (canon_float, canon_tag, check_range,
+from chebax._src.recipes._common import (canon_param, canon_float, canon_tag, check_range,
                                          digamma64, param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.recipes.besselk import besselk, besselk_fn
@@ -310,7 +310,8 @@ def besseli_fn(nu, x, scaled=False):
     near nu = 0 comes from the small-order path (exact -K_0(x) at nu = 0,
     clamped below x = 1e-6 with the K table), so it is also correct to
     second order in nu."""
-    return _besseli_fn(canon_float(nu), canon_float(x), bool(scaled))
+    return _besseli_fn(canon_param(nu, "besseli_fn", "nu"),
+                       canon_float(x), bool(scaled))
 
 
 def besseli(v, scaled=False):
@@ -363,7 +364,7 @@ def besseli_ratio(nu, x):
     1/(2(nu+1)); from x = 2 up the quotient of the scaled besseli_fn
     values, whose (x/2)^nu prefactors are >= 1 there and whose e^x factors
     cancel."""
-    nu = canon_float(nu)
+    nu = canon_param(nu, "besseli_ratio", "nu")
     x = jnp.asarray(x)
     near = x <= _RATIO_XS
     xs = jnp.where(near, x, 0.0)

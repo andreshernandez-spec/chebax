@@ -45,7 +45,7 @@ from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import betainc_wide_table as _bw
-from chebax._src.recipes._common import canon_tag, check_range, edge_slope
+from chebax._src.recipes._common import canon_param, canon_tag, check_range, edge_slope
 from chebax._src.series import ChebSeries, _chebval
 
 
@@ -205,8 +205,8 @@ def betainc_fn(a, b, x):
     under trace). Reconstruction costs two tensor contractions per call
     (of the panel the parameters land in), not per point; jit
     constant-folds them when a, b are static."""
-    a = jnp.asarray(a)
-    b = jnp.asarray(b)
+    a = canon_param(a, "betainc_fn", "a")
+    b = canon_param(b, "betainc_fn", "b")
     x = jnp.asarray(x)
     out = with_panel_series(a, b,
                             lambda cab, cba: eval_betainc(a, b, x, cab, cba))
@@ -228,8 +228,8 @@ def log_betainc_fn(a, b, x):
     1 - x is exact in f64 for x >= 1/2. x <= 0 returns -inf, x >= 1
     returns 0. This is the log-CDF a censored likelihood wants when the
     censored mass is tiny (log(betainc_fn(...)) underflows first)."""
-    a = jnp.asarray(a)
-    b = jnp.asarray(b)
+    a = canon_param(a, "log_betainc_fn", "a")
+    b = canon_param(b, "log_betainc_fn", "b")
     x = jnp.asarray(x)
     return with_panel_series(a, b,
                              lambda cab, cba: _log_eval(a, b, x, cab, cba))

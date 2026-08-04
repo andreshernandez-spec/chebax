@@ -36,6 +36,33 @@ def canon_float(x):
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
 
 
+def canon_param(p, who, name):
+    """A uniform-per-call parameter: scalar, or any array holding one value.
+
+    numpyro and pytensor both hand back a broadcast (1,) array where the
+    caller wrote a scalar. A censored StudentT is the case that found
+    this: numpyro's censoring wrapper broadcasts the base distribution,
+    so `self.df` reaches `cdf` with shape (1,), and every traced entry
+    point here died deep inside the table reconstruction on it, with
+    "coef must be a nonempty 1-D array, got shape (68, 1)" or "Branch
+    index must be scalar". None of those name the parameter or say what
+    to do.
+
+    One value is uniform whatever its shape, so take it. Anything larger
+    is a per-element parameter, which is out of scope by design and is
+    what chebax.pergroup is for; say so instead of failing later.
+    """
+    a = canon_float(p)
+    if a.ndim == 0:
+        return a
+    if a.size == 1:
+        return jnp.reshape(a, ())
+    raise ValueError(
+        f"{who} takes {name} as a scalar (uniform per call), got shape "
+        f"{a.shape}. For one parameter set per group use "
+        f"chebax.pergroup({who}, group_idx).")
+
+
 @jax.custom_jvp
 def edge_slope(s, x):
     """Zero, carrying slope s in x.
@@ -66,10 +93,23 @@ def float_params(impl):
     nu=4 or kappa=5 is how anyone would write those. Converting OUTSIDE
     the rule turns the parameter into an ordinary float constant, which
     is what the caller meant; converting inside cannot work, since by
-    then the tangent already exists."""
+    then the tangent already exists.
+
+    Leading arguments are the parameters and the last is the evaluation
+    point (the library's argument order throughout), so the parameters
+    also go through canon_param: a broadcast size-1 array counts as the
+    scalar it holds, and a genuinely per-element one is refused by name.
+    """
+    who = getattr(impl, "__name__", "this function").lstrip("_")
+    who = who[:-3] if who.endswith("_cj") else who
+
     @functools.wraps(impl)
     def public(*args, **kw):
-        return impl(*[canon_float(a) for a in args], **kw)
+        if len(args) < 2:
+            return impl(*[canon_float(a) for a in args], **kw)
+        params = [canon_param(a, who, f"argument {i + 1}")
+                  for i, a in enumerate(args[:-1])]
+        return impl(*params, canon_float(args[-1]), **kw)
     return public
 
 

@@ -41,7 +41,7 @@ import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
-from chebax._src.recipes._common import (canon_float, canon_tag, check_range,
+from chebax._src.recipes._common import (canon_param, canon_float, canon_tag, check_range,
                                          param_coefs,
                                          param_coefs_der, traced_coefs)
 from chebax._src.series import ChebSeries
@@ -171,7 +171,7 @@ def besselk_fn(nu, x, scaled=False):
     table's own quantity, not exp(log K + x): that product cancels its
     -x against +x and loses the -1/2 ln x underneath.
     """
-    nu = canon_float(nu)
+    nu = canon_param(nu, "besselk_fn", "nu")
     ltil, ltail = _traced_series(nu)
     return _eval_k(nu, canon_float(x), ltil, ltail, bool(scaled))
 
@@ -186,7 +186,7 @@ def log_besselk_fn(nu, x):
     the log_kve shape that entropy and log-likelihood pipelines want
     (e.g. a GIG log-normalizer needs ln K_p and its order derivative).
     """
-    nu = jnp.asarray(nu)
+    nu = canon_param(nu, "log_besselk_fn", "nu")
     x = jnp.asarray(x)
     ltil, ltail = _traced_series(nu)
     xi = _xin(x)

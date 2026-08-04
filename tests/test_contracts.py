@@ -97,3 +97,53 @@ def test_truncated_icdf_rejects_invalid_probabilities():
         assert np.isnan(float(d.icdf(bad))), bad
     assert float(d.icdf(0.0)) == 1.0
     assert float(d.icdf(1.0)) == 5.0
+
+
+# every traced entry point, with the parameter positions it takes and one
+# valid argument set. The evaluation point is last, per the library's order.
+_UNIFORM_PARAM_CALLS = [
+    ("stdtr", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
+    ("log_stdtr", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
+    ("stdtrit", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
+    ("betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
+    ("log_betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
+    ("betaincinv", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
+    ("gammainc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("gammaincc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("gammaincinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("gammainccinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("chi2inv", lambda f, p: f(p(3.0), np.array([0.3, 0.7])), 1),
+    ("besselk_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("log_besselk_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("besseli_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("besseli_ratio", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("vonmises_cdf", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
+    ("log_hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
+    ("matern", lambda f, p: f(p(1.5), np.array([0.3, 0.7])), 1),
+]
+
+
+@pytest.mark.parametrize("name,call,_n", _UNIFORM_PARAM_CALLS)
+def test_size_one_parameter_is_the_scalar_it_holds(name, call, _n):
+    # numpyro and pytensor hand back a broadcast (1,) array where the caller
+    # wrote a scalar: numpyro's censoring wrapper broadcasts the base
+    # distribution, so a censored StudentT's df reaches cdf with shape (1,).
+    # Every entry point used to die on it inside the table reconstruction
+    # ("coef must be a nonempty 1-D array, got shape (68, 1)").
+    fn = getattr(chebax, name)
+    scalar = np.asarray(call(fn, lambda v: v))
+    for wrap in (lambda v: jnp.asarray([v]),            # (1,)
+                 lambda v: jnp.asarray([[v]]),          # (1, 1)
+                 lambda v: jnp.asarray(v)):             # 0-d
+        got = np.asarray(call(fn, wrap))
+        assert got.shape == scalar.shape, (name, got.shape)
+        np.testing.assert_allclose(got, scalar, rtol=1e-13, atol=1e-15)
+
+
+@pytest.mark.parametrize("name,call,n", _UNIFORM_PARAM_CALLS)
+def test_per_element_parameter_names_pergroup(name, call, n):
+    # out of scope by design, so it has to say so rather than fail later
+    fn = getattr(chebax, name)
+    with pytest.raises(ValueError, match="pergroup"):
+        call(fn, lambda v: jnp.asarray([v, v + 0.5]))

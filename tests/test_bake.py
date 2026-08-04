@@ -167,9 +167,14 @@ def test_jax_module_f32_artifact_vs_f32_runtime(tmp_path):
     assert out.returncode == 0, out.stderr[-2000:]
     assert not rejected.exists()
     assert float(out.stdout.strip()) <= 2e-7
-    # same artifact, x64 on here: folded scalars keep it the same function
-    here = np.asarray(_load(mod, "baked32_here").besselj(
-        jnp.asarray(np.linspace(0.05, 100.0, 41), jnp.float32)))
+    # same artifact, x64 on here: folded scalars keep it the same function.
+    # On CPU like the subprocess: the equality is exact, and f32 reassociates
+    # differently on a GPU, so comparing across devices tests the backend
+    # rather than the artifact (2.6e-7 relative, green in CI only because CI
+    # has no GPU).
+    with jax.default_device(jax.devices("cpu")[0]):
+        here = np.asarray(_load(mod, "baked32_here").besselj(
+            jnp.asarray(np.linspace(0.05, 100.0, 41), jnp.float32)))
     np.testing.assert_array_equal(here, np.load(str(rejected) + ".npy"))
 
 

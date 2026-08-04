@@ -72,7 +72,7 @@ from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
-from chebax._src.recipes._common import canon_float as _canon
+from chebax._src.recipes._common import canon_param, canon_float as _canon
 from chebax._src.recipes._common import float_params
 from chebax._src.recipes._common import canon_tag as _canon_tag
 from chebax._src.recipes._common import newton_bisect as _newton_bisect
@@ -258,8 +258,8 @@ def betaincinv(a, b, p):
     scipy-shared representation limit; use betaincinv(b, a, 1-p) for the
     distance from 1). A solve that fails its CDF-residual check returns nan
     instead of a wrong value."""
-    a = _canon(a)
-    b = _canon(b)
+    a = canon_param(a, "betaincinv", "a")
+    b = canon_param(b, "betaincinv", "b")
     p = _canon(p)
     return with_panel_series(
         a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
@@ -429,7 +429,7 @@ def gammaincinv(a, p):
     Second derivatives in p and mixed p-a derivatives work (dP/da is
     wrapped with its exact x-derivative); a pure second derivative in a
     needs d2P/da2, which is unavailable and raises with a clear message."""
-    a = _canon(a)
+    a = canon_param(a, "gammaincinv", "a")
     p = _canon(p)
     lim = _limits(_canon_tag())
     interior = (p > 0.0) & (p < 1.0)
@@ -483,7 +483,7 @@ def gammainccinv(a, y):
     a is a (traceable) scalar, uniform per call; y any shape. Derivatives
     in both arguments, from the same implicit-function rule as
     gammaincinv's with dQ/dx = -pdf and dQ/da = -dP/da."""
-    a = _canon(a)
+    a = canon_param(a, "gammainccinv", "a")
     y = _canon(y)
     lim = _limits(_canon_tag())
     interior = (y > 0.0) & (y < 1.0)
@@ -785,4 +785,4 @@ def chi2inv(k, p):
     gives nan for every p. The recipe residual serves k from 0.2 up
     (a = k/2 >= 0.1); below that the jax fallback takes over. Endpoints
     follow gammaincinv (p = 0 -> 0, p = 1 -> inf)."""
-    return 2.0 * gammaincinv(0.5 * _canon(k), p)
+    return 2.0 * gammaincinv(0.5 * canon_param(k, "chi2inv", "k"), p)

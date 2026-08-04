@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import besselk_table as _kt
+from chebax._src.recipes._common import canon_param
 from chebax._src.recipes.besselk import besselk_fn
 
 
@@ -38,7 +39,7 @@ def matern(nu, r, lengthscale=1.0):
     returns ~1e-18 for identical inputs: an inconsistent clamp made the
     prefactor collapse and the diagonal read ~0. A signal variance is
     deliberately not a parameter: multiply the result."""
-    nu = jnp.asarray(nu)
+    nu = canon_param(nu, "matern", "nu")
     r = jnp.asarray(r)
     pos = r > 0.0
     rs = jnp.where(pos, r, 1.0)

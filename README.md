@@ -93,7 +93,9 @@ efax, learned Matérn smoothness, truncated sampling, `chebax.numpyro` with
 latent shape parameters under NUTS).
 
 Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
-are uniform per call; per-element parameter arrays are out of scope by design.
+are uniform per call, meaning one value whatever its shape: a scalar or any
+size-1 array, which is what numpyro and pytensor hand back after broadcasting.
+Per-element parameter arrays are out of scope by design and say so by name.
 The middle ground is `chebax.pergroup(fn, group_idx)`: a static integer array
 assigns each element to a group, each group gets its own (traceable) parameter
 set — one group per chain, mixture component, or plate level.

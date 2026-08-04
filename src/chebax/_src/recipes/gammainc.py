@@ -50,7 +50,7 @@ from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes._common import (canon_tag, check_range, edge_slope,
+from chebax._src.recipes._common import (canon_param, canon_tag, check_range, edge_slope,
                                          param_coefs,
                                          traced_coefs)
 from chebax._src.series import ChebSeries
@@ -171,7 +171,7 @@ def gammainc_fn(a, x):
     axis reaches a = inf). Reconstruction
     costs two table contractions per call, not per point; jit
     constant-folds them when a is static."""
-    a = jnp.asarray(a)
+    a = canon_param(a, "gammainc_fn", "a")
     x = jnp.asarray(x)
 
     def small():
@@ -184,7 +184,7 @@ def gammainc_fn(a, x):
 def gammaincc_fn(a, x):
     """Q(a, x) = 1 - P(a, x), same contract as gammainc_fn; relatively
     accurate in the upper tail (computed directly, not as 1 - P)."""
-    a = jnp.asarray(a)
+    a = canon_param(a, "gammaincc_fn", "a")
     x = jnp.asarray(x)
 
     def small():
@@ -204,7 +204,7 @@ def log_gammainc_fn(a, x):
     ~eps Q/P, small everywhere there since Q <= 0.3 in the box. x <= 0
     returns -inf, x = inf returns 0. For a > 10 the large path assembles
     in log space through erfcx, valid past the linear form's underflow."""
-    a = jnp.asarray(a)
+    a = canon_param(a, "log_gammainc_fn", "a")
     x = jnp.asarray(x)
 
     def small():
@@ -230,7 +230,7 @@ def log_gammaincc_fn(a, x):
     small a where Q reaches ~1e-6 (the same wedge gammaincc_fn's
     docstring notes). x <= 0 returns 0, x = inf returns -inf. This is the
     log survival function a deeply-censored likelihood wants."""
-    a = jnp.asarray(a)
+    a = canon_param(a, "log_gammaincc_fn", "a")
     x = jnp.asarray(x)
 
     def small():

@@ -90,6 +90,13 @@ def test_digamma_helper():
 def test_x_zero():
     assert float(chebax.besselj(0.0)(0.0)) == 1.0
     assert float(chebax.besselj(2.5)(0.0)) == 0.0
+    for v in (0, 1, 2, 3):
+        derivative = chebax.besselj(v)
+        for order in range(5):
+            expected = float(mp.besselj(v, 0, order))
+            np.testing.assert_allclose(jax.jit(derivative)(0.0), expected,
+                                       rtol=0, atol=1e-14)
+            derivative = jax.grad(derivative)
 
 
 def test_order_out_of_range():

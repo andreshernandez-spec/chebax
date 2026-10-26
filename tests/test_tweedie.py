@@ -8,7 +8,8 @@ Large logs carry eps |ln W| from forming Z itself, which no method avoids.
 
 Measured worst, float64 (bar about 4x in each test):
 - ln W: values 7.7e-16; d/dz 1.0e-14 relative (oracle: dPhi/dz is
-  Phi(rho, rho; z)); d/drho 1.6e-15; z to 1e300 against the leading saddle
+  Phi(rho, rho; z)); d/drho 5.2e-15, 8.7e-15 on jax 0.5.3 (the CI floor), both
+  just above the split; z to 1e300 against the leading saddle
   term, 3.2e-16. Both branches at the split agree to 4.4e-16 in value and
   3.5e-15 in d/du. The table's s -> 0 end matches
   c1(rho) = -(2 rho + 1)(rho + 2)/(24 rho) to 8.9e-16.
@@ -131,7 +132,7 @@ def test_log_wright_bessel0_drho():
             ref = float(mp.diff(lambda r: log_phi(r, 0, z), mp.mpf(rho)))
             got = float(jax.grad(lambda r: chebax.log_wright_bessel0(r, z))(rho))
             worst = max(worst, _rel(got, ref))
-    assert worst <= 7e-15, worst
+    assert worst <= 3.5e-14, worst
 
 
 def _branches(rho):

@@ -94,7 +94,7 @@ def main():
 
         t = bench({"jx": (lj, lambda: yj[0].block_until_ready()),
                    "cb": (lc, lambda: yc[0].block_until_ready())})
-        xj, xc = jnp.exp(yj[0]), jnp.exp(yc[0])
+        xj, xc = yj[0], yc[0]                 # the solve returns x itself
         agree = float(jnp.max(jnp.abs(xj - xc) / jnp.maximum(xj, 1e-300)))
         print(f"{name:26s} {t['jx'] * 1e3:8.2f}ms {t['cb'] * 1e3:7.2f}ms "
               f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")

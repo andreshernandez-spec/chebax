@@ -269,6 +269,99 @@ def _betaincinv_jvp(primals, tangents):
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
+def _gamma_log_density(a, x):
+    """ln of the Gamma(a, 1) density at x > 0.
+
+    a ln x - x - lnGamma(a) cancels terms of size a ln a, which left the
+    inverses' x-derivative 8e-6 off at a = 1e10 (and 4e-7 at 1e8). Past
+    a = 100 it is -a w + ln(a / (2 pi))/2 - S(a) - ln x instead, with
+    w = lambda - 1 - ln lambda from d = (x - a)/a, an exact subtraction near
+    the mode, and S Stirling's remainder to a^-5 (below 1e-17 there)."""
+    direct = (a - 1.0) * jnp.log(x) - x - jax.scipy.special.gammaln(a)
+    big = a > 100.0
+    ab = jnp.where(big, a, 1000.0)
+    w, _ = _gl.w_eta((x - ab) / ab)
+    ai2 = 1.0 / (ab * ab)
+    rem = (1.0 / 12.0 - ai2 * (1.0 / 360.0 - ai2 / 1260.0)) / ab
+    stable = -ab * w + 0.5 * jnp.log(ab / (2.0 * jnp.pi)) - rem - jnp.log(x)
+    return jnp.where(big, stable, direct)
+
+
+# From here up the gamma inverses solve in Temme's variable (_huge_solve)
+_A_HUGE = 1e10
+# (lambda - 1)/eta = 1 + eta/3 + eta^2/36 - ..., the inverse of
+# eta^2/2 = lambda - 1 - ln lambda (sympy reversion), through eta^5: above
+# _A_HUGE, |eta| < 4e-4 and the next term is below 1e-25 relative
+_LAM_SERIES = (1.0 / 3.0, 1.0 / 36.0, -1.0 / 270.0, 1.0 / 4320.0,
+               1.0 / 17010.0)
+
+
+def _huge_parts(a, s, temme):
+    """At s = eta sqrt(a/2): (ln P, ln Q, ln dP/ds, lambda - 1).
+
+    dP/ds is x^a e^-x / Gamma(a) times dx/ds, which is
+    e^(-s^2) / sqrt(pi) e^(-1/(12 a)) eta / (lambda - 1), Stirling's
+    remainder kept to 1/(12 a) (the next term is below 1e-33 here)."""
+    eta = s * jnp.sqrt(2.0 / a)
+    r = _LAM_SERIES[-1]
+    for c in _LAM_SERIES[-2::-1]:
+        r = r * eta + c
+    r = 1.0 + eta * r                      # (lambda - 1) / eta
+    lp, lq = _gl.temme_log_pq(s, s * s, temme(eta),
+                              jnp.sqrt(2.0 * jnp.pi * a))
+    lden = -s * s - 0.5 * math.log(math.pi) - 1.0 / (12.0 * a) - jnp.log(r)
+    return lp, lq, lden, eta * r
+
+
+def _huge_solve(a, ltp, ltq, z, upper):
+    """The quantile for a > _A_HUGE, solved in s = eta sqrt(a/2).
+
+    There x = a (1 + O(a^-1/2)) and ln x carries eps ln a. From a = 1e15
+    the log density a ln x - x - lnGamma(a) cancelled to noise and every
+    solve returned nan, and past ~1e30 the floats in ln x are spaced wider
+    than the whole distribution (found fixing the review of 2026-10-26).
+    In s, which is O(1), Temme's form gives ln P and ln Q directly, the
+    density has no cancellation, and x = a + a (lambda - 1) rounds once.
+    Returns (x, relative residual, s)."""
+    temme = _gl.series_traced(a)[0]
+
+    def f_and_df(s):
+        lp, lq, lden, _ = _huge_parts(a, s, temme)
+        f = jnp.where(upper, ltq - lq, lp - ltp)
+        return f, jnp.exp(lden - jnp.where(upper, lq, lp))
+
+    # erfc(-s)/2 = Phi(s sqrt 2), and the root is within O(s^3 / sqrt(a))
+    # of that normal start, under 1e-3 here
+    s0 = z / math.sqrt(2.0)
+    s = newton_bisect(f_and_df, s0, s0 - 2.0, s0 + 2.0, 8)
+    lp, lq, _, dm = _huge_parts(a, s, temme)
+    rel = jnp.abs(jnp.expm1(jnp.where(s > 0.0, lq - ltq, lp - ltp)))
+    return a + a * dm, rel, s
+
+
+def _huge_dx(a, da, s, upper, dlog):
+    """dx for a > _A_HUGE, implicit in s: with L = ln P on the lower lanes
+    and ln Q on the upper ones, dL = L_s ds + L_a da is dlog, the target's
+    own log tangent, and dx = X_s ds + X_a da for X = a + a (lambda - 1).
+    Everything stays in s and a, where the density in x cancels. da is
+    None for a symbolic zero."""
+    def lfn(ss, aa):
+        lp, lq, _, _ = _huge_parts(aa, ss, _gl.series_traced(aa)[0])
+        return jnp.where(upper, lq, lp)
+
+    def xfn(ss, aa):
+        return aa + aa * _huge_parts(aa, ss, _gl.series_traced(aa)[0])[3]
+
+    one = jnp.ones_like(s)
+    l_s = jax.jvp(lambda ss: lfn(ss, a), (s,), (one,))[1]
+    x_s = jax.jvp(lambda ss: xfn(ss, a), (s,), (one,))[1]
+    if da is None:
+        return x_s * dlog / l_s
+    l_a = jax.jvp(lambda aa: lfn(s, aa), (a,), (jnp.ones_like(a),))[1]
+    x_a = jax.jvp(lambda aa: xfn(s, aa), (a,), (jnp.ones_like(a),))[1]
+    return x_s * (dlog - l_a * da) / l_s + x_a * da
+
+
 def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
     """Solve ln P(a, e^v) = ltp (lower lanes) or ln Q(a, e^v) = ltq
     (upper lanes) in v, against the LOG probability. Shared by
@@ -295,9 +388,14 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
     everywhere), each reconstructed once and closed over, so each step is
     a fixed-degree polynomial; None uses jax's gammainc and gammaincc
     (any a, but a whole-array while_loop per call).
-    Returns (v, relative residual, root below the floor, root above the
+    "huge" hands the solve to _huge_solve.
+    Returns (x, relative residual, root below the floor, root above the
     ceiling), the last two from the residual's sign at the bracket ends;
     the ceiling is only checked when asked for (gammainccinv)."""
+    if use_recipe == "huge":
+        x, rel, _ = _huge_solve(a, ltp, ltq, z, upper)
+        none = jnp.zeros(x.shape, bool)
+        return x, rel, none, (x == jnp.inf) if ceiling else none
     lim = _limits(canon_tag())
     lga = jax.scipy.special.gammaln(a)
     if use_recipe == "small":
@@ -369,15 +467,28 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
     above = jnp.zeros(v.shape, bool)
     if ceiling:
         above = f_and_df(jnp.full_like(v, lim.v_hi))[0] < 0.0
-    return (v, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp))),
+    return (x, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp))),
             f_lo > 0.0, above)
+
+
+def _inv_targets(pc):
+    """(ln p, ln(1-p), ndtri(p), upper lanes) for a lower-tail target p:
+    exact on the lower lanes, and 1 - p is exact for p >= 1/2."""
+    return (jnp.log(pc), jnp.log1p(-pc), jax.scipy.special.ndtri(pc),
+            pc > 0.5)
+
+
+def _cinv_targets(yc):
+    """The same for an upper-tail target y. ndtri takes y directly, by
+    symmetry, since ndtri(1 - y) saturates for y below eps."""
+    return (jnp.log1p(-yc), jnp.log(yc), -jax.scipy.special.ndtri(yc),
+            yc < 0.5)
 
 
 def _gammaincinv_solve(a, pc, use_recipe):
     """Lower-tail entry to _gammainv_core: the target is p, exact on the
     lower lanes, and 1 - p (exact for p >= 1/2) on the upper ones."""
-    return _gammainv_core(a, jnp.log(pc), jnp.log1p(-pc),
-                          jax.scipy.special.ndtri(pc), pc > 0.5, use_recipe)
+    return _gammainv_core(a, *_inv_targets(pc), use_recipe)
 
 
 def _gammainccinv_solve(a, yc, use_recipe):
@@ -385,27 +496,28 @@ def _gammainccinv_solve(a, yc, use_recipe):
     upper lanes, and 1 - y (exact for y >= 1/2) on the lower ones.
 
     Not a call to _gammaincinv_solve at 1 - y: that rounds to exactly 1
-    for y below eps, which is the whole range this exists for. ndtri also
-    takes y directly, by symmetry, since ndtri(1 - y) saturates there in
-    the same way."""
-    return _gammainv_core(a, jnp.log1p(-yc), jnp.log(yc),
-                          -jax.scipy.special.ndtri(yc), yc < 0.5, use_recipe,
-                          ceiling=True)
+    for y below eps, which is the whole range this exists for."""
+    return _gammainv_core(a, *_cinv_targets(yc), use_recipe, ceiling=True)
 
 
 def _dispatch_solve(solve, a, tc):
     """Run solve(a, tc, mode) under the a-box conds: the small tables to
-    10, the Temme-zone tables above, jax's gammainc below 0.1. Nested
-    scalar conds, so only the taken branch executes."""
+    10, the Temme-zone tables above, solved in Temme's variable past
+    _A_HUGE, jax's gammainc below 0.1. Nested scalar conds, so only the
+    taken branch executes."""
     in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
-    in_large = (a > _gt.AHI) & (a <= _gl.AHI)
+    in_large = (a > _gt.AHI) & (a <= _A_HUGE)
+    in_huge = (a > _A_HUGE) & (a <= _gl.AHI)
     return jax.lax.cond(
         in_small,
         lambda: solve(a, tc, "small"),
         lambda: jax.lax.cond(
             in_large,
             lambda: solve(a, tc, "large"),
-            lambda: solve(a, tc, None)))
+            lambda: jax.lax.cond(
+                in_huge,
+                lambda: solve(a, tc, "huge"),
+                lambda: solve(a, tc, None))))
 
 
 @jax.custom_jvp
@@ -416,8 +528,10 @@ def _gammaincinv_cj(a, p):
     finite and positive: anything else (0, negative, inf, nan) returns nan
     for every p, endpoints included. From a = 0.1 up the Newton
     residual runs on the chebax gammainc tables (fixed-degree polynomials;
-    above 10 via the Temme-zone path); below it falls back to jax's
-    gammainc, so the domain stays all of a > 0. The upper half is solved
+    above 10 via the Temme-zone path, and above 1e10 the solve itself runs
+    in Temme's variable, which keeps every a up to the largest float);
+    below it falls back to jax's gammainc, so the domain stays all of
+    a > 0. The upper half is solved
     against Q, so p within rounding of 1 still resolves (P(a, x) - p there
     has no digits left).
     Quantiles below the smallest normal float of the canonical dtype return
@@ -426,15 +540,17 @@ def _gammaincinv_cj(a, p):
 
     Second derivatives in p and mixed p-a derivatives work (dP/da is
     wrapped with its exact x-derivative); a pure second derivative in a
-    needs d2P/da2, which is unavailable and raises with a clear message."""
+    needs d2P/da2, which is unavailable and raises with a clear message.
+    Above a = 1e10 first derivatives come from the implicit rule in
+    Temme's variable and higher ones differentiate its fixed iteration."""
     lim = _limits(canon_tag())
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
 
     # the root's place against the floor comes from the residual's sign
     # there, not a band in v (see _betaincinv_core)
-    v, rel, at_floor, _ = _dispatch_solve(_gammaincinv_solve, a, pc)
-    x = jnp.where(at_floor, 0.0, jnp.exp(v))
+    x, rel, at_floor, _ = _dispatch_solve(_gammaincinv_solve, a, pc)
+    x = jnp.where(at_floor, 0.0, x)
     x = jnp.where(~at_floor & (rel > lim.rtol), jnp.nan, x)
     x = jnp.where(p <= 0.0, 0.0, jnp.where(p >= 1.0, jnp.inf, x))
     oob = (jnp.isnan(p) | (p < 0.0) | (p > 1.0)
@@ -448,16 +564,30 @@ def _gammaincinv_jvp(primals, tangents):
     zero = jax.custom_derivatives.SymbolicZero
     x = _gammaincinv_cj(a, p)
     interior = jnp.isfinite(x) & (x > 0.0)
-    xs = jnp.where(interior, x, 1.0)
-    pdf = jnp.exp((a - 1) * jnp.log(xs) - xs - jax.scipy.special.gammaln(a))
-    # dP/da through the differentiable wrapper: second derivatives in p and
-    # mixed p-a work; only d2/da2 remains unsupported (see _dPda). Symbolic
-    # zeros matter here: a materialized 0 tangent would still route the
-    # outer derivative through _dPda's a direction.
-    num = dp if not isinstance(dp, zero) else 0.0
-    if not isinstance(da, zero):
-        num = num - _dPda_dispatch(a, xs) * da
-    dx = num / pdf
+
+    def in_x():
+        xs = jnp.where(interior, x, 1.0)
+        pdf = jnp.exp(_gamma_log_density(a, xs))
+        # dP/da through the differentiable wrapper: second derivatives in
+        # p and mixed p-a work; only d2/da2 remains unsupported (see
+        # _dPda). Symbolic zeros matter here: a materialized 0 tangent
+        # would still route the outer derivative through _dPda's a
+        # direction.
+        num = dp if not isinstance(dp, zero) else jnp.zeros_like(xs)
+        if not isinstance(da, zero):
+            num = num - _dPda_dispatch(a, xs) * da
+        return num / pdf
+
+    def in_s():
+        pc = jnp.where((p > 0.0) & (p < 1.0), p, 0.5)
+        targets = _inv_targets(pc)
+        _, _, s = _huge_solve(a, *targets)
+        dpv = dp if not isinstance(dp, zero) else jnp.zeros_like(pc)
+        dlog = jnp.where(targets[3], -dpv / (1.0 - pc), dpv / pc)
+        return _huge_dx(a, None if isinstance(da, zero) else da, s,
+                        targets[3], dlog)
+
+    dx = jax.lax.cond(a > _A_HUGE, in_s, in_x)
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
@@ -484,8 +614,8 @@ def _gammainccinv_cj(a, y):
     yc = jnp.where(interior, y, 0.5)
 
     # at_ceil: the quantile itself overflows
-    v, rel, at_floor, at_ceil = _dispatch_solve(_gammainccinv_solve, a, yc)
-    x = jnp.where(at_floor, 0.0, jnp.exp(v))
+    x, rel, at_floor, at_ceil = _dispatch_solve(_gammainccinv_solve, a, yc)
+    x = jnp.where(at_floor, 0.0, x)
     x = jnp.where(at_ceil, jnp.inf, x)
     x = jnp.where(~(at_ceil | at_floor) & (rel > lim.rtol), jnp.nan, x)
     x = jnp.where(y <= 0.0, jnp.inf, jnp.where(y >= 1.0, 0.0, x))
@@ -500,13 +630,26 @@ def _gammainccinv_jvp(primals, tangents):
     zero = jax.custom_derivatives.SymbolicZero
     x = _gammainccinv_cj(a, y)
     interior = jnp.isfinite(x) & (x > 0.0)
-    xs = jnp.where(interior, x, 1.0)
-    pdf = jnp.exp((a - 1) * jnp.log(xs) - xs - jax.scipy.special.gammaln(a))
-    # Q(a, x) = y, so dx = -(dy + dP/da da) / pdf
-    num = dy if not isinstance(dy, zero) else 0.0
-    if not isinstance(da, zero):
-        num = num + _dPda_dispatch(a, xs) * da
-    dx = -num / pdf
+
+    def in_x():
+        xs = jnp.where(interior, x, 1.0)
+        pdf = jnp.exp(_gamma_log_density(a, xs))
+        # Q(a, x) = y, so dx = -(dy + dP/da da) / pdf
+        num = dy if not isinstance(dy, zero) else jnp.zeros_like(xs)
+        if not isinstance(da, zero):
+            num = num + _dPda_dispatch(a, xs) * da
+        return -num / pdf
+
+    def in_s():
+        yc = jnp.where((y > 0.0) & (y < 1.0), y, 0.5)
+        targets = _cinv_targets(yc)
+        _, _, s = _huge_solve(a, *targets)
+        dyv = dy if not isinstance(dy, zero) else jnp.zeros_like(yc)
+        dlog = jnp.where(targets[3], dyv / yc, -dyv / (1.0 - yc))
+        return _huge_dx(a, None if isinstance(da, zero) else da, s,
+                        targets[3], dlog)
+
+    dx = jax.lax.cond(a > _A_HUGE, in_s, in_x)
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 

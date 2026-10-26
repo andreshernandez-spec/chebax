@@ -28,6 +28,7 @@ from chebax._src.recipes import gammainc_large_table as glt
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
+from scipy.special import erfcinv  # noqa: E402
 
 AS = [10.001, 15.0, 40.0, 100.0, 500.0, 999.0, 1000.0]
 
@@ -231,6 +232,96 @@ def test_gammaincinv_and_chi2inv_high_a():
     fd = (float(chebax.gammaincinv(300.0 + h, 0.3))
           - float(chebax.gammaincinv(300.0 - h, 0.3))) / (2 * h)
     assert abs(g - fd) / abs(fd) <= 1e-6
+
+
+def _temme_ref(a, eta):
+    """(P, Q, lambda) at Temme's eta for huge a, from the uniform expansion
+    of DLMF 8.12 through c1: Q = erfc(eta sqrt(a/2))/2 + R,
+    R = e^(-a eta^2/2) / sqrt(2 pi a) (c0 + c1/a), truncated at a^-2 of R,
+    and independent of the chebax tables. Needs ~2 log10(1/eta) digits,
+    for the cancellation in c0 = 1/(lambda - 1) - 1/eta."""
+    lam = mp.findroot(lambda t: t - 1 - mp.log(t) - eta ** 2 / 2,
+                      1 + eta + eta ** 2 / 3 + eta ** 3 / 36)
+    d = lam - 1
+    c0 = 1 / d - 1 / eta
+    c1 = 1 / eta ** 3 - 1 / d ** 3 - 1 / d ** 2 - 1 / (12 * d)
+    r = mp.exp(-a * eta ** 2 / 2) / mp.sqrt(2 * mp.pi * a) * (c0 + c1 / a)
+    k = mp.sqrt(a / 2)
+    return mp.erfc(-eta * k) / 2 - r, mp.erfc(eta * k) / 2 + r, lam
+
+
+def _huge_quantile_ref(a, p, upper):
+    """(x, dx/dp) with P(a, x) = p, or Q(a, x) = p when upper. The density
+    comes from x pdf(x) = exp(-a eta^2/2 + a ln a - a - lnGamma(a))."""
+    with mp.workdps(60 + 2 * int(np.log10(a) / 2 + 1)):
+        a, p = mp.mpf(a), mp.mpf(p)
+        k = mp.sqrt(2 / a)
+        # solved in s = eta / k, O(1): findroot's tolerance is absolute and
+        # eta is 1e-150 at a = 1e300. The start is the leading term (erfinv
+        # of 1 - 2p would round 1 - 2p).
+        s0 = (1 if upper else -1) * mp.mpf(float(erfcinv(2 * float(p))))
+        sr = mp.findroot(
+            lambda t: mp.log(_temme_ref(a, t * k)[1 if upper else 0] / p),
+            (s0 - mp.mpf(1) / 1000, s0 + mp.mpf(1) / 1000), solver="secant",
+            tol=mp.mpf(10) ** -60, verify=False)
+        eta = sr * k
+        x = a * _temme_ref(a, eta)[2]
+        pdf = mp.exp(-a * eta ** 2 / 2 + a * mp.log(a) - a
+                     - mp.loggamma(a)) / x
+        return x, (-1 if upper else 1) / pdf
+
+
+def test_huge_shape_quantiles():
+    # From a = 1e15 every gamma inverse returned nan: the log density
+    # a ln x - x - lnGamma(a) cancelled to noise, and past ~1e30 the floats
+    # in ln x are wider than the distribution. Above 1e10 the solve runs
+    # in s = eta sqrt(a/2) (found fixing the review of 2026-10-26).
+    # Relative errors, measured worst 5.4e-17 in x and 4.0e-16 in dx/dp
+    # over a from 3e12 to 1e300; bars 2e-16 and 2e-15. 1e10 itself stays
+    # on the log-space path, 1.7e-15 in x, its dx/dp conditioned by that
+    # rounding (|z| sqrt(a) times it, 1.6e-9); bars 7e-15 and 7e-9.
+    cases = [(1e10, 7e-15, 7e-9)] + [(a, 2e-16, 2e-15)
+                                     for a in (3e12, 1e30, 1e300)]
+    for a, bar_x, bar_g in cases:
+        for f, upper, ps in ((chebax.gammaincinv, False,
+                              [1e-20, 0.3, 0.5, 0.9, 1 - 1e-9]),
+                             (chebax.gammainccinv, True, [1e-300, 1e-20, 0.3])):
+            pv = jnp.asarray(ps)
+            xs = np.asarray(f(a, pv))
+            gs = np.asarray(jax.vmap(jax.grad(f, 1), (None, 0))(a, pv))
+            assert np.isfinite(xs).all() and not np.isnan(gs).any(), (a, xs, gs)
+            for p, x, g in zip(ps, xs, gs):
+                rx, rg = _huge_quantile_ref(a, p, upper)
+                assert abs(x - rx) <= bar_x * rx, (a, p, x, float(rx))
+                if abs(rg) > np.finfo(np.float64).max:     # overflows, signed
+                    assert g == (np.inf if rg > 0 else -np.inf), (a, p, g)
+                else:
+                    assert abs(g - rg) <= bar_g * abs(rg), (a, p, g, float(rg))
+    # the shape derivative agrees with a difference of solves, ~1 here
+    a, ap, am = 1e30, 1e30 * (1 + 1e-12), 1e30 * (1 - 1e-12)
+    g = float(jax.grad(chebax.gammaincinv)(a, 0.3))
+    with mp.workdps(100):
+        fd = float((_huge_quantile_ref(ap, 0.3, False)[0]
+                    - _huge_quantile_ref(am, 0.3, False)[0])
+                   / (mp.mpf(ap) - mp.mpf(am)))
+    assert abs(g - fd) <= 1e-9, (g, fd)
+
+
+def test_quantile_density_below_huge():
+    # Below 1e10 the x-derivative divides by the density at x, and
+    # a ln x - x - lnGamma(a) put that 8e-6 off at a = 1e10 (4e-7 at 1e8).
+    # Past a = 100 it is -a w + ln(a/(2 pi))/2 - S(a) - ln x. Against the
+    # exact density at the returned x, measured worst 1.5e-11 (a = 1e8,
+    # p = 1e-300), bar 6e-11.
+    ps = jnp.asarray([1e-300, 1e-20, 0.3, 0.9, 1 - 1e-9])
+    for a in (150.0, 1e3, 1e6, 1e8):
+        xs = np.asarray(chebax.gammaincinv(a, ps))
+        gs = np.asarray(jax.vmap(jax.grad(chebax.gammaincinv, 1),
+                                 (None, 0))(a, ps))
+        for x, g in zip(xs, gs):
+            with mp.workdps(60):
+                pdf = mp.exp((a - 1) * mp.log(x) - x - mp.loggamma(a))
+                assert abs(g * pdf - 1) <= 6e-11, (a, x, g)
 
 
 def test_param_out_of_range():

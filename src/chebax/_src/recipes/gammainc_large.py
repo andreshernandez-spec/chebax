@@ -52,7 +52,12 @@ AHI = domains.GAMMAINC.hi
 def _w_eta(lam):
     """(w, eta): w = lambda - 1 - ln lambda, eta = sign * sqrt(2w),
     both smooth through lambda = 1."""
-    d = lam - 1.0
+    return w_eta(lam - 1.0)
+
+
+def w_eta(d):
+    """_w_eta from d = lambda - 1 itself, for callers that can form d
+    without rounding lambda first (the gamma density at large a)."""
     dm = jnp.where(d == 0.0, 1.0, d)
     ratio_direct = 2.0 * (d - jnp.log1p(d)) / (dm * dm)
     ratio_series = (1.0 - 2.0 * d / 3.0 + d * d / 2.0
@@ -60,6 +65,28 @@ def _w_eta(lam):
     ratio = jnp.where(jnp.abs(d) < 1e-3, ratio_series, ratio_direct)
     eta = d * jnp.sqrt(ratio)
     return 0.5 * eta * eta, eta
+
+
+def temme_log_pq(y, aw, tval, rt):
+    """(ln P, ln Q) in the Temme zone, from y = eta sqrt(a/2), a w = y^2,
+    the table value T(v, eta) and rt = sqrt(2 pi a).
+
+    erfc and corr underflow f64 once a w > ~745, so each side assembles in
+    log space through erfcx: e.g. ln Q = -a w + ln(erfcx(y)/2 + T/rt). The
+    erfcx argument is masked to its own sign so the wrong-side lanes cannot
+    reach erfcx's e^(y^2) overflow (grad poison), and the far side is log1p
+    of the other probability, whose untaken lanes see a dummy 1/2 (log1p(-1)
+    is -inf, poisoning grads through the select). The quantile solver for
+    huge a calls this with y as its unknown."""
+    yq = jnp.where(y > 0.0, y, 0.0)
+    yp = jnp.where(y < 0.0, -y, 0.0)
+    lq_t = -aw + jnp.log(0.5 * erfcx(yq) + tval / rt)
+    lp_t = -aw + jnp.log(0.5 * erfcx(yp) - tval / rt)
+    corr = jnp.exp(-aw) / rt * tval
+    p_in = jnp.where(y > 0.0, 0.5, 0.5 * jax.scipy.special.erfc(-y) - corr)
+    q_in = jnp.where(y < 0.0, 0.5, 0.5 * jax.scipy.special.erfc(y) + corr)
+    return (jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in)),
+            jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in)))
 
 
 def eval_large(a, x, temme, dlow, dup, kind):
@@ -101,31 +128,16 @@ def eval_large(a, x, temme, dlow, dup, kind):
                          jnp.where(in_up, jnp.exp(lq_up), q_t))
         out = jnp.where(pos, core, 1.0)
     else:
-        # log forms: erfc and corr underflow f64 once a w > ~745, so
-        # each side assembles in log space through erfcx: y^2 = a w
-        # exactly, hence e.g. ln Q = -a w + ln(erfcx(y)/2 + T/rt). The
-        # erfcx argument is masked to its own sign so the wrong-side
-        # lanes cannot reach erfcx's e^(y^2) overflow (grad poison).
-        yq = jnp.where(y > 0.0, y, 0.0)
-        yp = jnp.where(y < 0.0, -y, 0.0)
-        lq_t = -a * w + jnp.log(0.5 * erfcx(yq) + tval / rt)
-        lp_t = -a * w + jnp.log(0.5 * erfcx(yp) - tval / rt)
-        # the far-side log1p sees ~1 on its UNTAKEN lanes (log1p(-1) is
-        # -inf, poisoning grads through the select); feed those a dummy.
-        # logq takes log1p(-p_in) on y <= 0 (real p_t there, dummy on
-        # y > 0); logp takes log1p(-q_in) on y >= 0 (real q_t there).
-        p_in = jnp.where(y > 0.0, 0.5, p_t)
-        q_in = jnp.where(y < 0.0, 0.5, q_t)
+        # log forms: see temme_log_pq; y^2 = a w exactly
+        lp_t, lq_t = temme_log_pq(y, a * w, tval, rt)
         if kind == "logp":
-            lt = jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in))
             core = jnp.where(in_low, lp_low,
                              jnp.where(in_up, jnp.log1p(-jnp.exp(lq_up)),
-                                       lt))
+                                       lp_t))
             out = jnp.where(pos, core, -jnp.inf)
         else:
-            lt = jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in))
             core = jnp.where(in_low, jnp.log1p(-jnp.exp(lp_low)),
-                             jnp.where(in_up, lq_up, lt))
+                             jnp.where(in_up, lq_up, lq_t))
             out = jnp.where(pos, core, 0.0)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 

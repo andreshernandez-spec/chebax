@@ -37,7 +37,7 @@ from scipy import stats  # noqa: E402
 
 import chebax  # noqa: E402
 from chebax.numpyro import (TruncatedBeta, TruncatedGamma,  # noqa: E402
-                            TruncatedStudentT)
+                            TruncatedStudentT, Tweedie)
 
 mp.mp.dps = 40
 
@@ -517,3 +517,61 @@ def test_x64_off_deep_tails(tmp_path):
                          capture_output=True, text=True, env=env)
     assert out.returncode == 0, out.stderr[-2000:]
     assert float(out.stdout) <= 2e-4, out.stdout
+
+
+# ---------------------------------------------------------------- Tweedie
+
+def test_tweedie_log_prob_and_sampling():
+    # log_prob is the recipe; sampling matches the law's mean, variance and
+    # zero mass (200k draws, bars at ~5 standard errors)
+    mu, phi, p = 2.0, 0.8, 1.4
+    d = Tweedie(mu, phi, p)
+    y = jnp.asarray([0.0, 0.3, 2.0, 7.5])
+    np.testing.assert_array_equal(np.asarray(d.log_prob(y)),
+                                  np.asarray(chebax.tweedie_logpdf(p, mu, phi, y)))
+    s = np.asarray(d.sample(random.PRNGKey(0), (200_000,)))
+    var = phi * mu ** p
+    p0 = np.exp(-mu ** (2 - p) / (phi * (2 - p)))
+    n = s.size
+    assert abs(s.mean() - mu) <= 5 * np.sqrt(var / n)
+    assert abs(s.var() - var) / var <= 0.02
+    assert abs((s == 0).mean() - p0) <= 5 * np.sqrt(p0 * (1 - p0) / n)
+    assert (s >= 0).all()
+    assert float(d.mean) == mu and float(d.variance) == pytest.approx(var)
+
+
+def test_tweedie_power_contract():
+    with pytest.raises(ValueError, match="pergroup"):
+        Tweedie(1.0, 1.0, jnp.asarray([1.3, 1.6]))
+    with pytest.raises(ValueError, match="power in"):
+        Tweedie(1.0, 1.0, 1.02)
+    # a traced power is not checked eagerly and must still trace, with
+    # numpyro's validation on (the 0.22 default)
+    import numpyro
+    with numpyro.validation_enabled():
+        lp = jax.jit(lambda p: Tweedie(jnp.asarray([1.0, 3.0]), 0.5, p)
+                     .log_prob(np.asarray([0.0, 2.5])))(1.6)
+    assert np.isfinite(np.asarray(lp)).all()
+
+
+def test_tweedie_nuts_recovers_the_power():
+    import numpyro
+    import numpyro.distributions as ndist
+    from numpyro.infer import MCMC, NUTS
+
+    mu, phi, p_true = 3.0, 0.6, 1.35
+    y = np.asarray(Tweedie(mu, phi, p_true).sample(random.PRNGKey(1), (1500,)))
+
+    def model(y):
+        m = numpyro.sample("mu", ndist.LogNormal(0.0, 2.0))
+        f = numpyro.sample("phi", ndist.LogNormal(0.0, 2.0))
+        p = numpyro.sample("p", ndist.Uniform(1.05, 1.95))
+        with numpyro.plate("data", y.shape[0]):
+            numpyro.sample("y", Tweedie(m, f, p), obs=y)
+
+    mcmc = MCMC(NUTS(model), num_warmup=300, num_samples=300, progress_bar=False)
+    mcmc.run(random.PRNGKey(2), y)
+    post = mcmc.get_samples()
+    p_mean, p_sd = float(post["p"].mean()), float(post["p"].std())
+    assert abs(p_mean - p_true) <= max(4 * p_sd, 0.02), (p_mean, p_sd)
+    assert abs(float(post["mu"].mean()) - mu) / mu <= 0.1

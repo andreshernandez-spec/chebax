@@ -93,9 +93,10 @@ _FOLDABLE = (set(_BINOP) | set(_CMP) | set(_UNARY) | set(_BINFN)
 
 
 class _Emit:
-    def __init__(self, cpp, ctype="double"):
+    def __init__(self, cpp, ctype="double", dtype="float64"):
         self.cpp = cpp
         self.ctype = ctype
+        self.tiny = float(np.finfo(dtype).tiny)
         self.lines = []
         self.counter = 0
         self.coef_names = {}      # id -> (name, series)
@@ -297,9 +298,18 @@ def _emit_jaxpr(em, jaxpr, env):
             # overflow on a legal domain like (-1e308, 1e308), and the
             # emitted division by a bare inf did not even compile
             a, b = series.domain
+            half_v = 0.5 * b - 0.5 * a
             mid = _lit(0.5 * a + 0.5 * b, em.cpp, em.ctype)[0]
-            half = _lit(0.5 * b - 0.5 * a, em.cpp, em.ctype)[0]
+            half = _lit(half_v, em.cpp, em.ctype)[0]
             t_expr = f"(({read(x_in)}) - {mid}) / {half}"
+            if not em.cpp and half_v * em.tiny >= 1.0:
+                # series._to_unit: under jit, XLA would fold the division
+                # into a subnormal reciprocal and flush it. C++ compilers
+                # keep the division unless asked for fast math.
+                tiny = _lit(em.tiny, False)[0]
+                scaled = _lit(half_v * em.tiny, False)[0]
+                t_expr = (f"jax.lax.optimization_barrier((({read(x_in)}) - {mid})"
+                          f" * {tiny}) / {scaled}")
             if em.cpp:
                 expr = f"detail::clenshaw(detail::{name}, {t_expr})"
             else:
@@ -378,11 +388,11 @@ def _register_const(em, name_hint, val):
     return sym
 
 
-def trace_and_emit(inst, cpp, ctype="double"):
+def trace_and_emit(inst, cpp, ctype="double", dtype="float64"):
     """Returns (lines, coef_arrays{name: np.array}, result_symbol,
-    endpoint_slope_dropped)."""
+    endpoint_slope_dropped). dtype is the python artifact's declared one."""
     closed = jax.make_jaxpr(inst)(jnp.zeros((), jnp.float64))
-    em = _Emit(cpp, ctype)
+    em = _Emit(cpp, ctype, dtype)
 
     # name jaxpr constants: coefficient vectors by value-match against the
     # instance's series; anything else must be a scalar

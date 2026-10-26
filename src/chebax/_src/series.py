@@ -135,6 +135,22 @@ def _dcoef(coef, domain):
     return (1.0 / (0.5 * b - 0.5 * a)) * _der_coefs(coef)
 
 
+def _to_unit(x, mid, half):
+    """(x - mid) / half, the affine map onto [-1, 1].
+
+    Past half = 1/tiny of x's dtype (2^1022 in float64, a domain wider than
+    about 9e307), XLA folds the division into a multiplication by the
+    reciprocal, which is subnormal, and the CPU flushes it to zero: every
+    point of a vectorized jit call evaluated at t = 0 (found fixing the
+    review of 2026-10-26). There both sides are scaled by tiny, an exact
+    power of two, and a barrier keeps XLA from folding the scaled
+    numerator back into one subnormal constant; half * tiny is O(1)."""
+    tiny = float(jnp.finfo(x.dtype).tiny)
+    if half * tiny < 1.0:
+        return (x - mid) / half
+    return jax.lax.optimization_barrier((x - mid) * tiny) / (half * tiny)
+
+
 def _chebval_impl(x, coef, domain):
     a, b = domain
     # promote before mapping: a float32 x against float64 coefficients must
@@ -148,8 +164,7 @@ def _chebval_impl(x, coef, domain):
     # 2026-08-02, which measured nan at both ends)
     mid = 0.5 * a + 0.5 * b
     half = 0.5 * b - 0.5 * a
-    t = (x - mid) / half
-    return _clenshaw(t, coef)
+    return _clenshaw(_to_unit(x, mid, half), coef)
 
 
 # The jvp rule calls the plain impl so the tangent computation is made of

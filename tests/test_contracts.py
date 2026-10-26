@@ -66,6 +66,15 @@ def test_extreme_finite_domains_evaluate():
         ref = 1.0 + 2.0 * t + 0.5 * (2.0 * t * t - 1.0)
         assert abs(float(s(x)) - ref) <= 1e-14, (x, float(s(x)), ref)
     assert np.all(np.isfinite(np.asarray(s.deriv().coef)))
+    # Vectorized under jit too. XLA folded the division by the half-width
+    # into a multiplication by its reciprocal, 1e-308, which the CPU
+    # flushes to zero, so every point evaluated at t = 0; the scalar calls
+    # above never saw it.
+    xs = jnp.asarray([-1e308, -3e307, 0.0, 5e307, 1e308])
+    t = np.asarray(xs) / 1e308
+    ref = 1.0 + 2.0 * t + 0.5 * (2.0 * t * t - 1.0)
+    for f in (s, jax.jit(s), jax.jit(jax.vmap(s))):
+        np.testing.assert_allclose(np.asarray(f(xs)), ref, rtol=0, atol=1e-15)
 
 
 def test_front_door_validation():

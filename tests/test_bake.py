@@ -482,6 +482,26 @@ def test_bake_extreme_domain_uses_the_runtime_map(tmp_path):
                                rtol=2.3e-16, atol=1e-16)
 
 
+def test_bake_widest_domains_under_jit(tmp_path):
+    # past half-width 2^1022 the artifact needs the runtime's scaled map, or
+    # XLA flushes the reciprocal of the half-width to zero under jit
+    inst = _StaticTag("wide", ChebSeries([0.0, 1.0], (-1e308, 1e308)))
+    xs = jnp.asarray([-1e308, -3e307, 0.0, 5e307, 1e308])
+    ref = np.asarray(xs) / 1e308
+    np.testing.assert_allclose(np.asarray(jax.jit(inst)(xs)), ref, rtol=1e-15)
+    mod = tmp_path / "wide.py"
+    name = bake.jax_module(inst, mod, name="wide")
+    fn = getattr(_load(mod, "wide_mod"), name)
+    for f in (fn, jax.jit(fn)):
+        np.testing.assert_allclose(np.asarray(f(xs)), ref, rtol=1e-15)
+    if shutil.which("g++") is None:
+        pytest.skip("g++ not available")
+    hdr = tmp_path / "wide.h"
+    name = bake.xsf_header(inst, hdr, name="wide")
+    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, np.asarray(xs)),
+                               ref, rtol=1e-15)
+
+
 @pytest.mark.parametrize("taken", ["jnp", "jax", "_clenshaw",
                                    "TypeError", "C_LTIL"])
 def test_bake_rejects_names_the_artifact_uses(tmp_path, taken):

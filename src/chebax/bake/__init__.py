@@ -210,7 +210,8 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
     name = _ident(_family(inst) if name is None else name, "name")
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
-    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False)
+    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False,
+                                                        dtype=dtype)
     _check_free(name, _PY_RESERVED, coefs)
     statics = _statics_text(inst)
     dtype_note = (

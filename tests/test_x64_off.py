@@ -116,6 +116,17 @@ def test_gradients_are_finite_under_x64_off():
          "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n")
 
 
+def test_widest_float32_domain_under_jit():
+    # float32's version of the reciprocal flush: half-width 1e38 is past
+    # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a
+    # jitted vectorized call evaluated at t = 0
+    _run("s = chebax.ChebSeries(np.array([0.0, 1.0], np.float32), (-1e38, 1e38))\n"
+         "xs = jnp.asarray([-1e38, -3e37, 0.0, 5e37, 1e38], jnp.float32)\n"
+         "got = np.asarray(jax.jit(s)(xs))\n"
+         "ref = np.array([-1.0, -0.3, 0.0, 0.5, 1.0])\n"
+         "assert np.allclose(got, ref, rtol=1e-6, atol=1e-7), got\n")
+
+
 def test_tables_materialize_in_float32():
     # a cache built under x64 off must hold float32, and must NOT be served
     # to a later x64-on process (the dtype tag); the erf family's no-argument

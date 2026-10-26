@@ -27,8 +27,25 @@ jobs:
         run: |
           python -m pip install -e ".[${{ matrix.extras }}]"
           python -m pip install "${{ matrix.jax-pin }}"
-      - name: Run full suite (includes byte-for-byte table regeneration)
-        run: python -m pytest -q
+      - name: Run suite (the slow tests run once, in the slow job)
+        # two workers, not four: four peaked at 15.5 GB together, and the
+        # runner has 16
+        run: python -m pytest -q -m "not slow" -n 2
+
+  slow:
+    # the slow-marked tests: byte-for-byte table regeneration and an mpmath
+    # fit sweep. The generators use mpmath and numpy, not jax, so one job
+    # covers every jax version, and it runs beside the matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install -e ".[gen,test]"
+      - name: Slow tests
+        run: python -m pytest -q -m slow -n auto
 
   x64-off:
     # the default jax configuration (float32). The main suite forces x64 on

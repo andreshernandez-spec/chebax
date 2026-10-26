@@ -148,6 +148,12 @@ exhaust**, each as a separate hand-carried PR.
 
 ## 3. Architecture
 
+Current module boundaries and numerical contracts are defined in
+[`docs/architecture.md`](docs/architecture.md); naming and documentation
+conventions are in [`docs/coding-style.md`](docs/coding-style.md). The
+[October review](docs/review-2026-10-26.md) tracks conformance gaps. The
+overview and API sketch below record the original design.
+
 ```
 src/chebax/_src/algorithms.py   numpy references: nodes, DCT fit, Clenshaw, chebder/chebint
 src/chebax/_src/series.py       jax runtime: ChebSeries/PiecewiseCheb + custom_jvp

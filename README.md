@@ -112,9 +112,15 @@ bit-for-bit from checked-in generators.
 
 ## Docs
 
-`docs/adding-a-recipe.md` is the workflow for new functions;
-`docs/increments.md` the design log of every recipe (what was measured, which
-traps were found); `PROJECT.md` the plan and evidence; `CLAUDE.md` how to work
-in the repo. Grown out of a private research project on GPU Bessel functions;
+[Architecture](docs/architecture.md) defines module boundaries, numerical
+contracts, and validation; [Coding style](docs/coding-style.md) defines naming,
+formatting, and documentation conventions. [Adding a recipe](docs/adding-a-recipe.md)
+is the workflow for new functions. The [October review](docs/review-2026-10-26.md)
+tracks current correctness and conformance gaps.
+
+`docs/increments.md` is the design log of every recipe (what was measured,
+which traps were found); `PROJECT.md` holds the plan and evidence; `CLAUDE.md`
+has agent operating instructions and local test commands.
+Grown out of a private research project on GPU Bessel functions;
 its two load-bearing measurements are reproduced here in `experiments/`.
 BSD-3-Clause.

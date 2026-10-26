@@ -6,6 +6,10 @@ that produced all of them; follow it in order. `besselk` is the cleanest
 worked example of every step (read `_src/recipes/besselk_gen.py` and
 `besselk.py` side by side with this document).
 
+Follow [Architecture](architecture.md) for dependency, dtype, input, and
+derivative contracts, and [Coding style](coding-style.md) for names and
+documentation. This guide covers the recipe-specific workflow.
+
 ## 0. Prototype first — never guess degrees
 
 Before writing any generator, measure the Chebyshev coefficient tails of
@@ -53,29 +57,32 @@ Use `_gen_common` (`nodes`, `dct`, `param_fit`, `to_f64`,
 
 ## 2. Runtime (`_src/recipes/<name>.py`)
 
-- Runtime imports are **jax + numpy only** (the import-hygiene test
-  enforces it, and building `ChebSeries` at module level is a bug — it
+- Third-party runtime imports are **jax + numpy only** (the optional-extras
+  tests check importability without extras; there is no general import-layer
+  check). Building `ChebSeries` at module level is a bug: it
   initializes the jax backend as an import side effect; build lazily or
-  inside factories).
+  inside factories.
 - Reconstruction: `_common.param_coefs` / `param_coefs_der` (eager, in the
   cached factory) and `_common.traced_coefs` (inside a `*_fn` variant).
 - Instances subclass `pytree.Recipe`, decorated with plain
-  `@jax.tree_util.register_pytree_node_class`: declare `_static_fields` (scalars,
-  aux) and `_series_fields` (ChebSeries, children), constructor takes
+  `@jax.tree_util.register_pytree_node_class`: declare `_static_fields`
+  (immutable static metadata) and `_series_fields` (ChebSeries, children), constructor takes
   statics then series, `_post_init` derives cached constants.
 - Piecewise domains use hard `where` selects. Two gradient traps, both
   found the hard way: **the active branch must see raw x through its own
   seam** (min/max ties split tangents — clamp only the masked lanes), and
   **masked lanes must get finite dummy inputs** (an `exp` overflow or
   `log(0)` in an inactive branch poisons gradients through 0·inf).
-  `jnp.abs` has derivative 0 at 0 by tie convention — build |x| from a
-  select when the origin matters.
+  Do not rely on tie conventions to provide an endpoint derivative; encode
+  the intended slope explicitly when the origin matters.
 - Quantiles/inverses: `_common.newton_bisect` (fixed count, safeguarded,
   inclusive bounds — see its docstring for why) in a variable that resolves
   the tails (logit/log space), with a `custom_jvp` from the implicit
   function theorem — never differentiate through the iteration.
-- Domain checks via `_common.check_range` in factories; traced variants
-  cannot check (say so in the docstring).
+- Use `_common.check_range` in factories, with shared bounds from
+  `chebax.domains`. Traced variants use shape checks and JAX value masks
+  where needed; document their invalid-input policy. Normalize parameters
+  before a custom JVP, for positional and keyword calls alike.
 
 ## 3. API conventions
 
@@ -89,17 +96,21 @@ taxonomy:
 - plain `name(params, x)` — when there is no factory sibling (parameter-
   free like `dawsn`, or solver-based like the quantiles, or traced-only
   like `vonmises_cdf`).
-- `name_dnu(params)` — analytic parameter-derivative instance, only where
-  `grad`-of-`_fn` is unavailable (bessely: the recurrence depth ⌊ν⌋ is
-  structural, so ν cannot trace).
+- `name_dnu(params)` — analytic order-derivative instance. This can coexist
+  with a traced variant, as for besseli and besselk. For bessely, the
+  recurrence depth ⌊ν⌋ is structural, so ν cannot trace.
 
 ## 3b. Baking is automatic
 
-Any `Recipe` with a closed-form `__call__` bakes with **no per-family
-work**: `bake.jax_module` / `bake.xsf_header` derive the artifact from the
-instance's own traced jaxpr (see `bake/_jaxpr_emit.py`), so artifact and
-runtime cannot diverge. Add your family to `BAKEABLE` in
-`tests/test_bake.py`. Solver-based callables are not bakeable yet.
+`bake.jax_module` / `bake.xsf_header` derive artifacts from the instance's
+own traced jaxpr (see `bake/_jaxpr_emit.py`), without a separate per-family
+formula. The emitter must support the primitives and custom rules used by
+the recipe; unsupported ones raise. Artifacts declare a dtype and can
+drop disclosed endpoint slopes, so tracing alone does not prove runtime
+and artifact equivalence. See [the baking contract](architecture.md#baking-boundary)
+and the `bake` module docstring for the supported scope. Add your family to
+`BAKEABLE` in `tests/test_bake.py` and round-trip its relevant options.
+Solver-based callables are not bakeable yet.
 
 ## 4. Tests (`tests/test_<name>.py`)
 
@@ -116,6 +127,8 @@ bit-for-bit regeneration test (mandatory for every new table).
   ε·p·|ln x| term, Clenshaw's ε·Σ|c|, trig reduction in f32...), then set
   the bar at ~4× the measured worst and record both numbers in the test
   docstring.
+- Check unexpected nonfinite values before reducing errors: Python's
+  `max(worst, nan)` can leave `worst` unchanged and hide a broken result.
 - **The error metric is chosen per family** and stated in the test
   docstring: sup-normalized for oscillatory J; modulus-relative
   (err/√(J²+Y²)) for Y; pointwise-relative for positive functions (K, I,

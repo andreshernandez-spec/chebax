@@ -3,6 +3,10 @@
 Read `PROJECT.md` first: goal, scope boundary, evidence, milestones, risks.
 This file is how to work here.
 
+Follow `docs/architecture.md` for dependency and numerical contracts, and
+`docs/coding-style.md` for naming, formatting, and documentation. Current
+conformance gaps are recorded in `docs/review-2026-10-26.md`.
+
 > **Read `../CLAUDE.md` before anything else.** It governs: the OSS git identity (§1),
 > the `gh` restriction (§1.2), never push / never open a PR / never publish (§2), the
 > `open-source` conda env (§3), and writing style for anything upstream-facing (§4).
@@ -131,7 +135,8 @@ compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
 PROJECT.md      the plan and evidence
 CLAUDE.md       this file
 README.md       orientation, quickstart, capability table
-docs/           adding-a-recipe.md (the recipe workflow), increments.md (design log)
+docs/           architecture.md (contracts), coding-style.md (conventions),
+                adding-a-recipe.md (workflow), increments.md (design log), reviews
 experiments/    reproducible measurements, incl. 03_degree_measurement.py which
                 reproduces every degree claim in the generator docstrings
 notebooks/      executed example notebooks, themed (see notebooks/README.md);

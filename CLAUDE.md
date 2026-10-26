@@ -86,12 +86,16 @@ python experiments/02_coeff_smoothness_in_nu.py   # ~10 s
 
 ```bash
 python -m pip install -e . --no-build-isolation   # once, into the open-source env
-python -m pytest -q -m "not slow"                 # quick loop, ~3.5 min (skips regen;
-                                                  #  mpmath references are the rest)
-python -m pytest -q                               # full suite ~10 min; run before commits
-                                                  # (bake header test skips without g++;
-                                                  #  conftest enables x64; CI runs the
-                                                  #  full suite on every push)
+JAX_PLATFORMS=cpu python -m pytest -q -m "not slow" -n 4
+                                                  # quick loop, ~21 min (57 min in one
+                                                  #  process, 2h17m on the laptop GPU;
+                                                  #  measured 2026-10-26); four workers
+                                                  #  peak at ~15.5 GB together
+python -m pytest -q -m slow -n 4                  # table regeneration, ~4.5 min; needs the
+                                                  #  [gen] mpmath pin. Run both before
+                                                  #  commits; CI runs them as separate
+                                                  #  jobs on every push (bake header test
+                                                  #  skips without g++; conftest enables x64)
 python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-tables
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
@@ -112,8 +116,10 @@ python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises tab
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 ```
 
-Tests run on whatever backend jax picks (the laptop GPU when present); the
-accuracy contract is device-independent, so that is fine.
+Tests run on whatever backend jax picks; the accuracy contract is
+device-independent. Run the suite on the CPU anyway: it is bound by XLA
+compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
+(measured 2026-10-26).
 
 ## Layout
 

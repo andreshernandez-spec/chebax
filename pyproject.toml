@@ -20,7 +20,7 @@ Repository = "https://github.com/andreshernandez-spec/chebax"
 # tables record the mpmath version that built them; regeneration is verified
 # byte for byte, so the build dependency is pinned to the recorded minor
 gen = ["mpmath>=1.4.1,<1.5"]
-test = ["pytest", "scipy"]
+test = ["pytest", "pytest-xdist", "scipy"]
 examples = ["matplotlib", "numpyro"]
 numpyro = ["numpyro>=0.15"]
 pytensor = ["pytensor>=3.2"]

@@ -1,7 +1,25 @@
+import os
+import zlib
+
 import jax
 import pytest
 
 jax.config.update("jax_enable_x64", True)
+
+
+def pytest_collection_modifyitems(config, items):
+    # CI splits the suite across runners with CHEBAX_SHARD=i/n. A hash of
+    # the test id picks the shard, so every test runs in exactly one.
+    shard = os.environ.get("CHEBAX_SHARD")
+    if not shard:
+        return
+    i, n = (int(s) for s in shard.split("/"))
+    keep, drop = [], []
+    for item in items:
+        mine = zlib.crc32(item.nodeid.encode()) % n == i
+        (keep if mine else drop).append(item)
+    config.hook.pytest_deselected(items=drop)
+    items[:] = keep
 
 
 @pytest.fixture(autouse=True)

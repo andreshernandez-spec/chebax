@@ -4,8 +4,8 @@ Read `PROJECT.md` first: goal, scope boundary, evidence, milestones, risks.
 This file is how to work here.
 
 Follow `docs/architecture.md` for dependency and numerical contracts, and
-`docs/coding-style.md` for naming, formatting, and documentation. Current
-conformance gaps are recorded in `docs/review-2026-10-26.md`.
+`docs/coding-style.md` for naming, formatting, and documentation. Open items
+from the latest review are in `docs/review-2026-10-26.md`.
 
 > **Read `../CLAUDE.md` before anything else.** It governs: the OSS git identity (§1),
 > the `gh` restriction (§1.2), never push / never open a PR / never publish (§2), the

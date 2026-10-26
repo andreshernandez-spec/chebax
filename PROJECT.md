@@ -151,7 +151,7 @@ exhaust**, each as a separate hand-carried PR.
 Current module boundaries and numerical contracts are defined in
 [`docs/architecture.md`](docs/architecture.md); naming and documentation
 conventions are in [`docs/coding-style.md`](docs/coding-style.md). The
-[October review](docs/review-2026-10-26.md) tracks conformance gaps. The
+[October review](docs/review-2026-10-26.md) records what is still open. The
 overview and API sketch below record the original design.
 
 ```

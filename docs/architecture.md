@@ -21,7 +21,7 @@ This document owns the dependency and numerical contracts. See
 | `_src/recipes/*_table.py` | Coefficients and their provenance | NumPy; no runtime reconstruction |
 | `_src/recipes/<family>.py` | Family transformations, evaluation, derivatives, factories | Core, shared helpers, tables, and explicitly needed related families |
 | `_src/pergroup.py` | Static grouping around a uniform-parameter function | JAX and NumPy; no family dispatch |
-| `domains.py` | Public parameter intervals | Table metadata; see the current exception below |
+| `domains.py` | Public parameter intervals | Table metadata only |
 | `bake/` | Emit supported recipe computations as JAX or C++ | Recipe/series protocol and traced JAX operations |
 | `numpyro.py`, `pytensor.py` | Optional distribution and compiler adapters | Public numerical functions and domains; their respective optional dependency |
 | `__init__.py` | Curated public exports and package version | Library entry points; no optional integration |
@@ -32,11 +32,10 @@ runtime requirements; standard-library imports are allowed. Build dependencies
 belong behind `[gen]`, and each adapter must name its extra when unavailable.
 Importing chebax must not construct JAX arrays or initialize a backend.
 
-`domains.py` currently imports `gammainc_large.py` for `AHI`, so its metadata
-layer depends on a runtime implementation. That is an existing dependency gap.
-The intended direction is from runtime and adapters to domain metadata, with
-constants sourced from tables. Avoid extending the current cycle through more
-function-local imports.
+`domains.py` reads its bounds from table modules only, so runtime modules and
+adapters import it at module level without a cycle. A bound that is not a
+table axis is derived from the table's own metadata, as gammainc's infinite
+upper end is from the Temme-zone axis v = 10/a reaching 0.
 
 Related families may share mathematical building blocks: Matérn uses Bessel K,
 spherical Bessel functions wrap cylindrical ones, and quantiles use their
@@ -87,13 +86,15 @@ value. Normalize them through `canon_param`; reject larger arrays with the
 parameter name and guidance to `pergroup`. Evaluation points may be arrays.
 Some direct functions, notably Tweedie, additionally broadcast parameters such
 as mean and dispersion; their own docstrings state which arguments broadcast.
-NumPyro constructors currently impose a stricter zero-dimensional shape rule;
-that difference is tracked in the review.
+The NumPyro constructors follow the same rule for shape parameters.
 
 Public entry points must apply the same normalization to positional and
-keyword arguments before custom JVP rules receive them. Numeric integer inputs
-must behave like the corresponding floating inputs. Structural integers such
-as degrees and group indices are validated separately.
+keyword arguments before custom JVP rules receive them. A rule that lives on a
+public name cannot do this, because the tangent exists before its body runs;
+`_common.float_params` wraps a private rule and binds keywords to its
+signature first. Numeric integer inputs must behave like the corresponding
+floating inputs, evaluation points included. Structural integers such as
+degrees and group indices are validated separately.
 
 Recipe construction and canonicalized direct functions use the active JAX
 float dtype: float32 by default, float64 with x64 enabled. Dtype-sensitive
@@ -165,9 +166,10 @@ The endpoint and argument contract matrices live in `test_contracts.py`,
 `test_int_params.py`, and `test_x64_off.py`; extend them for shared behavior.
 Family tests own accuracy sweeps and formula-specific derivative identities.
 
-There is currently no general import-layer or style check. Review must check
-dependency direction, shared-helper reuse, naming, and documentation manually.
-The [October review](review-2026-10-26.md) records confirmed exceptions and
-follow-up priorities. A future enforcement change should add focused checks
-for these contracts, without making generated tables pass a handwritten-code
-formatter or treating numerical tests as a substitute for architecture review.
+`test_layers.py` checks the dependency directions in the table above
+statically, function-local imports included. There is no formatter, linter or
+style check; review checks shared-helper reuse, naming, and documentation
+manually. The [October review](review-2026-10-26.md) records what was found
+and how each item was resolved. A future formatter or linter policy must
+exclude generated tables, and numerical tests are no substitute for
+architecture review.

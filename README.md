@@ -116,7 +116,7 @@ bit-for-bit from checked-in generators.
 contracts, and validation; [Coding style](docs/coding-style.md) defines naming,
 formatting, and documentation conventions. [Adding a recipe](docs/adding-a-recipe.md)
 is the workflow for new functions. The [October review](docs/review-2026-10-26.md)
-tracks current correctness and conformance gaps.
+records the latest review, how each finding was resolved, and what is open.
 
 `docs/increments.md` is the design log of every recipe (what was measured,
 which traps were found); `PROJECT.md` holds the plan and evidence; `CLAUDE.md`

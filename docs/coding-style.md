@@ -2,8 +2,8 @@
 
 These conventions apply to handwritten library code, generators, tests, and
 examples. They define the review standard for new work and for code being
-changed. Existing gaps are tracked in [the October review](review-2026-10-26.md);
-adding this guide does not close them. The dependency and numerical contracts
+changed. [The October review](review-2026-10-26.md) records the gaps found
+against them and what is still open. The dependency and numerical contracts
 are in [Architecture](architecture.md).
 
 ## Formatting and imports

@@ -142,7 +142,7 @@ _NEAR = 0.25
 _N_NEAR = 26
 
 
-def _half_deviance(a, mu, y):
+def _half_deviance_impl(a, mu, y):
     """d(y, mu)/2 for power p = 2 - a, a in (0, 1), y > 0, mu > 0.
 
     Near the mean, in delta = (y - mu)/mu, whose subtraction is exact there:
@@ -170,6 +170,32 @@ def _half_deviance(a, mu, y):
     far = ((jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0)
            + jnp.power(mu, a) / a)
     return jnp.where(near, series, far)
+
+
+@jax.custom_jvp
+def _half_deviance(a, mu, y):
+    return _half_deviance_impl(a, mu, y)
+
+
+@_half_deviance.defjvp
+def _half_deviance_jvp(primals, tangents):
+    """The mu and y partials in closed form, -mu^(a-1) delta and
+    (y^(a-1) - mu^(a-1))/(a-1), the latter through expm1 near the mean.
+    AD of the forms above squares mu, in mu^(a-2) and in delta's own
+    derivative, and that overflowed at mu = 1e-220: the mean gradient at
+    y = mu, exactly 0, came out 0 * inf (review follow-up, 2026-10-26).
+    The a partial is AD of the value with mu and y held."""
+    a, mu, y = primals
+    da, dmu, dy = tangents
+    h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
+    near = jnp.abs(y - mu) <= _NEAR * mu
+    delta = (y - mu) / mu
+    m1 = jnp.power(mu, a - 1.0)
+    h_mu = -m1 * delta
+    lr = jnp.log1p(jnp.where(near, delta, 0.0))
+    h_y = jnp.where(near, m1 * jnp.expm1((a - 1.0) * lr),
+                    jnp.power(y, a - 1.0) - m1) / (a - 1.0)
+    return h, h_a + h_mu * dmu + h_y * dy
 
 
 @jax.custom_jvp
@@ -224,13 +250,21 @@ def tweedie_logpdf(p, mu, phi, y):
 
     m0, f0 = own(~pos, mu_s, phi_s)
     f_zero = -jnp.power(m0, a) / (f0 * a)
-    # inner: the density as defined, ln W on u = ln z
+    # inner: the density as defined, ln W on u = ln z. mu enters only
+    # through -lambda - y/theta = -d/(2 phi) + y^a / (a (a-1) phi), so the
+    # mean gradient is the deviance's exact (y - mu) / (phi mu^p). As two
+    # separate terms their mu-derivatives cancelled only to rounding at
+    # y = mu, ~1e286 at mu = 1e-300, and y/theta underflowed at phi = 1e200
+    # and took its share of the gradient with it. Likewise
+    # z = y^rho / (a (p-1)^rho phi^(1+rho)) holds no mu: built from lambda
+    # and theta, the residue of its mu terms had derivative eps/mu
+    # (review follow-up, 2026-10-26).
     mi, fi, yi = own(inner, mu_s, phi_s, y_s)
-    lam = jnp.power(mi, a) / (fi * a)
-    ltheta = jnp.log(fi * (pp - 1.0)) + (pp - 1.0) * jnp.log(mi)
-    u = jnp.log(lam) + r * (jnp.log(yi) - ltheta)
-    f_in = (-lam - jnp.exp(jnp.log(yi) - ltheta) - jnp.log(yi)
-            + _log_series(r, u))
+    u = (r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi)
+         - jnp.log(a))
+    f_in = (-_over(_half_deviance(a, mi, yi), fi)
+            + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
+            - jnp.log(yi) + _log_series(r, u))
     # outer: saddlepoint form plus the tabulated correction T(Z1/Z)/Z, with
     # 1/Z built from phi directly rather than as a reciprocal of Z ~ 1/phi
     mt, ft, yt = own(outer, mu_s, phi_s, y_s)

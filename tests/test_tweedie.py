@@ -13,8 +13,8 @@ Measured worst, float64 (bar about 4x in each test):
   term, 3.2e-16. Both branches at the split agree to 4.4e-16 in value and
   3.5e-15 in d/du. The table's s -> 0 end matches
   c1(rho) = -(2 rho + 1)(rho + 2)/(24 rho) to 8.9e-16.
-- density: values 2.4e-13; d/dmu 3.4e-15, d/dy 2.4e-13, d/dphi 1.5e-12,
-  d/dp 3.7e-12. All worst near p = 1.05 in the direct sum, where
+- density: values 3.3e-13; d/dmu 3.1e-16, d/dy 1.2e-13, d/dphi 7.5e-13,
+  d/dp 3.6e-12. All worst near p = 1.05 in the direct sum, where
   lgamma(rho n) reaches ~4000 near the split and its rounding,
   eps |lgamma|, survives the cancellation down to an O(1) log-density;
   d/dp also carries drho/dp = -1/(p-1)^2 = -400 there.
@@ -257,7 +257,10 @@ def test_tweedie_broadcast_and_parameter_shape():
     y = jnp.asarray([0.0, 0.3, 2.0, 9.0])
     got = np.asarray(chebax.tweedie_logpdf(1.6, mu, 0.8, y))
     ref = [float(chebax.tweedie_logpdf(1.6, float(m), 0.8, float(v))) for m, v in zip(mu, y)]
-    np.testing.assert_allclose(got, ref, rtol=0, atol=1e-15)
+    # a batch rounds its transcendentals differently from scalars (XLA
+    # vectorizes them), and the O(Z) terms that cancel here are ~7: a few
+    # of their ulps, measured 1.8e-15
+    np.testing.assert_allclose(got, ref, rtol=0, atol=5e-15)
     np.testing.assert_allclose(np.asarray(chebax.tweedie_logpdf(jnp.asarray([1.6]), mu, 0.8, y)),
                                got, rtol=0, atol=0)
     with pytest.raises(ValueError, match="pergroup"):
@@ -383,6 +386,39 @@ def test_extreme_deviance_scales():
     assert gy == pytest.approx(-0.75, rel=1e-15)
     v = float(chebax.tweedie_logpdf(1.5, 1.0, 1e-200, 1.0))
     assert v == pytest.approx(-0.5 * np.log(2 * np.pi * 1e-200), rel=1e-15)
+
+
+def test_mean_gradient_at_extreme_scales():
+    # Tweedie is an exponential dispersion family, so d ln f / dmu is
+    # exactly (y - mu) / (phi mu^p), zero at y = mu. AD of the deviance
+    # squared mu, which overflows at mu = 1e-220: (1.5, 1e-220, 1e-150,
+    # 1e-220) had a nan mean gradient under a finite density. The series
+    # branch cancelled two mu^(1-p)/phi terms to rounding instead (1e286 at
+    # mu = 1e-300 where the answer is 0), and lost y/theta's share to
+    # underflow at phi = 1e200 (review follow-up, 2026-10-26). Measured
+    # worst 3.2e-16 over 737 such points, bar 1.5e-15.
+    cases = [(p, mu, phi, mu * ry)
+             for p in (1.05, 1.5, 1.95)
+             for mu, phi in ((1e-300, 1e-150), (1e-300, 1e200), (1e-220, 1e-150),
+                             (1e-220, 1e-200), (1e100, 1e-10), (1e250, 1e10))
+             for ry in (1.0, 1.001, 0.7, 20.0)]
+    grad = jax.jit(jax.grad(chebax.tweedie_logpdf, argnums=(0, 1, 2, 3)))
+    n = 0
+    for c in cases:
+        if not np.isfinite(float(chebax.tweedie_logpdf(*c))):
+            continue
+        n += 1
+        g = list(map(float, grad(*c)))
+        assert not np.isnan(g).any(), (c, g)
+        p, mu, phi, y = map(mp.mpf, c)
+        ref = (y - mu) / (phi * mu ** p)
+        if ref == 0:
+            assert g[1] == 0.0, (c, g[1])
+        elif abs(ref) > np.finfo(np.float64).max:     # overflows, signed
+            assert g[1] == (np.inf if ref > 0 else -np.inf), (c, g[1])
+        else:
+            assert abs(g[1] - ref) <= 1.5e-15 * abs(ref), (c, g[1], float(ref))
+    assert n >= 60, n
 
 
 @pytest.mark.slow

@@ -23,6 +23,7 @@ from chebax._src.recipes.quantiles import (betaincinv, chi2inv,
                                            gammainccinv, gammaincinv,
                                            log_stdtr, log_stdtr_sf, stdtr,
                                            stdtrit)
+from chebax._src.recipes.tweedie import log_wright_bessel0, tweedie_logpdf
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf
 from chebax._src.pergroup import pergroup
 from chebax._src.series import ChebSeries, PiecewiseCheb
@@ -45,6 +46,7 @@ __all__ = ["ChebSeries", "PiecewiseCheb", "besseli", "besseli_dnu", "besseli_fn"
            "pergroup",
            "spherical_jn",
            "spherical_yn", "stdtr", "stdtrit", "vonmises_cdf", "vonmises_icdf",
+           "log_wright_bessel0", "tweedie_logpdf",
            "__version__"]
 
 # submodule re-export so `import chebax; chebax.bake` works as documented

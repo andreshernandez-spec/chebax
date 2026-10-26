@@ -29,10 +29,12 @@ from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import hyp1f1_table as _ht
 from chebax._src.recipes import stdtr_table as _st
+from chebax._src.recipes import tweedie_table as _tw
 from chebax._src.recipes import vonmises_table as _vt
 
 __all__ = ["Domain", "BESSELI", "BESSELJ", "BESSELK", "BESSELY", "BETAINC",
-           "GAMMAINC", "HYP1F1", "STUDENT_T_DF", "VONMISES_KAPPA"]
+           "GAMMAINC", "HYP1F1", "STUDENT_T_DF", "TWEEDIE_P", "VONMISES_KAPPA",
+           "WRIGHT_RHO"]
 
 
 class Domain(namedtuple("Domain", "lo hi what")):
@@ -52,6 +54,8 @@ BETAINC = Domain(_bw.ALO, _bw.AHI, "betainc a and b")
 GAMMAINC = Domain(_gt.ALO, _gl.AHI, "gammainc a")
 HYP1F1 = Domain(_ht.ALO, _ht.AHI, "hyp1f1 a and b")
 STUDENT_T_DF = Domain(2.0 * _st.BLO, 2.0 * _st.BHI, "Student-t df")
+TWEEDIE_P = Domain(_tw.P_LO, _tw.P_HI, "Tweedie power p")
+WRIGHT_RHO = Domain(_tw.RHO_MIN, _tw.RHO_MAX, "log_wright_bessel0 rho")
 VONMISES_KAPPA = Domain(0.0, _vt.KMAX, "von Mises kappa")
 BESSELI = Domain(0.0, _it.VMAX, "besseli order")
 BESSELJ = Domain(0.0, _jt.VMAX, "besselj order")

@@ -72,24 +72,46 @@ def pergroup(fn, group_idx, num_groups=None):
     any_empty = bool(empty.any())
     donor = int(np.flatnonzero(counts)[0])
 
-    # gather: (g, m) element indices, rows padded with the group's first
-    # element (a real in-domain x, so padding never leaves fn's domain).
-    # An empty group borrows the donor's element and, below, the donor's
-    # parameters, so fn only ever sees a live (param, x) pair. Passing an
-    # empty group's own parameters was harmless going forward (nothing
-    # reads those rows) but reverse mode turned a nan or out-of-domain
-    # value there into 0 * nan, poisoning that group's gradient and, via
-    # the padding index, x's.
+    # gather: (g, m) element indices, rows padded with copies of the
+    # group's own elements (real in-domain x, so padding never leaves fn's
+    # domain). An empty group copies the donor's elements and, below,
+    # takes the donor's parameters, so fn only ever sees a live
+    # (param, x) pair. Passing an empty group's own parameters was
+    # harmless going forward (nothing reads those rows) but reverse mode
+    # turned a nan or out-of-domain value there into 0 * nan, poisoning
+    # that group's gradient and, via the padding index, x's.
     gather = np.empty((g, m), dtype=np.int64)
     for gi in range(g):
         c = counts[gi]
-        gather[gi, :c] = order[starts[gi]:starts[gi] + c]
-        gather[gi, c:] = order[starts[gi if c else donor]]
+        src = gi if c else donor
+        own = order[starts[src]:starts[src] + counts[src]]
+        gather[gi, :c] = own[:c]
+        gather[gi, c:] = own[np.arange(m - c) % own.size]
 
     # back[i] = position of element i in the flattened (g, m) result
     pos = np.empty(flat.size, dtype=np.int64)
     pos[order] = np.arange(flat.size) - np.repeat(starts, counts)
     back = flat.astype(np.int64) * m + pos
+
+    # A copy's output is discarded, so in reverse mode it gets a zero
+    # cotangent, and 0 * inf is nan wherever fn's derivative is infinite:
+    # betainc_fn(.5, 2, x) at x = 0 came back with a nan x-gradient
+    # instead of +inf (review, 2026-10-26). So every lane holding element
+    # i, the live one and its copies, carries 1/k of i's derivative.
+    # The value is still the live lane's alone.
+    owner = gather.reshape(-1)
+    share = 1.0 / np.bincount(owner, minlength=flat.size)[owner]
+
+    @jax.custom_jvp
+    def merge(yg):
+        return yg[back]
+
+    @merge.defjvp
+    def _merge_jvp(primals, tangents):
+        (yg,), (dyg,) = primals, tangents
+        dy = jnp.zeros(flat.size, dyg.dtype).at[owner].add(
+            dyg * share.astype(dyg.dtype))
+        return yg[back], dy
 
     def wrapped(*args):
         *params, x = args
@@ -108,6 +130,6 @@ def pergroup(fn, group_idx, num_groups=None):
                                  f"expected ({g},) for {g} groups")
             ps.append(jnp.where(empty, p[donor], p) if any_empty else p)
         yg = jax.vmap(fn)(*ps, x.reshape(-1)[gather])
-        return yg.reshape(-1)[back].reshape(shape)
+        return merge(yg.reshape(-1)).reshape(shape)
 
     return wrapped

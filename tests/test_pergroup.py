@@ -183,6 +183,30 @@ def test_empty_group_neighbours_match_mpmath():
     np.testing.assert_allclose(np.asarray(gx), gxref, rtol=2e-14)
 
 
+def test_padding_keeps_infinite_derivatives():
+    # Ragged rows are padded with copies of live elements whose outputs
+    # are discarded. A copy's zero cotangent times the infinite slope of
+    # betainc_fn(.5, b, x) at x = 0 was nan, added onto the element's own
+    # +inf (review, 2026-10-26). The second layout puts that element in a
+    # group an empty group copies from.
+    a, b = jnp.asarray([.5, .5, .5]), jnp.asarray([2., 2., 2.])
+    for idx, x in (([0, 0, 1], [.2, .3, 0.]), ([0, 0, 2], [0., .3, .5])):
+        f = chebax.pergroup(chebax.betainc_fn, np.array(idx), num_groups=3)
+        x = jnp.asarray(x)
+        ref = [float(jax.grad(lambda t: chebax.betainc_fn(.5, 2., t))(xi))
+               for xi in x]
+        rev = jax.grad(lambda x: jnp.sum(f(a, b, x)))(x)
+        fwd = jnp.diag(jax.jacfwd(lambda x: f(a, b, x))(x))
+        for got in (rev, fwd):
+            np.testing.assert_allclose(np.asarray(got), ref, rtol=1e-13)
+        assert np.isposinf(np.asarray(rev)).sum() == 1
+    g = chebax.pergroup(lambda a, x: a * jnp.sqrt(x), np.array([0, 0, 1]))
+    gx = jax.grad(lambda x: jnp.sum(g(jnp.ones(2), x)))(jnp.asarray([.2, .3, 0.]))
+    np.testing.assert_allclose(np.asarray(gx[:2]), 0.5 / np.sqrt([.2, .3]),
+                               rtol=1e-15)
+    assert np.isposinf(float(gx[2]))
+
+
 def test_errors():
     idx = np.array([0, 1, 2])
     f = chebax.pergroup(chebax.betainc_fn, idx)

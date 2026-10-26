@@ -46,6 +46,7 @@ import functools
 import jax
 import jax.numpy as jnp
 
+from chebax import domains as _dom
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_large_table as _glt
@@ -128,7 +129,6 @@ def _series_at(a):
 
 @functools.lru_cache(maxsize=128)
 def _gammainc_cached(a, _tag):
-    from chebax import domains as _dom
     a = check_range("gammainc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeP(a, *_gl.series_eager(a))
@@ -137,7 +137,6 @@ def _gammainc_cached(a, _tag):
 
 @functools.lru_cache(maxsize=128)
 def _gammaincc_cached(a, _tag):
-    from chebax import domains as _dom
     a = check_range("gammaincc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeQ(a, *_gl.series_eager(a))

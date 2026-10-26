@@ -34,6 +34,7 @@ import functools
 import jax
 import jax.numpy as jnp
 
+from chebax import domains
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes._common import param_coefs, traced_coefs
@@ -43,10 +44,9 @@ from chebax._src.series import ChebSeries
 _SQ2PI = 2.5066282746310002  # sqrt(2 pi)
 
 # The tables run to v = 10/a = 0, which is a = inf, so this path has no
-# upper end: the box ceiling is a policy of the dispatch, not an axis of
-# the tables. Kept as a name because gammainc, quantiles and the numpyro
-# wiring all gate on it.
-AHI = float("inf")
+# upper end. Read off the table through chebax.domains, which owns it;
+# gammainc and quantiles gate on the name.
+AHI = domains.GAMMAINC.hi
 
 
 def _w_eta(lam):

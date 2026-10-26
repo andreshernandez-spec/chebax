@@ -42,6 +42,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from chebax import domains as _dom
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import hyp1f1_table as _ht
@@ -133,7 +134,6 @@ def _series_at(a, b):
 
 @functools.lru_cache(maxsize=128)
 def _hyp1f1_cached(a, b, _tag):
-    from chebax import domains as _dom
     a = check_range("hyp1f1", "a", a, *_dom.HYP1F1[:2])
     b = check_range("hyp1f1", "b", b, *_dom.HYP1F1[:2])
     return Hyp1F1(a, b, *_series_at(a, b))

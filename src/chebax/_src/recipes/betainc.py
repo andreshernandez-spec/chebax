@@ -41,6 +41,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from chebax import domains as _dom
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
@@ -192,7 +193,6 @@ class BetaInc(Recipe):
 
 @functools.lru_cache(maxsize=128)
 def _betainc_cached(a, b, _tag):
-    from chebax import domains as _dom
     a = check_range("betainc", "a", a, *_dom.BETAINC[:2])
     b = check_range("betainc", "b", b, *_dom.BETAINC[:2])
     return BetaInc(a, b, *_eager_series_pair(a, b))

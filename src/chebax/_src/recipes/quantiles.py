@@ -99,12 +99,23 @@ def _limits(_tag):
     instead of always reading as "not reached yet". float64's 709 ceiling
     falls out of the same rule; its old -745 floor sat 37 e-folds inside
     the flushed region, and both were 700 decades outside float32's range,
-    which left every float32 solve unbracketed. Iteration counts and the
-    residual bar are measured per dtype (tests/test_quantiles.py)."""
-    f = np.finfo(np.dtype(_tag))
-    lo = math.ceil(math.log(float(f.tiny)))
-    wide = np.dtype(_tag) == np.float64
-    return _Limits(lo, -lo, math.floor(math.log(float(f.max))),
+    which left every float32 solve unbracketed. The ends are ln(tiny) and
+    ln(max) themselves, moved 4 ulps inward so XLA's exp stays normal and
+    finite there: rounding them to whole e-folds (-708, 709) put roots
+    in [tiny, e^-708] out of reach. Iteration counts and the residual bar
+    are measured per dtype (tests/test_quantiles.py)."""
+    dt = np.dtype(_tag).type
+    f = np.finfo(dt)
+
+    def inward(v):
+        v = dt(v)
+        for _ in range(4):
+            v = np.nextafter(v, dt(0))
+        return float(v)
+
+    lo = inward(math.log(float(f.tiny)))
+    wide = dt == np.float64
+    return _Limits(lo, -lo, inward(math.log(float(f.max))),
                    64 if wide else 48, 40 if wide else 24,
                    1e-6 if wide else 1e-3)
 
@@ -221,16 +232,19 @@ def _betaincinv_core(a, b, p, cab, cba):
     u = newton_bisect(f_and_df, u0, jnp.full_like(pc, lim.lo),
                        jnp.full_like(pc, lim.hi), lim.n_beta)
 
-    # Convergence is checked, never assumed. A solve pinned at the bracket
-    # floor means the true quantile underflows the dtype (or the CDF itself
-    # is indistinguishable from 0 there): return the mirrored endpoint.
-    # Any other unconverged element returns nan. The bar stays relative to
-    # the mass being resolved: past the kernel's x = 1/2 split I comes back
-    # as 1 - (the reflected orientation) and is only absolutely accurate, so
+    # Convergence is checked, never assumed. A root at or below the bracket
+    # floor underflows the dtype: return the mirrored endpoint. That is
+    # read off the residual AT the floor, which is the smallest normal x;
+    # a half-unit band above it in u zeroed normal quantiles, as in
+    # betaincinv(1, 1, 4e-308) (review, 2026-10-26). Any other unconverged
+    # element returns nan. The bar stays relative to the mass being
+    # resolved: past the kernel's x = 1/2 split I comes back as
+    # 1 - (the reflected orientation) and is only absolutely accurate, so
     # a target far below that absolute error is genuinely unresolvable and
     # nan is the answer (float32 hits this through stdtrit at large nu).
     f_fin, _ = f_and_df(u)
-    at_floor = u <= lim.lo + 0.5
+    f_lo, _ = f_and_df(jnp.full_like(u, lim.lo))
+    at_floor = f_lo > 0.0
     x_low = jnp.where(at_floor, 0.0, jax.nn.sigmoid(u))
     bad = ~at_floor & (jnp.abs(f_fin) > lim.rtol * ps2)
     x = jnp.where(swap, 1.0 - x_low, x_low)
@@ -269,7 +283,7 @@ def _betaincinv_jvp(primals, tangents):
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
-def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
+def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
     """Solve ln P(a, e^v) = ltp (lower lanes) or ln Q(a, e^v) = ltq
     (upper lanes) in v, against the LOG probability. Shared by
     gammaincinv and gammainccinv: each passes its own input through the
@@ -295,7 +309,9 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
     everywhere), each reconstructed once and closed over, so each step is
     a fixed-degree polynomial; None uses jax's gammainc and gammaincc
     (any a, but a whole-array while_loop per call).
-    Returns (v, relative residual)."""
+    Returns (v, relative residual, root below the floor, root above the
+    ceiling), the last two from the residual's sign at the bracket ends;
+    the ceiling is only checked when asked for (gammainccinv)."""
     lim = _limits(canon_tag())
     lga = jax.scipy.special.gammaln(a)
     if use_recipe == "small":
@@ -363,7 +379,12 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
     # relative error grows like eps/Q where Q is small below the seam).
     x = jnp.exp(v)
     lp, lq = log_pq(x)
-    return v, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp)))
+    f_lo, _ = f_and_df(jnp.full_like(v, lim.lo))
+    above = jnp.zeros(v.shape, bool)
+    if ceiling:
+        above = f_and_df(jnp.full_like(v, lim.v_hi))[0] < 0.0
+    return (v, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp))),
+            f_lo > 0.0, above)
 
 
 def _gammaincinv_solve(a, pc, use_recipe):
@@ -382,7 +403,8 @@ def _gammainccinv_solve(a, yc, use_recipe):
     takes y directly, by symmetry, since ndtri(1 - y) saturates there in
     the same way."""
     return _gammainv_core(a, jnp.log1p(-yc), jnp.log(yc),
-                          -jax.scipy.special.ndtri(yc), yc < 0.5, use_recipe)
+                          -jax.scipy.special.ndtri(yc), yc < 0.5, use_recipe,
+                          ceiling=True)
 
 
 def _dispatch_solve(solve, a, tc):
@@ -423,8 +445,9 @@ def _gammaincinv_cj(a, p):
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
 
-    v, rel = _dispatch_solve(_gammaincinv_solve, a, pc)
-    at_floor = v <= lim.lo + 0.5
+    # the root's place against the floor comes from the residual's sign
+    # there, not a band in v (see _betaincinv_core)
+    v, rel, at_floor, _ = _dispatch_solve(_gammaincinv_solve, a, pc)
     x = jnp.where(at_floor, 0.0, jnp.exp(v))
     x = jnp.where(~at_floor & (rel > lim.rtol), jnp.nan, x)
     x = jnp.where(p <= 0.0, 0.0, jnp.where(p >= 1.0, jnp.inf, x))
@@ -474,9 +497,8 @@ def _gammainccinv_cj(a, y):
     interior = (y > 0.0) & (y < 1.0)
     yc = jnp.where(interior, y, 0.5)
 
-    v, rel = _dispatch_solve(_gammainccinv_solve, a, yc)
-    at_ceil = v >= lim.v_hi - 0.5           # the quantile itself overflows
-    at_floor = v <= lim.lo + 0.5
+    # at_ceil: the quantile itself overflows
+    v, rel, at_floor, at_ceil = _dispatch_solve(_gammainccinv_solve, a, yc)
     x = jnp.where(at_floor, 0.0, jnp.exp(v))
     x = jnp.where(at_ceil, jnp.inf, x)
     x = jnp.where(~(at_ceil | at_floor) & (rel > lim.rtol), jnp.nan, x)

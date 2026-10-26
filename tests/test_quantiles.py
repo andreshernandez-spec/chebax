@@ -357,6 +357,24 @@ def test_stdtr_tables_regenerate_bit_for_bit(tmp_path):
             == pathlib.Path(st.__file__).read_text())
 
 
+def test_normal_quantiles_at_the_floor_are_returned():
+    # betaincinv(1, 1, p) = p and gammaincinv(1, p) = -log1p(-p) = p here.
+    # The bracket stopped at e^-708 and a half-unit band above it in log
+    # space counted as underflow, so every root below about 5.5e-308 came
+    # back 0 while the smallest normal is 2.2e-308 (review, 2026-10-26).
+    # Measured worst 4.1e-14 relative, which is the log-space solve's own
+    # floor (v ~ -708 carries 708 eps); bar 2e-13. Below tiny it is still 0.
+    tiny = float(np.finfo(np.float64).tiny)
+    ps = np.array([1.001 * tiny, 3e-308, 4e-308, 5.4e-308, 6e-308, 1e-307])
+    for got in (chebax.betaincinv(1.0, 1.0, ps), chebax.gammaincinv(1.0, ps)):
+        got = np.asarray(got)
+        assert np.isfinite(got).all() and (got > 0).all(), got
+        np.testing.assert_allclose(got, ps, rtol=2e-13)
+    for p in (0.5 * tiny, 1e-310):
+        assert float(chebax.betaincinv(1.0, 1.0, p)) == 0.0
+        assert float(chebax.gammaincinv(1.0, p)) == 0.0
+
+
 def test_deep_tail_verified_and_dead_zone_fixed():
     # The disclosure item closed: tail depth measured far beyond the old
     # "p = 1e-20 unverified" caveat. Metric: map the returned quantile

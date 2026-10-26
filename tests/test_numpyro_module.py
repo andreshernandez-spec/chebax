@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -522,7 +523,9 @@ def test_size_one_shapes_and_nan_values():
     # shape still counts toward batch_shape, and every output must carry
     # it: cdf came back () under batch_shape (1,) at first. And nan is no
     # point of the support: every class gave cdf(nan) = 1 (review and its
-    # follow-up, 2026-10-26).
+    # follow-up, 2026-10-26). log_prob(nan) is -inf with numpyro's
+    # validation on (the 0.22 default) or off.
+    import numpyro
     for kind, p, lo, hi, v in (("gamma", (3.0, 2.0), 1.0, 6.0, 2.3),
                                ("beta", (2.5, 3.5), 0.2, 0.8, 0.42),
                                ("t", (4.0,), -1.0, 2.5, 0.8)):
@@ -539,8 +542,14 @@ def test_size_one_shapes_and_nan_values():
         g0 = jax.grad(lambda s: _build(kind, (s,) + p[1:], lo,
                                        hi).log_prob(v))(p[0])
         assert float(g) == float(g0), kind
-        assert np.isnan(float(d.cdf(np.nan))), kind
-        assert np.isnan(float(d.log_prob(np.nan))), kind
+        for validate in (False, True):
+            with numpyro.validation_enabled(validate):
+                dv = _build(kind, p, lo, hi)
+                assert np.isnan(float(dv.cdf(np.nan))), (kind, validate)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")   # out-of-support notice
+                    lp = float(dv.log_prob(np.nan))
+                assert lp == -np.inf, (kind, validate, lp)
     t1 = Tweedie(1.0, 1.0, jnp.asarray([1.5]))
     assert t1.batch_shape == (1,) and t1.log_prob(2.0).shape == (1,)
     assert float(t1.log_prob(2.0)[0]) == float(Tweedie(1.0, 1.0, 1.5).log_prob(2.0))

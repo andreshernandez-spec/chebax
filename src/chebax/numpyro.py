@@ -249,9 +249,10 @@ class _Truncated(dist.Distribution):
     def log_prob(self, value):
         value = jnp.asarray(value)
         inside = (value >= self.low) & (value <= self.high)
-        out = jnp.where(inside, self._log_density(value) - self._norm().lnz,
-                        -jnp.inf)
-        return _batched(self, jnp.where(jnp.isnan(value), jnp.nan, out))
+        # nan counts as outside the support, here and in numpyro's own
+        # validation, which replaces log_prob there by -inf
+        return _batched(self, jnp.where(
+            inside, self._log_density(value) - self._norm().lnz, -jnp.inf))
 
 
 class TruncatedGamma(_Truncated):

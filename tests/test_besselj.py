@@ -36,7 +36,10 @@ def refs():
 
 
 def worst(err_fn):
-    return max(err_fn(v) for v in NUS)
+    # python's max drops a nan, so check before reducing
+    errs = [err_fn(v) for v in NUS]
+    assert np.all(np.isfinite(errs)), errs
+    return max(errs)
 
 
 def test_values_f64(refs):

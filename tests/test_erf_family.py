@@ -194,6 +194,7 @@ def test_deriv_integ_coefficients_against_mpmath():
         s = chebax.ChebSeries(c)
         for got, ref, bar in ((s.deriv().coef, _mp_chebder(c), 1.5e-15),
                               (s.integ().coef, _mp_chebint(c), 8e-16)):
+            assert np.all(np.isfinite(np.asarray(got))), n
             scale = max(float(max(abs(v) for v in ref)), 1e-300)
             err = max(abs(float(a) - float(b)) for a, b in zip(np.asarray(got), ref))
             assert err / scale <= bar, (n, err / scale)

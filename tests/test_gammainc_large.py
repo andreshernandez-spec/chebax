@@ -193,6 +193,7 @@ def test_unbounded_shape():
             for got, ref in ((float(chebax.log_gammainc_fn(a, x)), lp_ref),
                              (float(chebax.log_gammaincc_fn(a, x)), lq_ref)):
                 r = float(ref)
+                assert np.isfinite(got), (a, x, got)
                 worst = max(worst, abs(got - r) / max(1.0, abs(r)))
     assert worst <= 2e-13, worst
     # and the quantiles still invert out there: measured worst 4.5e-12
@@ -201,8 +202,9 @@ def test_unbounded_shape():
     for a in (1e4, 1e6):
         for p in (1e-30, 1e-10, 1e-3, 0.5):
             x = float(chebax.gammaincinv(a, p))
-            wq = max(wq, abs(float(mp.exp(_ref_logs(a, x)[0])) / p - 1))
             y = float(chebax.gammainccinv(a, p))
+            assert np.isfinite(x) and np.isfinite(y), (a, p, x, y)
+            wq = max(wq, abs(float(mp.exp(_ref_logs(a, x)[0])) / p - 1))
             wq = max(wq, abs(float(mp.exp(_ref_logs(a, y)[1])) / p - 1))
     assert wq <= 2e-11, wq
 

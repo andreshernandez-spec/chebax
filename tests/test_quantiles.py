@@ -684,6 +684,7 @@ def test_stdtrit_shape_gradient_in_the_deep_tail():
         h = nu * 1e-6
         fd = (float(chebax.stdtrit(nu + h, p))
               - float(chebax.stdtrit(nu - h, p))) / (2 * h)
+        assert np.isfinite(fd), (nu, p, fd)
         worst = max(worst, abs(g / fd - 1))
     assert worst <= 1e-6, worst
     # the probability derivative may still overflow, and legitimately does

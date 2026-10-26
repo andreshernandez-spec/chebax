@@ -299,6 +299,7 @@ def test_scaled_form_survives_large_arguments():
     for v, x in ((2.5, 1e20), (2.5, 5.0), (0.0, 1e6), (3.0, 800.0),
                  (2.5, 1e-3), (1.0, 1e300), (10.0, 1e4)):
         got = float(chebax.besselk_fn(v, x, scaled=True))
+        assert np.isfinite(got), (v, x, got)
         worst = max(worst, abs(got / float(ref_scaled(v, x)) - 1))
     assert worst <= 1e-14, worst
     # and it is exactly e^x K where K itself is representable

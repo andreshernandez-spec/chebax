@@ -107,8 +107,9 @@ def test_log_wright_bessel0_values():
     for rho in RHOS:
         for big_z in zgrid(rho):
             z = float(z_of(rho, big_z))
-            worst = max(worst, _rel(float(chebax.log_wright_bessel0(rho, z)),
-                                    float(log_phi(rho, 0, z))))
+            got = float(chebax.log_wright_bessel0(rho, z))
+            assert np.isfinite(got), (rho, z, got)
+            worst = max(worst, _rel(got, float(log_phi(rho, 0, z))))
     assert worst <= 3e-15, worst
 
 
@@ -120,6 +121,7 @@ def test_log_wright_bessel0_dz():
             z = float(z_of(rho, big_z))
             ref = float(mp.exp(log_phi(rho, rho, z) - log_phi(rho, 0, z)))
             got = float(jax.grad(lambda zz: chebax.log_wright_bessel0(rho, zz))(z))
+            assert np.isfinite(got), (rho, z, got)
             worst = max(worst, abs(got - ref) / abs(ref))
     assert worst <= 4e-14, worst
 
@@ -131,6 +133,7 @@ def test_log_wright_bessel0_drho():
             z = float(z_of(rho, big_z))
             ref = float(mp.diff(lambda r: log_phi(r, 0, z), mp.mpf(rho)))
             got = float(jax.grad(lambda r: chebax.log_wright_bessel0(r, z))(rho))
+            assert np.isfinite(got), (rho, z, got)
             worst = max(worst, _rel(got, ref))
     assert worst <= 3.5e-14, worst
 
@@ -195,7 +198,9 @@ def test_log_wright_bessel0_edges():
 def test_tweedie_values():
     worst = 0.0
     for c in CASES:
-        worst = max(worst, _rel(float(chebax.tweedie_logpdf(*c)), float(ref_logpdf(*c))))
+        got = float(chebax.tweedie_logpdf(*c))
+        assert np.isfinite(got), (c, got)
+        worst = max(worst, _rel(got, float(ref_logpdf(*c))))
     assert worst <= 1e-12, worst
 
 
@@ -208,6 +213,7 @@ def test_tweedie_gradients(arg, bar):
         if arg == 3 and c[3] == 0.0:
             continue
         got = float(jax.grad(chebax.tweedie_logpdf, argnums=arg)(*map(float, c)))
+        assert np.isfinite(got), (c, got)
         args = list(map(mp.mpf, c))
         ref = float(mp.diff(lambda v: ref_logpdf(*(args[:arg] + [v] + args[arg + 1:])), args[arg]))
         worst = max(worst, _rel(got, ref))

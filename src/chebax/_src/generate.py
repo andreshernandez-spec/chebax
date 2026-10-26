@@ -258,7 +258,11 @@ def _sample(f, xk):
 
 
 def _dct_mp(f, a, b, dps):
-    import mpmath as mp
+    try:
+        import mpmath as mp
+    except ImportError as e:
+        raise ImportError(
+            "chebax.fit(dps=...) needs mpmath: pip install chebax[gen]") from e
 
     def sample_unit(t):
         with mp.workdps(dps):

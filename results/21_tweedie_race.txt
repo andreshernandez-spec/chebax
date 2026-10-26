@@ -1,0 +1,4 @@
+N = 1048576, float64, devices: cpu (cpu), gpu (NVIDIA GeForce RTX 3080 Laptop GPU)
+  p=1.2: zeros 0.114 | scipy cpu   4272.9 ms | chebax cpu   47.78 ms ( 89.4x), +grad  276.05 ms, agree 2.0e-06, while 0, compile 0.6 s | chebax gpu   16.85 ms (253.6x), +grad  132.42 ms, agree 2.0e-06, while 0, compile 3.0 s
+  p=1.5: zeros 0.059 | scipy cpu   4724.5 ms | chebax cpu   47.67 ms ( 99.1x), +grad  266.74 ms, agree 2.8e-15, while 0, compile 0.4 s | chebax gpu   17.28 ms (273.5x), +grad  131.74 ms, agree 3.3e-15, while 0, compile 2.7 s
+  p=1.8: zeros 0.003 | scipy cpu   5723.3 ms | chebax cpu   44.09 ms (129.8x), +grad  254.33 ms, agree 6.0e-15, while 0, compile 0.4 s | chebax gpu   17.31 ms (330.6x), +grad  131.16 ms, agree 5.6e-15, while 0, compile 2.5 s

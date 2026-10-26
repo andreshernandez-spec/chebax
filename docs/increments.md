@@ -825,3 +825,52 @@ Also here: the in-box branch takes a clipped parameter, since vmap turns a
 cond with a batched predicate into a select that evaluates both sides,
 where a nan would poison the gradient through the select.
 
+
+## 33. Tweedie: Wright's function at beta = 0 (2026-10-26)
+
+`tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` and
+`chebax.numpyro.Tweedie`. For 1 < p < 2 the Tweedie density is
+exp(-lambda - y/theta) W(rho, z) / y with W = Phi(rho, 0; z), so it needs one
+slice of the three-argument function experiments/17 sized at 3e5
+coefficients: here a 32 x 64 table and a direct sum (experiments/20).
+
+**Split where the sum stops being a sum.** The series' terms peak at
+n0 = Z/(1+rho) with variance Z/(1+rho)^2. Below a variance of ~2 the sum is a
+few discrete terms and differs from its smooth saddle form by a ripple of
+size exp(-2 pi^2 variance), one period per term, which no degree resolves:
+a split at fixed n0 saturated 64 nodes at rho = 19. Small rho has the
+opposite problem (the large-Z expansion is poor at Z ~ 2), hence
+Z1(rho) = 12 + 2 (1+rho)^2, smooth in rho as the table needs. Below it the
+series itself, 64 terms, lgamma(rho n) once per call.
+
+**The saddlepoint approximation is the leading term.** In the tail
+Z = y^(2-p) / (phi (2-p)(p-1)), independent of mu, and the log-density is
+exactly -d(y, mu)/(2 phi) - ln(2 pi phi y^p)/2 + T/Z: the classical
+saddlepoint approximation with d the unit deviance, plus the tabulated
+correction. Written that way the cancelling Z-sized terms never form, so a
+concentrated density (Z ~ 1e4) keeps its digits. The table's s -> 0 limit
+is c1(rho) = -(2 rho + 1)(rho + 2)/(24 rho) in closed form, which tests the
+end no reference reaches (8.9e-16).
+
+**Reverse mode through an unrolled sum.** The direct sum's rho gradient
+took 2.7 s against 20 ms for the value (N = 2^20, CPU): XLA made one
+reduction over every point per term. Both derivatives of a logsumexp are
+averages over its own weights, so a custom_jvp accumulates them in the same
+pass: 124 ms, and d/dp got more accurate (1.1e-11 to 3.7e-12).
+
+**pow, not exp of log.** exp(e ln z) carries eps |ln z| into Z, 5e-14 at
+z = 1e300; XLA's pow is ulp-accurate there (2e-16).
+
+**Check the box on the parameter as given.** float32 rounds p = 1.05 to
+1.04999995, whose rho is 19.000011, past RHO_MAX: nan at the advertised edge
+until the check moved from rho to p.
+
+**scipy is not a reference.** At p = 1.2 scipy's log_wright_bessel is off by
+up to 4.7e-6 in a band around Z ~ 15-30, which covered 14% of a sample drawn
+from the law (experiments/21). mpmath, as everywhere here.
+
+Measured: ln W to 7.7e-16, the density to 2.4e-13 (lgamma(rho n) rounding
+near the split at p = 1.05), gradients to 3.7e-12 (d/dp, where
+drho/dp = -400); float32 7.4e-6. Values 89-130x scipy on one CPU core and
+254-331x on the GPU; NUTS recovers the power (p = 1.41 +- 0.05 at 1.35 on
+1,500 draws).

@@ -45,6 +45,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
 | erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
+| Tweedie | — | `tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` | via `grad` | power p ∈ [1.05, 1.95] (uniform per call), μ, φ > 0 and y ≥ 0 broadcast, the zero mass included; Wright's Φ(ρ, 0; z) with ρ = (2−p)/(p−1) ∈ [1/19, 19]; 89–130x scipy's `log_wright_bessel` on one CPU core, 254–331x on the GPU (`experiments/21`) |
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
@@ -78,6 +79,12 @@ gradients through every parameter including the shapes, so NUTS and SVI work
 with a latent concentration or df. The truncation is normalized in log space,
 so an interval whose two ends land in the same tail still works: `Gamma(3)`
 truncated to [50, 51] has mass ~3e-20 and returns an ordinary density.
+
+`chebax.numpyro.Tweedie(mu, phi, power)` is the compound Poisson-gamma law for
+data with exact zeros and positive amounts in one likelihood (claims,
+rainfall, biomass). Its `log_prob` is `chebax.tweedie_logpdf`, differentiable
+in the power too, so NUTS can sample p instead of taking it fixed: on 1,500
+draws at (mu, phi, p) = (3, 0.6, 1.35) the posterior is p = 1.41 +- 0.05.
 Shape parameters are uniform per call; domain boxes are in the module
 docstring and checked at construction.
 

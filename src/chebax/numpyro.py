@@ -1,6 +1,7 @@
-"""Truncated distributions for numpyro, backed by chebax quantiles.
+"""Truncated distributions and the Tweedie law for numpyro, backed by chebax.
 
     from chebax.numpyro import TruncatedGamma, TruncatedBeta, TruncatedStudentT
+    from chebax.numpyro import Tweedie
 
 numpyro's truncated-distribution machinery covers location-scale families;
 Gamma, Beta and Student-t need the inverse-CDF path (numpyro#969,
@@ -64,7 +65,7 @@ from chebax._src.recipes._common import canon_float
 from chebax._src.recipes.quantiles import (_t_logpdf, log_stdtr,
                                            log_stdtr_sf)
 
-__all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT"]
+__all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT", "Tweedie"]
 
 _LN2 = math.log(2.0)
 _DF_LO, _DF_HI = _dom.STUDENT_T_DF.lo, _dom.STUDENT_T_DF.hi
@@ -394,3 +395,61 @@ class TruncatedStudentT(_Truncated):
 
     def _icdf_upper(self, s):
         return -chebax.stdtrit(self.df, s)
+
+
+class Tweedie(dist.Distribution):
+    """Tweedie(mu, phi, power), the compound Poisson-gamma law, power in
+    [1.05, 1.95].
+
+    Y is exactly 0 with probability exp(-mu^(2-p) / (phi (2-p))) and
+    positive and continuous otherwise, so zeros and positive amounts share
+    one likelihood (insurance claims, rainfall, biomass). Mean mu, variance
+    phi mu^power. mu and phi broadcast freely, per-observation means being
+    the GLM case; power must be a scalar (or one traced latent) and is
+    checked against the box eagerly when concrete. log_prob is
+    chebax.tweedie_logpdf, differentiable in all three, so the power can be
+    sampled or fitted instead of fixed in advance.
+
+    Sampling draws the Poisson count and a gamma total; it is not
+    reparameterized (the count is discrete).
+    """
+
+    arg_constraints = {
+        "mu": constraints.positive,
+        "phi": constraints.positive,
+        "power": constraints.interval(_dom.TWEEDIE_P.lo, _dom.TWEEDIE_P.hi),
+    }
+    support = constraints.nonnegative
+
+    def __init__(self, mu, phi, power, *, validate_args=None):
+        _check_scalar("Tweedie", "power", power)
+        _check_shape_range("Tweedie", "power", power, _dom.TWEEDIE_P.lo,
+                           _dom.TWEEDIE_P.hi)
+        self.power = jnp.asarray(power)
+        self.mu, self.phi = promote_shapes(jnp.asarray(mu), jnp.asarray(phi))
+        batch_shape = lax.broadcast_shapes(jnp.shape(mu), jnp.shape(phi))
+        super().__init__(batch_shape=batch_shape, validate_args=validate_args)
+
+    @validate_sample
+    def log_prob(self, value):
+        return chebax.tweedie_logpdf(self.power, self.mu, self.phi, value)
+
+    def sample(self, key, sample_shape=()):
+        shape = sample_shape + self.batch_shape
+        p = self.power
+        lam = jnp.broadcast_to(self.mu ** (2 - p) / (self.phi * (2 - p)), shape)
+        theta = self.phi * (p - 1) * self.mu ** (p - 1)
+        k_count, k_total = random.split(key)
+        n = random.poisson(k_count, lam)
+        # the gamma total of n claims of shape (2-p)/(p-1); n = 0 is Y = 0
+        shape_n = jnp.maximum(n, 1) * (2 - p) / (p - 1)
+        total = random.gamma(k_total, shape_n.astype(lam.dtype)) * theta
+        return jnp.where(n > 0, total, 0.0)
+
+    @property
+    def mean(self):
+        return jnp.broadcast_to(self.mu, self.batch_shape)
+
+    @property
+    def variance(self):
+        return jnp.broadcast_to(self.phi * self.mu ** self.power, self.batch_shape)

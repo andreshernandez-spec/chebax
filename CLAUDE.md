@@ -45,7 +45,10 @@ This file is how to work here.
   (16384 groups of 64), 44–98× at MCMC scale (4 groups); f32 truncation race (`experiments/12`):
   truncate(1e-7) speeds f32 GPU evaluation 1.4–2.2× (besselj 2.0×, besselk
   2.2×, betainc 1.4×) at each family's f32 floor — the "extra terms are free"
-  roofline guess was wrong on this part. Consumer-GPU fp64 is
+  roofline guess was wrong on this part. Tweedie (`experiments/21`, 2^20 draws
+  from the law, f64): values 89-130x scipy's `log_wright_bessel` on one CPU
+  core, 254-331x on the GPU, value_and_grad 131 ms on the GPU; scipy itself
+  is off by up to 4.7e-6 at p = 1.2 in a band around Z ~ 15-30. Consumer-GPU fp64 is
   compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
   analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's
@@ -114,6 +117,7 @@ python -m chebax._src.recipes.hyp1f1_gen          # regenerate the hyp1f1 log-ta
 python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice tables (~4 min)
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
+python -m chebax._src.recipes.tweedie_gen         # regenerate the Tweedie tail table (~25 s)
 ```
 
 Tests run on whatever backend jax picks; the accuracy contract is

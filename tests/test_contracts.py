@@ -104,12 +104,15 @@ def test_truncated_icdf_rejects_invalid_probabilities():
 _UNIFORM_PARAM_CALLS = [
     ("stdtr", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
     ("log_stdtr", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
+    ("log_stdtr_sf", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
     ("stdtrit", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
     ("betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
     ("log_betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
     ("betaincinv", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
     ("gammainc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("gammaincc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("log_gammainc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("log_gammaincc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("gammaincinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("gammainccinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("chi2inv", lambda f, p: f(p(3.0), np.array([0.3, 0.7])), 1),
@@ -118,6 +121,8 @@ _UNIFORM_PARAM_CALLS = [
     ("besseli_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
     ("besseli_ratio", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
     ("vonmises_cdf", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("vonmises_icdf", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("log_wright_bessel0", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
     ("log_hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
     ("matern", lambda f, p: f(p(1.5), np.array([0.3, 0.7])), 1),
@@ -139,6 +144,30 @@ def test_size_one_parameter_is_the_scalar_it_holds(name, call, _n):
         got = np.asarray(call(fn, wrap))
         assert got.shape == scalar.shape, (name, got.shape)
         np.testing.assert_allclose(got, scalar, rtol=1e-13, atol=1e-15)
+
+
+@pytest.mark.parametrize("name,call,_n", _UNIFORM_PARAM_CALLS)
+def test_size_one_parameter_under_ad(name, call, _n):
+    # The inverses squeezed a (1,) parameter inside the custom_jvp, whose
+    # rule kept the original shape, so grad of gammaincinv(jnp.array([2.]),
+    # p) in p raised a tangent-shape error (review, 2026-10-26). q shifts
+    # every parameter at once, so d/dq sums their derivatives.
+    fn = getattr(chebax, name)
+
+    def total(wrap):
+        def f(q, x):
+            return jnp.sum(call(lambda *a: fn(*a[:-1], x), wrap(q)))
+        return jax.grad(f, (0, 1))
+
+    # a scalar point: against a (2,) one the (1,) tangent just broadcasts
+    x = 1.3 if name in ("besselk_fn", "log_besselk_fn", "besseli_fn",
+                        "besseli_ratio") else 0.3
+    scalar = total(lambda q: lambda v: v + q)(0.0, x)
+    size1 = total(lambda q: lambda v: jnp.reshape(v + q, (1,)))(0.0, x)
+    for s, g in zip(scalar, size1):
+        assert jnp.shape(s) == jnp.shape(g), name
+        np.testing.assert_allclose(np.asarray(g), np.asarray(s), rtol=1e-14,
+                                   atol=1e-300)
 
 
 @pytest.mark.parametrize("name,call,n", _UNIFORM_PARAM_CALLS)

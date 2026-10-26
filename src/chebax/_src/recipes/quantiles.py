@@ -68,26 +68,19 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import stdtr_table as _st
-from chebax._src.recipes._common import canon_param, canon_float as _canon
-from chebax._src.recipes._common import float_params
-from chebax._src.recipes._common import canon_tag as _canon_tag
-from chebax._src.recipes._common import newton_bisect as _newton_bisect
-from chebax._src.recipes._common import traced_coefs
+from chebax._src.recipes._common import (canon_param, canon_tag,
+                                         float_params, newton_bisect,
+                                         traced_coefs)
 from chebax._src.recipes.betainc import _log_direct as _log_betainc_direct
 from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
-                                         tensor_coefs_traced,
                                          with_panel_series)
 from chebax._src.recipes.gammainc import _eval_logs as _gi_logs
 from chebax._src.recipes.gammainc import _traced_series as _gi_series
-from chebax._src.recipes.gammainc import eval_gammainc as _eval_gammainc
+from chebax._src.recipes.gammainc import eval_gammainc
 from chebax._src.series import ChebSeries
-
-_eval_betainc = eval_betainc
-_tensor_coefs_traced = tensor_coefs_traced
 
 _LN2 = math.log(2.0)
 _LN_SMALL = math.log(0.01)   # below this the lower-tail asymptotic beats WH
@@ -131,7 +124,7 @@ def _dPda_recipe(a, x):
 
     def p_of_a(t):
         lser, ltail = _gi_series(t)
-        return _eval_gammainc(t, x, lser, ltail, lower=True)
+        return eval_gammainc(t, x, lser, ltail, lower=True)
 
     return jax.jvp(p_of_a, (a,), (jnp.ones_like(a),))[1]
 
@@ -195,7 +188,7 @@ def _betaincinv_core(a, b, p, cab, cba):
     the betainc kernel at (a, b) and (b, a), from the 3-D tensor (public
     betaincinv) or the stdtr slice tables (stdtrit). Not differentiable
     on its own; callers wrap it in a custom_jvp."""
-    lim = _limits(_canon_tag())
+    lim = _limits(canon_tag())
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
     ln_b = _ln_beta(a, b)
@@ -210,8 +203,8 @@ def _betaincinv_core(a, b, p, cab, cba):
     def f_and_df(u):
         x = jax.nn.sigmoid(u)
         f = jnp.where(swap,
-                      _eval_betainc(b, a, x, cba, cab),
-                      _eval_betainc(a, b, x, cab, cba)) - ps2
+                      eval_betainc(b, a, x, cba, cab),
+                      eval_betainc(a, b, x, cab, cba)) - ps2
         ls, l1s = -jax.nn.softplus(-u), -jax.nn.softplus(u)
         dfdu = jnp.exp(jnp.where(swap, b, a) * ls
                        + jnp.where(swap, a, b) * l1s - ln_b)
@@ -225,7 +218,7 @@ def _betaincinv_core(a, b, p, cab, cba):
     u_generic = jnp.where(swap, jnp.log(b / a), jnp.log(a / b)) + jnp.zeros_like(pc)
     u_asym = (jnp.log(ps2) + jnp.log(aa) + ln_b) / aa
     u0 = jnp.clip(jnp.where(ps2 < 0.01, u_asym, u_generic), lim.lo, lim.hi)
-    u = _newton_bisect(f_and_df, u0, jnp.full_like(pc, lim.lo),
+    u = newton_bisect(f_and_df, u0, jnp.full_like(pc, lim.lo),
                        jnp.full_like(pc, lim.hi), lim.n_beta)
 
     # Convergence is checked, never assumed. A solve pinned at the bracket
@@ -248,7 +241,7 @@ def _betaincinv_core(a, b, p, cab, cba):
 
 
 @jax.custom_jvp
-def betaincinv(a, b, p):
+def _betaincinv_cj(a, b, p):
     """Inverse of betainc in x: the Beta(a, b) quantile function.
 
     a, b are (traceable) scalars in [0.1, 100], uniform per call; p any
@@ -258,24 +251,21 @@ def betaincinv(a, b, p):
     scipy-shared representation limit; use betaincinv(b, a, 1-p) for the
     distance from 1). A solve that fails its CDF-residual check returns nan
     instead of a wrong value."""
-    a = canon_param(a, "betaincinv", "a")
-    b = canon_param(b, "betaincinv", "b")
-    p = _canon(p)
     return with_panel_series(
         a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
 
 
-@betaincinv.defjvp
+@_betaincinv_cj.defjvp
 def _betaincinv_jvp(primals, tangents):
     a, b, p = primals
     da, db, dp = tangents
-    x = betaincinv(a, b, p)
+    x = _betaincinv_cj(a, b, p)
     interior = (x > 0.0) & (x < 1.0)
     xs = jnp.where(interior, x, 0.5)
-    pdf = jnp.exp((_canon(a) - 1) * jnp.log(xs)
-                  + (_canon(b) - 1) * jnp.log1p(-xs) - _ln_beta(_canon(a), _canon(b)))
+    pdf = jnp.exp((a - 1) * jnp.log(xs) + (b - 1) * jnp.log1p(-xs)
+                  - _ln_beta(a, b))
     _, d_cdf = jax.jvp(lambda aa, bb: betainc_fn(aa, bb, xs), (a, b), (da, db))
-    dx = (_canon(dp) - d_cdf) / pdf
+    dx = (dp - d_cdf) / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
@@ -306,7 +296,7 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
     a fixed-degree polynomial; None uses jax's gammainc and gammaincc
     (any a, but a whole-array while_loop per call).
     Returns (v, relative residual)."""
-    lim = _limits(_canon_tag())
+    lim = _limits(canon_tag())
     lga = jax.scipy.special.gammaln(a)
     if use_recipe == "small":
         lser, ltail = _gi_series(a)
@@ -365,7 +355,7 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe):
     v0 = jnp.where(upper, jnp.maximum(v_wh, v_up),
                    jnp.where(ltp < _LN_SMALL, v_lo, v_wh))
     v0 = jnp.clip(v0, lim.lo, lim.v_hi)
-    v = _newton_bisect(f_and_df, v0, jnp.full_like(v0, lim.lo),
+    v = newton_bisect(f_and_df, v0, jnp.full_like(v0, lim.lo),
                        jnp.full_like(v0, lim.v_hi), lim.n_gamma)
     # Judge the residual on whichever side is computed DIRECTLY, since that
     # is the side carrying relative accuracy: P below the seam, Q above it,
@@ -411,7 +401,7 @@ def _dispatch_solve(solve, a, tc):
 
 
 @jax.custom_jvp
-def gammaincinv(a, p):
+def _gammaincinv_cj(a, p):
     """Inverse of the regularized lower gamma in x: the Gamma(a, 1) quantile.
 
     a is a (traceable) scalar, uniform per call; p any shape. a must be
@@ -429,9 +419,7 @@ def gammaincinv(a, p):
     Second derivatives in p and mixed p-a derivatives work (dP/da is
     wrapped with its exact x-derivative); a pure second derivative in a
     needs d2P/da2, which is unavailable and raises with a clear message."""
-    a = canon_param(a, "gammaincinv", "a")
-    p = _canon(p)
-    lim = _limits(_canon_tag())
+    lim = _limits(canon_tag())
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
 
@@ -449,27 +437,26 @@ def _gammaincinv_jvp(primals, tangents):
     a, p = primals
     da, dp = tangents
     zero = jax.custom_derivatives.SymbolicZero
-    x = gammaincinv(a, p)
+    x = _gammaincinv_cj(a, p)
     interior = jnp.isfinite(x) & (x > 0.0)
     xs = jnp.where(interior, x, 1.0)
-    pdf = jnp.exp((_canon(a) - 1) * jnp.log(xs) - xs
-                  - jax.scipy.special.gammaln(_canon(a)))
+    pdf = jnp.exp((a - 1) * jnp.log(xs) - xs - jax.scipy.special.gammaln(a))
     # dP/da through the differentiable wrapper: second derivatives in p and
     # mixed p-a work; only d2/da2 remains unsupported (see _dPda). Symbolic
     # zeros matter here: a materialized 0 tangent would still route the
     # outer derivative through _dPda's a direction.
-    num = _canon(dp) if not isinstance(dp, zero) else 0.0
+    num = dp if not isinstance(dp, zero) else 0.0
     if not isinstance(da, zero):
-        num = num - _dPda_dispatch(_canon(a), xs) * _canon(da)
+        num = num - _dPda_dispatch(a, xs) * da
     dx = num / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
-gammaincinv.defjvp(_gammaincinv_jvp, symbolic_zeros=True)
+_gammaincinv_cj.defjvp(_gammaincinv_jvp, symbolic_zeros=True)
 
 
 @jax.custom_jvp
-def gammainccinv(a, y):
+def _gammainccinv_cj(a, y):
     """Inverse of the regularized UPPER gamma in x: the x with Q(a, x) = y,
     the Gamma(a, 1) survival quantile.
 
@@ -483,9 +470,7 @@ def gammainccinv(a, y):
     a is a (traceable) scalar, uniform per call; y any shape. Derivatives
     in both arguments, from the same implicit-function rule as
     gammaincinv's with dQ/dx = -pdf and dQ/da = -dP/da."""
-    a = canon_param(a, "gammainccinv", "a")
-    y = _canon(y)
-    lim = _limits(_canon_tag())
+    lim = _limits(canon_tag())
     interior = (y > 0.0) & (y < 1.0)
     yc = jnp.where(interior, y, 0.5)
 
@@ -505,21 +490,19 @@ def _gammainccinv_jvp(primals, tangents):
     a, y = primals
     da, dy = tangents
     zero = jax.custom_derivatives.SymbolicZero
-    x = gammainccinv(a, y)
+    x = _gammainccinv_cj(a, y)
     interior = jnp.isfinite(x) & (x > 0.0)
     xs = jnp.where(interior, x, 1.0)
-    ac = _canon(a)
-    pdf = jnp.exp((ac - 1) * jnp.log(xs) - xs
-                  - jax.scipy.special.gammaln(ac))
+    pdf = jnp.exp((a - 1) * jnp.log(xs) - xs - jax.scipy.special.gammaln(a))
     # Q(a, x) = y, so dx = -(dy + dP/da da) / pdf
-    num = _canon(dy) if not isinstance(dy, zero) else 0.0
+    num = dy if not isinstance(dy, zero) else 0.0
     if not isinstance(da, zero):
-        num = num + _dPda_dispatch(ac, xs) * _canon(da)
+        num = num + _dPda_dispatch(a, xs) * da
     dx = -num / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
-gammainccinv.defjvp(_gammainccinv_jvp, symbolic_zeros=True)
+_gammainccinv_cj.defjvp(_gammainccinv_jvp, symbolic_zeros=True)
 
 
 def _t_logpdf(nu, t):
@@ -616,14 +599,13 @@ def _stdtr_cj(nu, t):
     jax.grad works with respect to nu as well: learnable degrees of freedom.
     First-order exact through t = 0 (dF/dt there is the density, not 0), and
     valid for any t, the tail being computed from log|t|."""
-    return _stdtr_impl(_canon(nu), _canon(t))
+    return _stdtr_impl(nu, t)
 
 
 @_stdtr_cj.defjvp
 def _stdtr_jvp(primals, tangents):
-    nu, t = primals
+    nu_c, t_c = primals
     dnu, dt = tangents
-    nu_c, t_c = _canon(nu), _canon(t)
     F = _stdtr_impl(nu_c, t_c)
     # t-direction: the exact density (AD through the w = t^2/(nu+t^2)
     # branch hits a 0 * inf at t = 0; the density is finite there)
@@ -632,9 +614,9 @@ def _stdtr_jvp(primals, tangents):
     # nu-direction: AD of the implementation, at a safe t (t = 0 and
     # t = +-inf have exactly zero nu-sensitivity)
     t_safe = jnp.where(jnp.isfinite(t_c) & (t_c != 0.0), t_c, 1.0)
-    _, dF_dnu = jax.jvp(lambda n: _stdtr_impl(n, t_safe), (nu_c,), (_canon(dnu),))
+    _, dF_dnu = jax.jvp(lambda n: _stdtr_impl(n, t_safe), (nu_c,), (dnu,))
     dF_dnu = jnp.where(jnp.isfinite(t_c) & (t_c != 0.0), dF_dnu, 0.0)
-    dF = dF_dt * _canon(dt) + dF_dnu
+    dF = dF_dt * dt + dF_dnu
     return F, jnp.where(jnp.isnan(F), jnp.nan, dF)
 
 
@@ -663,14 +645,13 @@ def _log_stdtr_cj(nu, t):
     This is the log-CDF a truncated or censored Student-t likelihood wants:
     log(stdtr(...)) underflows to -inf first, and a normalizer built as
     log(F(hi) - F(lo)) collapses to log(0) whenever both tails are deep."""
-    return _log_stdtr_impl(_canon(nu), _canon(t))
+    return _log_stdtr_impl(nu, t)
 
 
 @_log_stdtr_cj.defjvp
 def _log_stdtr_jvp(primals, tangents):
-    nu, t = primals
+    nu_c, t_c = primals
     dnu, dt = tangents
-    nu_c, t_c = _canon(nu), _canon(t)
     L = _log_stdtr_impl(nu_c, t_c)
     fin = jnp.isfinite(t_c)
     ts = jnp.where(fin, t_c, 0.0)
@@ -679,9 +660,9 @@ def _log_stdtr_jvp(primals, tangents):
     dL_dt = jnp.where(fin, jnp.exp(_t_logpdf(nu_c, ts) - L), 0.0)
     t_safe = jnp.where(fin & (ts != 0.0), ts, 1.0)
     _, dL_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,),
-                        (_canon(dnu),))
+                        (dnu,))
     dL_dnu = jnp.where(fin & (ts != 0.0), dL_dnu, 0.0)
-    dL = dL_dt * _canon(dt) + dL_dnu
+    dL = dL_dt * dt + dL_dnu
     return L, jnp.where(jnp.isnan(L), jnp.nan, dL)
 
 
@@ -692,7 +673,7 @@ def log_stdtr_sf(nu, t):
     The distribution is symmetric, so this is the log-CDF at -t and the
     negation is exact: no 1 - F cancellation anywhere, and the same
     accuracy in the upper tail that log_stdtr has in the lower."""
-    return _log_stdtr_cj(_canon(nu), -_canon(t))
+    return _log_stdtr_cj(nu, -t)
 
 
 def _stdtrit_impl(nu, p):
@@ -735,15 +716,14 @@ def _stdtrit_cj(nu, p):
     quantile behind it underflows and the +-inf endpoint takes over, which
     at small nu can be short of the representable t (nu = 1/2,
     p = 1e-100)."""
-    return _stdtrit_impl(_canon(nu), _canon(p))
+    return _stdtrit_impl(nu, p)
 
 
 @_stdtrit_cj.defjvp
 def _stdtrit_jvp(primals, tangents):
-    nu, p = primals
+    nu_c, p = primals
     dnu, dp = tangents
-    nu_c = _canon(nu)
-    t = _stdtrit_impl(nu_c, _canon(p))
+    t = _stdtrit_impl(nu_c, p)
     finite = jnp.isfinite(t)
     ts = jnp.where(finite, t, 0.0)
     pdf = jnp.exp(_t_logpdf(nu_c, ts))
@@ -760,15 +740,18 @@ def _stdtrit_jvp(primals, tangents):
                             (jnp.asarray(1.0),))
     dt_dnu = -jnp.exp(lnF - _t_logpdf(nu_c, t_safe)) * dlnF_dnu
     dt_dnu = jnp.where(live, dt_dnu, 0.0)
-    dt = _canon(dp) / pdf + dt_dnu * _canon(dnu)
+    dt = dp / pdf + dt_dnu * dnu
     dt = jnp.where(finite, dt, 0.0)
     return t, jnp.where(jnp.isnan(t), jnp.nan, dt)
 
 
 # Public entry points. The custom_jvp rules live on the private names
-# above so an INTEGER nu (stdtr(4, t) is how anyone writes it) is a float
-# before any tangent exists; jax hands a rule float0 tangents for integer
-# primals, and the rules' arithmetic dies on those (review, 2026-08-02).
+# above and float_params normalizes every argument first, so an integer,
+# keyword or size-one parameter is a float scalar before any tangent
+# exists (see its docstring).
+betaincinv = float_params(_betaincinv_cj)
+gammaincinv = float_params(_gammaincinv_cj)
+gammainccinv = float_params(_gammainccinv_cj)
 stdtr = float_params(_stdtr_cj)
 log_stdtr = float_params(_log_stdtr_cj)
 stdtrit = float_params(_stdtrit_cj)

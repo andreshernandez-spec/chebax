@@ -87,6 +87,17 @@ def _as_float_coef(coef):
     return jnp.asarray(out)
 
 
+def _as_point(x, coef):
+    """The evaluation point as a float array. An integer x reaching the
+    custom_jvp gets a float0 tangent, and the rule's arithmetic fails on
+    it even when only the coefficients are being differentiated:
+    grad of ChebSeries(c)(1) in c raised (review, 2026-10-26)."""
+    x = jnp.asarray(x)
+    if jnp.issubdtype(x.dtype, jnp.floating):
+        return x
+    return x.astype(jnp.result_type(x, coef))
+
+
 def _check_tol(tol):
     """A truncation tolerance must be a finite, nonnegative real.
 
@@ -199,7 +210,7 @@ class ChebSeries:
         return self.coef.shape[0] - 1
 
     def __call__(self, x):
-        return _chebval(jnp.asarray(x), self.coef, self.domain)
+        return _chebval(_as_point(x, self.coef), self.coef, self.domain)
 
     def deriv(self):
         return ChebSeries(_dcoef(self.coef, self.domain), self.domain)
@@ -318,7 +329,7 @@ class PiecewiseCheb:
         return (self.breaks[0], self.breaks[-1])
 
     def __call__(self, x):
-        return _pw_chebval(jnp.asarray(x), self.coef, self.breaks)
+        return _pw_chebval(_as_point(x, self.coef), self.coef, self.breaks)
 
     def deriv(self):
         return PiecewiseCheb(_pw_dcoef(self.coef, self.breaks), self.breaks)

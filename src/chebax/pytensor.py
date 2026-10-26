@@ -61,10 +61,15 @@ wash (1.00x) at a = 3, which is jax's most favourable shape.
 
 import jax
 import jax.numpy as jnp
-from pytensor.link.jax.dispatch import jax_funcify
-from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
-                                  GammaInc, GammaIncC, GammaIncCInv,
-                                  GammaIncInv, Ive, Kve)
+
+try:
+    from pytensor.link.jax.dispatch import jax_funcify
+    from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
+                                      GammaInc, GammaIncC, GammaIncCInv,
+                                      GammaIncInv, Ive, Kve)
+except ImportError as e:
+    raise ImportError(
+        "chebax.pytensor needs pytensor>=3.2: pip install chebax[pytensor]") from e
 
 import chebax
 from chebax import domains as _dom

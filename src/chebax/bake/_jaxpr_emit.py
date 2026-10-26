@@ -293,10 +293,13 @@ def _emit_jaxpr(em, jaxpr, env):
                     "rule and the artifact would differ from the runtime under AD")
             name, series = em.coef_names[env[coef_in[0]]]
             (x_in,) = [v for v in eqn.invars if v is not coef_in[0]]
+            # the runtime's own map (series._chebval_impl): b + a and b - a
+            # overflow on a legal domain like (-1e308, 1e308), and the
+            # emitted division by a bare inf did not even compile
             a, b = series.domain
-            suf = "f" if em.cpp and em.ctype == "float" else ""
-            t_expr = (f"(2.0{suf} * ({read(x_in)}) - {b + a!r}{suf})"
-                      f" / {b - a!r}{suf}")
+            mid = _lit(0.5 * a + 0.5 * b, em.cpp, em.ctype)[0]
+            half = _lit(0.5 * b - 0.5 * a, em.cpp, em.ctype)[0]
+            t_expr = f"(({read(x_in)}) - {mid}) / {half}"
             if em.cpp:
                 expr = f"detail::clenshaw(detail::{name}, {t_expr})"
             else:

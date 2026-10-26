@@ -24,17 +24,34 @@ from chebax._src.recipes import betainc_table as bt
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-PAIRS = [(0.15, 0.15), (0.5, 0.5), (1.0, 1.0), (2.0, 3.0), (0.15, 9.9),
-         (9.9, 0.15), (5.5, 5.5), (9.9, 9.9), (1.0, 0.3)]
-XB = np.sort(np.concatenate([
-    [1e-4, 1e-2, 0.5, 0.5 - 1e-9, 0.5 + 1e-9, 1 - 1e-2, 1 - 1e-4],
-    np.linspace(0.05, 0.95, 15),
-]))
+PAIRS = [
+    (0.15, 0.15),
+    (0.5, 0.5),
+    (1.0, 1.0),
+    (2.0, 3.0),
+    (0.15, 9.9),
+    (9.9, 0.15),
+    (5.5, 5.5),
+    (9.9, 9.9),
+    (1.0, 0.3),
+]
+XB = np.sort(
+    np.concatenate(
+        [
+            [1e-4, 1e-2, 0.5, 0.5 - 1e-9, 0.5 + 1e-9, 1 - 1e-2, 1 - 1e-4],
+            np.linspace(0.05, 0.95, 15),
+        ]
+    )
+)
 
 
 def _iref(a, b):
-    return np.array([float(mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x), regularized=True))
-                     for x in XB])
+    return np.array(
+        [
+            float(mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x), regularized=True))
+            for x in XB
+        ]
+    )
 
 
 def test_values_and_traced():
@@ -55,20 +72,32 @@ def test_endpoints_exact():
 def test_dx_against_beta_density():
     xs = np.linspace(0.02, 0.98, 25)
     for a, b in [(0.5, 0.5), (2.0, 3.0), (9.9, 0.15), (1.0, 1.0)]:
-        pdf = (xs ** (a - 1) * (1 - xs) ** (b - 1)
-               * math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)))
+        pdf = (
+            xs ** (a - 1)
+            * (1 - xs) ** (b - 1)
+            * math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b))
+        )
         g = np.asarray(jax.vmap(jax.grad(chebax.betainc(a, b)))(jnp.asarray(xs)))
         assert np.max(np.abs(g - pdf) / np.max(pdf)) <= 1e-13, (a, b)
 
 
 def test_da_db_traced():
     for a, b, x in [(0.5, 0.5, 0.3), (2.0, 3.0, 0.6), (7.7, 1.3, 0.2), (1.0, 1.0, 0.7)]:
-        da_ref = float(mp.diff(lambda t: mp.betainc(t, mp.mpf(b), 0, mp.mpf(x),
-                                                    regularized=True), mp.mpf(a)))
-        db_ref = float(mp.diff(lambda t: mp.betainc(mp.mpf(a), t, 0, mp.mpf(x),
-                                                    regularized=True), mp.mpf(b)))
+        da_ref = float(
+            mp.diff(
+                lambda t: mp.betainc(t, mp.mpf(b), 0, mp.mpf(x), regularized=True),
+                mp.mpf(a),
+            )
+        )
+        db_ref = float(
+            mp.diff(
+                lambda t: mp.betainc(mp.mpf(a), t, 0, mp.mpf(x), regularized=True),
+                mp.mpf(b),
+            )
+        )
         da, db = jax.grad(chebax.betainc_fn, argnums=(0, 1))(
-            jnp.asarray(a), jnp.asarray(b), jnp.asarray(x))
+            jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
+        )
         scale = max(abs(da_ref), abs(db_ref))
         assert abs(float(da) - da_ref) / scale <= 1e-12, (a, b, x)
         assert abs(float(db) - db_ref) / scale <= 1e-12, (a, b, x)
@@ -76,7 +105,9 @@ def test_da_db_traced():
 
 def test_complement_identity():
     for a, b in [(0.3, 4.4), (6.6, 1.5)]:
-        s = np.asarray(chebax.betainc(a, b)(XB)) + np.asarray(chebax.betainc(b, a)(1.0 - XB))
+        s = np.asarray(chebax.betainc(a, b)(XB)) + np.asarray(
+            chebax.betainc(b, a)(1.0 - XB)
+        )
         assert np.max(np.abs(s - 1.0)) <= 5e-14
 
 
@@ -99,8 +130,11 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     betainc_gen.main(tmp_path)
-    assert (tmp_path / "betainc_table.py").read_text() == pathlib.Path(bt.__file__).read_text()
+    assert (tmp_path / "betainc_table.py").read_text() == pathlib.Path(
+        bt.__file__
+    ).read_text()
     assert bt.META["dps"] == betainc_gen.DPS
 
 
@@ -115,14 +149,28 @@ def test_log_betainc():
     xl = np.concatenate([[1e-100, 1e-30, 1e-10, 1e-4], np.linspace(0.01, 0.5, 8)])
     xr = np.linspace(0.51, 0.999, 8)
     for a, b in [(0.15, 0.15), (2.0, 3.0), (9.9, 0.15), (9.9, 9.9), (0.15, 9.9)]:
-        ref = np.array([float(mp.log(mp.betainc(mp.mpf(a), mp.mpf(b), 0,
-                                                mp.mpf(x), regularized=True)))
-                        for x in xl])
+        ref = np.array(
+            [
+                float(
+                    mp.log(
+                        mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x), regularized=True)
+                    )
+                )
+                for x in xl
+            ]
+        )
         got = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xl)))
         assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) <= 4e-14
-        refr = np.array([float(mp.log(mp.betainc(mp.mpf(a), mp.mpf(b), 0,
-                                                 mp.mpf(x), regularized=True)))
-                         for x in xr])
+        refr = np.array(
+            [
+                float(
+                    mp.log(
+                        mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x), regularized=True)
+                    )
+                )
+                for x in xr
+            ]
+        )
         gotr = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xr)))
         bar = 4e-14 * np.maximum(1.0, np.abs(refr)) + 2e-14 / np.exp(refr)
         assert np.all(np.abs(gotr - refr) <= bar), (a, b)
@@ -132,23 +180,47 @@ def test_log_betainc():
     assert np.isnan(float(chebax.log_betainc_fn(2.0, 3.0, np.nan)))
     xs = np.linspace(0.05, 0.95, 9)
     lin = np.asarray(chebax.betainc_fn(2.0, 3.0, jnp.asarray(xs)))
-    np.testing.assert_allclose(np.exp(np.asarray(
-        chebax.log_betainc_fn(2.0, 3.0, jnp.asarray(xs)))), lin, rtol=1e-13)
+    np.testing.assert_allclose(
+        np.exp(np.asarray(chebax.log_betainc_fn(2.0, 3.0, jnp.asarray(xs)))),
+        lin,
+        rtol=1e-13,
+    )
     # shape gradient through the traced path
     xg = np.array([1e-4, 0.05, 0.3, 0.49])
     for a, b in [(0.15, 9.9), (2.0, 3.0), (9.9, 0.15)]:
-        da = np.array([float(mp.diff(lambda t: mp.log(mp.betainc(
-            t, mp.mpf(b), 0, mp.mpf(x), regularized=True)), mp.mpf(a)))
-            for x in xg])
-        gda = np.asarray(jax.vmap(jax.grad(chebax.log_betainc_fn, argnums=0),
-                                  in_axes=(None, None, 0))(
-            jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)))
+        da = np.array(
+            [
+                float(
+                    mp.diff(
+                        lambda t: mp.log(
+                            mp.betainc(t, mp.mpf(b), 0, mp.mpf(x), regularized=True)
+                        ),
+                        mp.mpf(a),
+                    )
+                )
+                for x in xg
+            ]
+        )
+        gda = np.asarray(
+            jax.vmap(
+                jax.grad(chebax.log_betainc_fn, argnums=0), in_axes=(None, None, 0)
+            )(jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg))
+        )
         assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 1.5e-14
 
 
-WIDE_PAIRS = [(0.15, 55.0), (55.0, 0.15), (55.0, 55.0), (99.9, 99.9),
-              (2.0, 99.9), (99.9, 2.0), (30.0, 70.0), (0.1, 100.0),
-              (100.0, 100.0), (11.0, 11.0)]
+WIDE_PAIRS = [
+    (0.15, 55.0),
+    (55.0, 0.15),
+    (55.0, 55.0),
+    (99.9, 99.9),
+    (2.0, 99.9),
+    (99.9, 2.0),
+    (30.0, 70.0),
+    (0.1, 100.0),
+    (100.0, 100.0),
+    (11.0, 11.0),
+]
 
 
 def test_wide_panels_values_and_gradients():
@@ -165,12 +237,24 @@ def test_wide_panels_values_and_gradients():
         assert np.max(np.abs(gott - ref)) <= 8e-13, (a, b)
     xg = np.array([0.1, 0.5, 0.9])
     for a, b in [(55.0, 0.15), (2.0, 99.9), (70.0, 30.0)]:
-        da = np.array([float(mp.diff(lambda t: mp.betainc(
-            t, mp.mpf(b), 0, mp.mpf(x), regularized=True), mp.mpf(a)))
-            for x in xg])
-        g = np.asarray(jax.vmap(jax.grad(chebax.betainc_fn, argnums=0),
-                                in_axes=(None, None, 0))(
-            jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)))
+        da = np.array(
+            [
+                float(
+                    mp.diff(
+                        lambda t: mp.betainc(
+                            t, mp.mpf(b), 0, mp.mpf(x), regularized=True
+                        ),
+                        mp.mpf(a),
+                    )
+                )
+                for x in xg
+            ]
+        )
+        g = np.asarray(
+            jax.vmap(jax.grad(chebax.betainc_fn, argnums=0), in_axes=(None, None, 0))(
+                jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)
+            )
+        )
         assert np.max(np.abs(g - da)) <= 1e-14, (a, b)
     for a, b in [(55.0, 55.0), (2.0, 99.9), (99.9, 2.0)]:
         ps = np.array([1e-6, 0.05, 0.5, 0.95, 1 - 1e-6])
@@ -198,21 +282,26 @@ def test_wide_hilo_panel_regenerates_exact():
     from chebax._src.recipes import betainc_wide_gen as g
     from chebax._src.recipes import betainc_wide_table as bw
     from chebax._src.recipes._gen_common import DPS
+
     with mpm.workdps(DPS):
         t = g.generate_panel(mpm, (10.0, 100.0), (0.1, 10.0), 24, 60, 20)
     assert np.array_equal(t, bw.TENSOR_HILO)
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not os.environ.get("CHEBAX_FULL_REGEN"),
-                    reason="~25 min; set CHEBAX_FULL_REGEN=1 (pre-release)")
+@pytest.mark.skipif(
+    not os.environ.get("CHEBAX_FULL_REGEN"),
+    reason="~25 min; set CHEBAX_FULL_REGEN=1 (pre-release)",
+)
 def test_wide_tables_regenerate_bit_for_bit(tmp_path):
     import pathlib
     from chebax._src.recipes import betainc_wide_gen
     from chebax._src.recipes import betainc_wide_table as bw
+
     betainc_wide_gen.main(tmp_path)
-    assert ((tmp_path / "betainc_wide_table.py").read_text()
-            == pathlib.Path(bw.__file__).read_text())
+    assert (tmp_path / "betainc_wide_table.py").read_text() == pathlib.Path(
+        bw.__file__
+    ).read_text()
 
 
 def test_endpoint_derivatives_are_the_density():
@@ -225,10 +314,8 @@ def test_endpoint_derivatives_are_the_density():
     assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 1.0, x))(1.0)) == 3.0
     assert float(jax.grad(lambda x: chebax.betainc_fn(2.0, 3.0, x))(0.0)) == 0.0
     assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 2.0, x))(1.0)) == 0.0
-    assert np.isposinf(float(jax.grad(
-        lambda x: chebax.betainc_fn(0.5, 3.0, x))(0.0)))
-    assert np.isposinf(float(jax.grad(
-        lambda x: chebax.betainc_fn(3.0, 0.5, x))(1.0)))
+    assert np.isposinf(float(jax.grad(lambda x: chebax.betainc_fn(0.5, 3.0, x))(0.0)))
+    assert np.isposinf(float(jax.grad(lambda x: chebax.betainc_fn(3.0, 0.5, x))(1.0)))
     for a, b in ((1.0, 3.0), (2.5, 0.5)):
         assert float(chebax.betainc_fn(a, b, 0.0)) == 0.0
         assert float(chebax.betainc_fn(a, b, 1.0)) == 1.0

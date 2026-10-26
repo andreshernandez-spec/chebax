@@ -61,15 +61,18 @@ import numpy as np
 
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes._common import (canon_param, canon_tag,
-                                         float_params, newton_bisect)
-from chebax._src.recipes.betainc import (betainc_fn, eval_betainc,
-                                         with_panel_series)
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_tag,
+    float_params,
+    newton_bisect,
+)
+from chebax._src.recipes.betainc import betainc_fn, eval_betainc, with_panel_series
 from chebax._src.recipes.gammainc import _eval_logs as _gi_logs
 from chebax._src.recipes.gammainc import _traced_series as _gi_series
 from chebax._src.recipes.gammainc import eval_gammainc
 
-_LN_SMALL = math.log(0.01)   # below this the lower-tail asymptotic beats WH
+_LN_SMALL = math.log(0.01)  # below this the lower-tail asymptotic beats WH
 
 _Limits = namedtuple("_Limits", "lo hi v_hi n_beta n_gamma rtol")
 
@@ -101,14 +104,22 @@ def _limits(_tag):
 
     lo = inward(math.log(float(f.tiny)))
     wide = dt == np.float64
-    return _Limits(lo, -lo, inward(math.log(float(f.max))),
-                   64 if wide else 48, 40 if wide else 24,
-                   1e-6 if wide else 1e-3)
+    return _Limits(
+        lo,
+        -lo,
+        inward(math.log(float(f.max))),
+        64 if wide else 48,
+        40 if wide else 24,
+        1e-6 if wide else 1e-3,
+    )
 
 
 def _ln_beta(a, b):
-    return (jax.scipy.special.gammaln(a) + jax.scipy.special.gammaln(b)
-            - jax.scipy.special.gammaln(a + b))
+    return (
+        jax.scipy.special.gammaln(a)
+        + jax.scipy.special.gammaln(b)
+        - jax.scipy.special.gammaln(a + b)
+    )
 
 
 def _dPda_recipe(a, x):
@@ -156,7 +167,8 @@ def _dPda_jvp(primals, tangents):
     if not isinstance(da, zero):
         raise NotImplementedError(
             "second derivative of gammaincinv with respect to a needs d2P/da2, "
-            "which neither jax nor chebax provides")
+            "which neither jax nor chebax provides"
+        )
     if isinstance(dx, zero):
         return g, jnp.zeros_like(g)
     pdf = jnp.exp((a - 1.0) * jnp.log(x) - x - jax.scipy.special.gammaln(a))
@@ -175,9 +187,10 @@ def _dPda_dispatch(a, x):
     return jax.lax.cond(
         in_small,
         lambda: _dPda_recipe(a, x),
-        lambda: jax.lax.cond(in_large,
-                             lambda: _dPda_recipe_large(a, x),
-                             lambda: _dPda(a, x)))
+        lambda: jax.lax.cond(
+            in_large, lambda: _dPda_recipe_large(a, x), lambda: _dPda(a, x)
+        ),
+    )
 
 
 def _betaincinv_core(a, b, p, cab, cba):
@@ -199,12 +212,14 @@ def _betaincinv_core(a, b, p, cab, cba):
 
     def f_and_df(u):
         x = jax.nn.sigmoid(u)
-        f = jnp.where(swap,
-                      eval_betainc(b, a, x, cba, cab),
-                      eval_betainc(a, b, x, cab, cba)) - ps2
+        f = (
+            jnp.where(
+                swap, eval_betainc(b, a, x, cba, cab), eval_betainc(a, b, x, cab, cba)
+            )
+            - ps2
+        )
         ls, l1s = -jax.nn.softplus(-u), -jax.nn.softplus(u)
-        dfdu = jnp.exp(jnp.where(swap, b, a) * ls
-                       + jnp.where(swap, a, b) * l1s - ln_b)
+        dfdu = jnp.exp(jnp.where(swap, b, a) * ls + jnp.where(swap, a, b) * l1s - ln_b)
         return f, dfdu
 
     # Initialization: the generic start converges at ~1/a additive steps in
@@ -215,8 +230,9 @@ def _betaincinv_core(a, b, p, cab, cba):
     u_generic = jnp.where(swap, jnp.log(b / a), jnp.log(a / b)) + jnp.zeros_like(pc)
     u_asym = (jnp.log(ps2) + jnp.log(aa) + ln_b) / aa
     u0 = jnp.clip(jnp.where(ps2 < 0.01, u_asym, u_generic), lim.lo, lim.hi)
-    u = newton_bisect(f_and_df, u0, jnp.full_like(pc, lim.lo),
-                       jnp.full_like(pc, lim.hi), lim.n_beta)
+    u = newton_bisect(
+        f_and_df, u0, jnp.full_like(pc, lim.lo), jnp.full_like(pc, lim.hi), lim.n_beta
+    )
 
     # Convergence is checked, never assumed. A root at or below the bracket
     # floor underflows the dtype: return the mirrored endpoint. That is
@@ -251,8 +267,7 @@ def _betaincinv_cj(a, b, p):
     scipy-shared representation limit; use betaincinv(b, a, 1-p) for the
     distance from 1). A solve that fails its CDF-residual check returns nan
     instead of a wrong value."""
-    return with_panel_series(
-        a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
+    return with_panel_series(a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
 
 
 @_betaincinv_cj.defjvp
@@ -262,8 +277,7 @@ def _betaincinv_jvp(primals, tangents):
     x = _betaincinv_cj(a, b, p)
     interior = (x > 0.0) & (x < 1.0)
     xs = jnp.where(interior, x, 0.5)
-    pdf = jnp.exp((a - 1) * jnp.log(xs) + (b - 1) * jnp.log1p(-xs)
-                  - _ln_beta(a, b))
+    pdf = jnp.exp((a - 1) * jnp.log(xs) + (b - 1) * jnp.log1p(-xs) - _ln_beta(a, b))
     _, d_cdf = jax.jvp(lambda aa, bb: betainc_fn(aa, bb, xs), (a, b), (da, db))
     dx = (dp - d_cdf) / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
@@ -292,8 +306,7 @@ _A_HUGE = 1e10
 # (lambda - 1)/eta = 1 + eta/3 + eta^2/36 - ..., the inverse of
 # eta^2/2 = lambda - 1 - ln lambda (sympy reversion), through eta^5: above
 # _A_HUGE, |eta| < 4e-4 and the next term is below 1e-25 relative
-_LAM_SERIES = (1.0 / 3.0, 1.0 / 36.0, -1.0 / 270.0, 1.0 / 4320.0,
-               1.0 / 17010.0)
+_LAM_SERIES = (1.0 / 3.0, 1.0 / 36.0, -1.0 / 270.0, 1.0 / 4320.0, 1.0 / 17010.0)
 
 
 def _huge_parts(a, s, temme):
@@ -306,9 +319,8 @@ def _huge_parts(a, s, temme):
     r = _LAM_SERIES[-1]
     for c in _LAM_SERIES[-2::-1]:
         r = r * eta + c
-    r = 1.0 + eta * r                      # (lambda - 1) / eta
-    lp, lq = _gl.temme_log_pq(s, s * s, temme(eta),
-                              jnp.sqrt(2.0 * jnp.pi * a))
+    r = 1.0 + eta * r  # (lambda - 1) / eta
+    lp, lq = _gl.temme_log_pq(s, s * s, temme(eta), jnp.sqrt(2.0 * jnp.pi * a))
     lden = -s * s - 0.5 * math.log(math.pi) - 1.0 / (12.0 * a) - jnp.log(r)
     return lp, lq, lden, eta * r
 
@@ -345,6 +357,7 @@ def _huge_dx(a, da, s, upper, dlog):
     own log tangent, and dx = X_s ds + X_a da for X = a + a (lambda - 1).
     Everything stays in s and a, where the density in x cancels. da is
     None for a symbolic zero."""
+
     def lfn(ss, aa):
         lp, lq, _, _ = _huge_parts(aa, ss, _gl.series_traced(aa)[0])
         return jnp.where(upper, lq, lp)
@@ -416,15 +429,19 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
             pos = x > 0.0
             return jnp.where(pos, lp, -jnp.inf), jnp.where(pos, lq, 0.0)
         if use_recipe == "large":
-            return (_gl.eval_large(a, x, tm, dl, du, "logp"),
-                    _gl.eval_large(a, x, tm, dl, du, "logq"))
-        return (jnp.log(jax.scipy.special.gammainc(a, x)),
-                jnp.log(jax.scipy.special.gammaincc(a, x)))
+            return (
+                _gl.eval_large(a, x, tm, dl, du, "logp"),
+                _gl.eval_large(a, x, tm, dl, du, "logq"),
+            )
+        return (
+            jnp.log(jax.scipy.special.gammainc(a, x)),
+            jnp.log(jax.scipy.special.gammaincc(a, x)),
+        )
 
     def f_and_df(v):
         x = jnp.exp(v)
         lp, lq = log_pq(x)
-        lden = a * v - x - lga          # ln(x pdf(x)), the density in v
+        lden = a * v - x - lga  # ln(x pdf(x)), the density in v
         f = jnp.where(upper, ltq - lq, lp - ltp)
         return f, jnp.exp(lden - jnp.where(upper, lq, lp))
 
@@ -450,13 +467,20 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
         xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
     v_up = jnp.log(xa)
     pos = wh > 0.0
-    v_wh = jnp.where(pos, jnp.log(jnp.where(pos, wh, 1.0)),
-                     jnp.where(upper, v_up, v_lo))
-    v0 = jnp.where(upper, jnp.maximum(v_wh, v_up),
-                   jnp.where(ltp < _LN_SMALL, v_lo, v_wh))
+    v_wh = jnp.where(
+        pos, jnp.log(jnp.where(pos, wh, 1.0)), jnp.where(upper, v_up, v_lo)
+    )
+    v0 = jnp.where(
+        upper, jnp.maximum(v_wh, v_up), jnp.where(ltp < _LN_SMALL, v_lo, v_wh)
+    )
     v0 = jnp.clip(v0, lim.lo, lim.v_hi)
-    v = newton_bisect(f_and_df, v0, jnp.full_like(v0, lim.lo),
-                       jnp.full_like(v0, lim.v_hi), lim.n_gamma)
+    v = newton_bisect(
+        f_and_df,
+        v0,
+        jnp.full_like(v0, lim.lo),
+        jnp.full_like(v0, lim.v_hi),
+        lim.n_gamma,
+    )
     # Judge the residual on whichever side is computed DIRECTLY, since that
     # is the side carrying relative accuracy: P below the seam, Q above it,
     # each being 1 - the other on the far side (absolutely accurate, so its
@@ -467,22 +491,24 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
     above = jnp.zeros(v.shape, bool)
     if ceiling:
         above = f_and_df(jnp.full_like(v, lim.v_hi))[0] < 0.0
-    return (x, jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp))),
-            f_lo > 0.0, above)
+    return (
+        x,
+        jnp.abs(jnp.expm1(jnp.where(x > seam, lq - ltq, lp - ltp))),
+        f_lo > 0.0,
+        above,
+    )
 
 
 def _inv_targets(pc):
     """(ln p, ln(1-p), ndtri(p), upper lanes) for a lower-tail target p:
     exact on the lower lanes, and 1 - p is exact for p >= 1/2."""
-    return (jnp.log(pc), jnp.log1p(-pc), jax.scipy.special.ndtri(pc),
-            pc > 0.5)
+    return (jnp.log(pc), jnp.log1p(-pc), jax.scipy.special.ndtri(pc), pc > 0.5)
 
 
 def _cinv_targets(yc):
     """The same for an upper-tail target y. ndtri takes y directly, by
     symmetry, since ndtri(1 - y) saturates for y below eps."""
-    return (jnp.log1p(-yc), jnp.log(yc), -jax.scipy.special.ndtri(yc),
-            yc < 0.5)
+    return (jnp.log1p(-yc), jnp.log(yc), -jax.scipy.special.ndtri(yc), yc < 0.5)
 
 
 def _gammaincinv_solve(a, pc, use_recipe):
@@ -515,9 +541,10 @@ def _dispatch_solve(solve, a, tc):
             in_large,
             lambda: solve(a, tc, "large"),
             lambda: jax.lax.cond(
-                in_huge,
-                lambda: solve(a, tc, "huge"),
-                lambda: solve(a, tc, None))))
+                in_huge, lambda: solve(a, tc, "huge"), lambda: solve(a, tc, None)
+            ),
+        ),
+    )
 
 
 @jax.custom_jvp
@@ -553,8 +580,7 @@ def _gammaincinv_cj(a, p):
     x = jnp.where(at_floor, 0.0, x)
     x = jnp.where(~at_floor & (rel > lim.rtol), jnp.nan, x)
     x = jnp.where(p <= 0.0, 0.0, jnp.where(p >= 1.0, jnp.inf, x))
-    oob = (jnp.isnan(p) | (p < 0.0) | (p > 1.0)
-           | ~((a > 0.0) & jnp.isfinite(a)))
+    oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | ~((a > 0.0) & jnp.isfinite(a))
     return jnp.where(oob, jnp.nan, x)
 
 
@@ -584,8 +610,7 @@ def _gammaincinv_jvp(primals, tangents):
         _, _, s = _huge_solve(a, *targets)
         dpv = dp if not isinstance(dp, zero) else jnp.zeros_like(pc)
         dlog = jnp.where(targets[3], -dpv / (1.0 - pc), dpv / pc)
-        return _huge_dx(a, None if isinstance(da, zero) else da, s,
-                        targets[3], dlog)
+        return _huge_dx(a, None if isinstance(da, zero) else da, s, targets[3], dlog)
 
     dx = jax.lax.cond(a > _A_HUGE, in_s, in_x)
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
@@ -619,8 +644,7 @@ def _gammainccinv_cj(a, y):
     x = jnp.where(at_ceil, jnp.inf, x)
     x = jnp.where(~(at_ceil | at_floor) & (rel > lim.rtol), jnp.nan, x)
     x = jnp.where(y <= 0.0, jnp.inf, jnp.where(y >= 1.0, 0.0, x))
-    oob = (jnp.isnan(y) | (y < 0.0) | (y > 1.0)
-           | ~((a > 0.0) & jnp.isfinite(a)))
+    oob = jnp.isnan(y) | (y < 0.0) | (y > 1.0) | ~((a > 0.0) & jnp.isfinite(a))
     return jnp.where(oob, jnp.nan, x)
 
 
@@ -646,8 +670,7 @@ def _gammainccinv_jvp(primals, tangents):
         _, _, s = _huge_solve(a, *targets)
         dyv = dy if not isinstance(dy, zero) else jnp.zeros_like(yc)
         dlog = jnp.where(targets[3], dyv / yc, -dyv / (1.0 - yc))
-        return _huge_dx(a, None if isinstance(da, zero) else da, s,
-                        targets[3], dlog)
+        return _huge_dx(a, None if isinstance(da, zero) else da, s, targets[3], dlog)
 
     dx = jax.lax.cond(a > _A_HUGE, in_s, in_x)
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))

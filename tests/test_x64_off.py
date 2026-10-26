@@ -64,13 +64,15 @@ QUANTILES = {
 
 def _run(body):
     """Execute body in a child process with x64 left at its default (off)."""
-    code = ("import numpy as np, jax, jax.numpy as jnp, chebax\n"
-            "assert jnp.empty(()).dtype == jnp.float32, 'x64 leaked in'\n"
-            + body)
+    code = (
+        "import numpy as np, jax, jax.numpy as jnp, chebax\n"
+        "assert jnp.empty(()).dtype == jnp.float32, 'x64 leaked in'\n" + body
+    )
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
     env.pop("JAX_ENABLE_X64", None)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-3000:]
     return out.stdout
 
@@ -78,63 +80,75 @@ def _run(body):
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_value_under_x64_off(name):
     expr, ref = CASES[name]
-    _run(f"got = float({expr})\n"
-         f"assert np.isfinite(got), ('not finite', got)\n"
-         f"ref = {ref!r}\n"
-         f"err = abs(got - ref) / max(abs(ref), 1e-30)\n"
-         f"assert err <= 2e-5, (got, ref, err)\n")
+    _run(
+        f"got = float({expr})\n"
+        f"assert np.isfinite(got), ('not finite', got)\n"
+        f"ref = {ref!r}\n"
+        f"err = abs(got - ref) / max(abs(ref), 1e-30)\n"
+        f"assert err <= 2e-5, (got, ref, err)\n"
+    )
 
 
 @pytest.mark.parametrize("name", sorted(QUANTILES))
 def test_quantile_under_x64_off(name):
     expr, ref = QUANTILES[name]
-    _run(f"got = float({expr})\n"
-         f"assert np.isfinite(got), ('not finite', got)\n"
-         f"ref = {ref!r}\n"
-         f"err = abs(got - ref) / max(abs(ref), 1e-30)\n"
-         f"assert err <= 3e-5, (got, ref, err)\n")
+    _run(
+        f"got = float({expr})\n"
+        f"assert np.isfinite(got), ('not finite', got)\n"
+        f"ref = {ref!r}\n"
+        f"err = abs(got - ref) / max(abs(ref), 1e-30)\n"
+        f"assert err <= 3e-5, (got, ref, err)\n"
+    )
 
 
 def test_dtype_is_float32_not_promoted():
     # everything must come back float32, not silently widened
-    _run("for v in [chebax.besselk(1.5)(2.0), chebax.betaincinv(2.0, 3.0, 0.4),\n"
-         "          chebax.gammaincinv(2.5, 0.4), chebax.stdtrit(4.0, 0.25),\n"
-         "          chebax.besseli_ratio(0.0, 3.0), chebax.stdtr(4.0, 1.2)]:\n"
-         "    assert v.dtype == jnp.float32, v.dtype\n")
+    _run(
+        "for v in [chebax.besselk(1.5)(2.0), chebax.betaincinv(2.0, 3.0, 0.4),\n"
+        "          chebax.gammaincinv(2.5, 0.4), chebax.stdtrit(4.0, 0.25),\n"
+        "          chebax.besseli_ratio(0.0, 3.0), chebax.stdtr(4.0, 1.2)]:\n"
+        "    assert v.dtype == jnp.float32, v.dtype\n"
+    )
 
 
 def test_gradients_are_finite_under_x64_off():
-    _run("gs = [jax.grad(chebax.besselk(1.5))(2.0),\n"
-         "      jax.grad(chebax.besselk_fn, argnums=0)(1.7, 5.0),\n"
-         "      jax.grad(chebax.betaincinv, argnums=2)(2.0, 3.0, 0.4),\n"
-         "      jax.grad(chebax.gammaincinv, argnums=1)(2.5, 0.4),\n"
-         "      jax.grad(chebax.stdtrit, argnums=1)(4.0, 0.25),\n"
-         "      jax.grad(chebax.besseli_ratio, argnums=1)(0.0, 0.0),\n"
-         "      jax.grad(chebax.vonmises_cdf, argnums=0)(2.0, 0.5)]\n"
-         "for g in gs:\n"
-         "    assert np.isfinite(float(g)), g\n"
-         "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n")
+    _run(
+        "gs = [jax.grad(chebax.besselk(1.5))(2.0),\n"
+        "      jax.grad(chebax.besselk_fn, argnums=0)(1.7, 5.0),\n"
+        "      jax.grad(chebax.betaincinv, argnums=2)(2.0, 3.0, 0.4),\n"
+        "      jax.grad(chebax.gammaincinv, argnums=1)(2.5, 0.4),\n"
+        "      jax.grad(chebax.stdtrit, argnums=1)(4.0, 0.25),\n"
+        "      jax.grad(chebax.besseli_ratio, argnums=1)(0.0, 0.0),\n"
+        "      jax.grad(chebax.vonmises_cdf, argnums=0)(2.0, 0.5)]\n"
+        "for g in gs:\n"
+        "    assert np.isfinite(float(g)), g\n"
+        "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n"
+    )
 
 
 def test_widest_float32_domain_under_jit():
     # float32's version of the reciprocal flush: half-width 1e38 is past
     # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a
     # jitted vectorized call evaluated at t = 0
-    _run("s = chebax.ChebSeries(np.array([0.0, 1.0], np.float32), (-1e38, 1e38))\n"
-         "xs = jnp.asarray([-1e38, -3e37, 0.0, 5e37, 1e38], jnp.float32)\n"
-         "got = np.asarray(jax.jit(s)(xs))\n"
-         "ref = np.array([-1.0, -0.3, 0.0, 0.5, 1.0])\n"
-         "assert np.allclose(got, ref, rtol=1e-6, atol=1e-7), got\n")
+    _run(
+        "s = chebax.ChebSeries(np.array([0.0, 1.0], np.float32), (-1e38, 1e38))\n"
+        "xs = jnp.asarray([-1e38, -3e37, 0.0, 5e37, 1e38], jnp.float32)\n"
+        "got = np.asarray(jax.jit(s)(xs))\n"
+        "ref = np.array([-1.0, -0.3, 0.0, 0.5, 1.0])\n"
+        "assert np.allclose(got, ref, rtol=1e-6, atol=1e-7), got\n"
+    )
 
 
 def test_tables_materialize_in_float32():
     # a cache built under x64 off must hold float32, and must NOT be served
     # to a later x64-on process (the dtype tag); the erf family's no-argument
     # cache is the one that used to miss this
-    _run("assert np.asarray(chebax.besselk(1.5).ltil.coef).dtype == np.float32\n"
-         "from chebax._src.recipes.erf_family import _series\n"
-         "chebax.dawsn(1.0)\n"
-         "assert np.asarray(_series()[0].coef).dtype == np.float32\n"
-         "jax.config.update('jax_enable_x64', True)\n"
-         "assert np.asarray(_series()[0].coef).dtype == np.float64\n"
-         "assert abs(float(chebax.dawsn(1.0)) - 0.53807950691276842) <= 1e-15\n")
+    _run(
+        "assert np.asarray(chebax.besselk(1.5).ltil.coef).dtype == np.float32\n"
+        "from chebax._src.recipes.erf_family import _series\n"
+        "chebax.dawsn(1.0)\n"
+        "assert np.asarray(_series()[0].coef).dtype == np.float32\n"
+        "jax.config.update('jax_enable_x64', True)\n"
+        "assert np.asarray(_series()[0].coef).dtype == np.float64\n"
+        "assert abs(float(chebax.dawsn(1.0)) - 0.53807950691276842) <= 1e-15\n"
+    )

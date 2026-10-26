@@ -64,12 +64,22 @@ import jax.numpy as jnp
 
 try:
     from pytensor.link.jax.dispatch import jax_funcify
-    from pytensor.scalar.math import (BetaInc, BetaIncInv, Erfcinv, Erfcx,
-                                      GammaInc, GammaIncC, GammaIncCInv,
-                                      GammaIncInv, Ive, Kve)
+    from pytensor.scalar.math import (
+        BetaInc,
+        BetaIncInv,
+        Erfcinv,
+        Erfcx,
+        GammaInc,
+        GammaIncC,
+        GammaIncCInv,
+        GammaIncInv,
+        Ive,
+        Kve,
+    )
 except ImportError as e:
     raise ImportError(
-        "chebax.pytensor needs pytensor>=3.2: pip install chebax[pytensor]") from e
+        "chebax.pytensor needs pytensor>=3.2: pip install chebax[pytensor]"
+    ) from e
 
 import chebax
 from chebax import domains as _dom
@@ -117,6 +127,7 @@ def _tfp_fallback(op, name, shapes):
 def _jax_funcify_Erfcx(op, **kwargs):
     if hasattr(jax.scipy.special, "erfcx"):
         return jax.scipy.special.erfcx
+
     # jax < 0.11 has no native erfcx; keep pytensor's tfp behavior there
     def erfcx_fallback(x):
         return _tfp_fallback(op, "erfcx", (jnp.shape(x),))(x)
@@ -155,14 +166,14 @@ def _jax_funcify_GammaIncCInv(op, **kwargs):
 
 @jax_funcify.register(GammaInc)
 def _jax_funcify_GammaInc(op, **kwargs):
-    return _forward_gamma(op, "igamma", chebax.gammainc_fn,
-                          jax.scipy.special.gammainc)
+    return _forward_gamma(op, "igamma", chebax.gammainc_fn, jax.scipy.special.gammainc)
 
 
 @jax_funcify.register(GammaIncC)
 def _jax_funcify_GammaIncC(op, **kwargs):
-    return _forward_gamma(op, "igammac", chebax.gammaincc_fn,
-                          jax.scipy.special.gammaincc)
+    return _forward_gamma(
+        op, "igammac", chebax.gammaincc_fn, jax.scipy.special.gammaincc
+    )
 
 
 def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
@@ -180,6 +191,7 @@ def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
     is the whole point (measured 2.4-2.9x end to end on a truncated Gamma
     with a sampled shape, six HLO whiles to zero; experiments/18).
     """
+
     def forward(a, x):
         if not _is_uniform(a):
             return _tfp_fallback(op, tfp_name, (jnp.shape(a), jnp.shape(x)))(a, x)
@@ -193,7 +205,8 @@ def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
         return jax.lax.cond(
             a_s >= _dom.GAMMAINC.lo,
             lambda: cheb_fn(lo, xs).astype(dt),
-            lambda: jax_fn(jnp.broadcast_to(a_s, jnp.shape(xs)), xs).astype(dt))
+            lambda: jax_fn(jnp.broadcast_to(a_s, jnp.shape(xs)), xs).astype(dt),
+        )
 
     return forward
 
@@ -213,8 +226,9 @@ def _clip_box(p):
 def _jax_funcify_BetaIncInv(op, **kwargs):
     def betaincinv(a, b, p):
         if not (_is_uniform(a) and _is_uniform(b)):
-            return _tfp_fallback(op, "betaincinv",
-                                 (jnp.shape(a), jnp.shape(b), jnp.shape(p)))(a, b, p)
+            return _tfp_fallback(
+                op, "betaincinv", (jnp.shape(a), jnp.shape(b), jnp.shape(p))
+            )(a, b, p)
         a, b = _as_scalar(a), _as_scalar(b)
         out = chebax.betaincinv(_clip_box(a), _clip_box(b), p)
         return jnp.where(_in_box(a, b), out, jnp.nan)
@@ -229,8 +243,9 @@ def _jax_funcify_Ive(op, **kwargs):
             return _tfp_fallback(op, "bessel_ive", (jnp.shape(v), jnp.shape(x)))(v, x)
         v = _as_scalar(v)
         ok = (v >= 0.0) & (v <= 10.0) & (x >= 0.0)
-        out = chebax.besseli_fn(jnp.clip(v, 0.0, 10.0),
-                                jnp.where(x >= 0.0, x, 0.0), scaled=True)
+        out = chebax.besseli_fn(
+            jnp.clip(v, 0.0, 10.0), jnp.where(x >= 0.0, x, 0.0), scaled=True
+        )
         return jnp.where(ok, out, jnp.nan)
 
     return ive
@@ -260,7 +275,8 @@ def _betainc_scalar_ab(a, b, x):
     return jax.lax.cond(
         _in_box(a, b),
         lambda: chebax.betainc_fn(_clip_box(a), _clip_box(b), x).astype(dt),
-        lambda: _jax_betainc(a, b, x, dt))
+        lambda: _jax_betainc(a, b, x, dt),
+    )
 
 
 def _beta_density(a, b, x, dt):
@@ -271,8 +287,11 @@ def _beta_density(a, b, x, dt):
     where the limit is inf (review, 2026-10-26)."""
     inside = (x > 0.0) & (x < 1.0)
     xs = jnp.where(inside, x, 0.5)
-    core = jnp.exp((a - 1.0) * jnp.log(xs) + (b - 1.0) * jnp.log1p(-xs)
-                   - jax.scipy.special.betaln(a, b))
+    core = jnp.exp(
+        (a - 1.0) * jnp.log(xs)
+        + (b - 1.0) * jnp.log1p(-xs)
+        - jax.scipy.special.betaln(a, b)
+    )
     at0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a == 1.0, b, 0.0))
     at1 = jnp.where(b < 1.0, jnp.inf, jnp.where(b == 1.0, a, 0.0))
     edge = jnp.where(x == 0.0, at0, jnp.where(x == 1.0, at1, 0.0))
@@ -327,8 +346,8 @@ def _jax_funcify_BetaInc(op, **kwargs):
             # values are fine everywhere; a/b gradients raise as in plain jax
             return jax.scipy.special.betainc(a, b, x)
         dt = _out_dtype(a, b, x)
-        return _betainc_scalar_ab(_as_scalar(a).astype(dt),
-                                  _as_scalar(b).astype(dt),
-                                  jnp.asarray(x, dt))
+        return _betainc_scalar_ab(
+            _as_scalar(a).astype(dt), _as_scalar(b).astype(dt), jnp.asarray(x, dt)
+        )
 
     return betainc

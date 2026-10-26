@@ -63,8 +63,11 @@ def test_runtime_imports_jax_and_numpy_only(path):
         # fit(dps=...) is the one requested high-precision path, imported
         # inside the function that needs it
         extra -= {"mpmath"}
-        top = {n.names[0].name for n in ast.parse(path.read_text()).body
-               if isinstance(n, ast.Import)}
+        top = {
+            n.names[0].name
+            for n in ast.parse(path.read_text()).body
+            if isinstance(n, ast.Import)
+        }
         assert "mpmath" not in top
     assert not extra, (_rel(path), extra)
     gens = {m for m in mods if m.endswith("_gen") or m.endswith("_gen_common")}
@@ -73,8 +76,7 @@ def test_runtime_imports_jax_and_numpy_only(path):
     assert not adapters, (_rel(path), adapters)
 
 
-@pytest.mark.parametrize("path", [p for p in FILES if _kind(p) == "table"],
-                         ids=_rel)
+@pytest.mark.parametrize("path", [p for p in FILES if _kind(p) == "table"], ids=_rel)
 def test_tables_hold_data_only(path):
     mods = _imports(path)
     assert _third_party(mods) <= {"numpy"}, (_rel(path), mods)
@@ -86,9 +88,12 @@ def test_domains_read_tables_only():
     # metadata layer depend on a runtime module (review, 2026-10-26)
     mods = _imports(SRC / "domains.py")
     chebax = {m for m in mods if m.startswith("chebax")}
-    bad = {m for m in chebax
-           if m != "chebax._src.recipes"
-           and not (m.startswith("chebax._src.recipes.") and "_table" in m)}
+    bad = {
+        m
+        for m in chebax
+        if m != "chebax._src.recipes"
+        and not (m.startswith("chebax._src.recipes.") and "_table" in m)
+    }
     assert not bad, bad
 
 

@@ -65,7 +65,7 @@ def _log_series_parts(rho, u):
     on CPU."""
     n = jnp.arange(1, _tt.N_TERMS + 1, dtype=u.dtype)
     c = jax.lax.lgamma(n + 1.0) + jax.lax.lgamma(rho * n)
-    g = n * jax.lax.digamma(rho * n)            # -d/drho of term n's exponent
+    g = n * jax.lax.digamma(rho * n)  # -d/drho of term n's exponent
     m = u - c[0]
     for k in range(1, _tt.N_TERMS):
         m = jnp.maximum(m, (k + 1) * u - c[k])
@@ -129,8 +129,7 @@ def log_wright_bessel0(rho, z):
     w_in = _log_series(r, jnp.where(inner, u, u1))
     zt = jnp.where(inner, z1, big_z)
     lt0 = jnp.log(r * zt / (1.0 + r))
-    w_tail = (zt + 0.5 * lt0 - _HALF_LOG_2PI - 0.5 * jnp.log1p(r)
-              + tail(z1 / zt) / zt)
+    w_tail = zt + 0.5 * lt0 - _HALF_LOG_2PI - 0.5 * jnp.log1p(r) + tail(z1 / zt) / zt
     out = jnp.where(inner, w_in, w_tail)
     out = jnp.where(pos, out, jnp.where(z == 0, -jnp.inf, jnp.nan))
     return jnp.where(ok, out, jnp.nan)
@@ -167,8 +166,9 @@ def _half_deviance_impl(a, mu, y):
     for ck in c[-2::-1]:
         acc = acc * d + ck
     series = jnp.power(mu, a) * d * d * acc
-    far = ((jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0)
-           + jnp.power(mu, a) / a)
+    far = (jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0) + jnp.power(
+        mu, a
+    ) / a
     return jnp.where(near, series, far)
 
 
@@ -193,8 +193,9 @@ def _half_deviance_jvp(primals, tangents):
     m1 = jnp.power(mu, a - 1.0)
     h_mu = -m1 * delta
     lr = jnp.log1p(jnp.where(near, delta, 0.0))
-    h_y = jnp.where(near, m1 * jnp.expm1((a - 1.0) * lr),
-                    jnp.power(y, a - 1.0) - m1) / (a - 1.0)
+    h_y = jnp.where(
+        near, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
+    ) / (a - 1.0)
     return h, h_a + h_mu * dmu + h_y * dy
 
 
@@ -260,18 +261,23 @@ def tweedie_logpdf(p, mu, phi, y):
     # and theta, the residue of its mu terms had derivative eps/mu
     # (review follow-up, 2026-10-26).
     mi, fi, yi = own(inner, mu_s, phi_s, y_s)
-    u = (r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi)
-         - jnp.log(a))
-    f_in = (-_over(_half_deviance(a, mi, yi), fi)
-            + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
-            - jnp.log(yi) + _log_series(r, u))
+    u = r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi) - jnp.log(a)
+    f_in = (
+        -_over(_half_deviance(a, mi, yi), fi)
+        + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
+        - jnp.log(yi)
+        + _log_series(r, u)
+    )
     # outer: saddlepoint form plus the tabulated correction T(Z1/Z)/Z, with
     # 1/Z built from phi directly rather than as a reciprocal of Z ~ 1/phi
     mt, ft, yt = own(outer, mu_s, phi_s, y_s)
     w = jnp.where(outer, ft * a * (pp - 1.0) / jnp.power(yt, a), 1.0 / z1)
-    f_tail = (-_over(_half_deviance(a, mt, yt), ft)
-              - 0.5 * (jnp.log(ft) + pp * jnp.log(yt)) - _HALF_LOG_2PI
-              + tail(z1 * w) * w)
+    f_tail = (
+        -_over(_half_deviance(a, mt, yt), ft)
+        - 0.5 * (jnp.log(ft) + pp * jnp.log(yt))
+        - _HALF_LOG_2PI
+        + tail(z1 * w) * w
+    )
     out = jnp.where(inner, f_in, jnp.where(outer, f_tail, f_zero))
     out = jnp.where(valid, out, jnp.nan)
     return jnp.where(ok, out, jnp.nan)

@@ -34,6 +34,7 @@ def sup_err(approx, exact):
 # ---- acceptance: fit to <= 1e-15 sup-normalized ----------------------------
 # The evaluation floor is Clenshaw's eps*sum|c|; measured 5-8e-16 here.
 
+
 def test_fit_exp():
     p = chebax.fit(np.exp)
     assert sup_err(p(XS), np.exp(XS)) <= 1e-15
@@ -55,6 +56,7 @@ def test_fit_runge_segmented():
 # path by Markov's ~deg^2 factor (measured: 4e-14 at deg 14, 5e-13 at deg 38).
 # The dps build path samples exactly and restores ~eps derivatives; that test
 # carries the tight bar.
+
 
 def test_deriv_exp():
     p = chebax.fit(np.exp)
@@ -85,23 +87,27 @@ def test_deriv_mpmath_build():
 
 # ---- acceptance: jit(vmap(grad(p))) equals the derivative series -----------
 
+
 def test_grad_equals_deriv_series_single():
     p = chebax.fit(np.exp)
     d = p.deriv()(XS)
     g = jax.jit(jax.vmap(jax.grad(p)))(jnp.asarray(XS))
-    np.testing.assert_allclose(np.asarray(g), np.asarray(d),
-                               rtol=0, atol=1e-14 * np.max(np.abs(d)))
+    np.testing.assert_allclose(
+        np.asarray(g), np.asarray(d), rtol=0, atol=1e-14 * np.max(np.abs(d))
+    )
 
 
 def test_grad_equals_deriv_series_piecewise():
     p = chebax.fit(runge, breaks=RUNGE_BREAKS)
     d = p.deriv()(XS)
     g = jax.jit(jax.vmap(jax.grad(p)))(jnp.asarray(XS))
-    np.testing.assert_allclose(np.asarray(g), np.asarray(d),
-                               rtol=0, atol=1e-14 * np.max(np.abs(d)))
+    np.testing.assert_allclose(
+        np.asarray(g), np.asarray(d), rtol=0, atol=1e-14 * np.max(np.abs(d))
+    )
 
 
 # ---- gradients with respect to coefficients --------------------------------
+
 
 def test_grad_wrt_coefficients():
     p = chebax.fit(np.exp)
@@ -124,13 +130,15 @@ def test_grad_wrt_coefficients_piecewise():
 
 # ---- convention locks against numpy.polynomial -----------------------------
 
+
 def test_chebval_matches_numpy():
     # numpy arranges the recurrence differently, so equality is to rounding
     rng = np.random.default_rng(0)
     c = rng.standard_normal(8)
     p = chebax.ChebSeries(c)
-    np.testing.assert_allclose(np.asarray(p(XS)), npch.chebval(XS, c),
-                               rtol=0, atol=5e-15)
+    np.testing.assert_allclose(
+        np.asarray(p(XS)), npch.chebval(XS, c), rtol=0, atol=5e-15
+    )
 
 
 def test_chebval_domain_mapping():
@@ -138,27 +146,31 @@ def test_chebval_domain_mapping():
     p = chebax.ChebSeries(c, domain=(2.0, 5.0))
     xs = np.linspace(2.0, 5.0, 301)
     t = (2 * xs - 7.0) / 3.0
-    np.testing.assert_allclose(np.asarray(p(xs)), npch.chebval(t, c),
-                               rtol=0, atol=5e-15)
+    np.testing.assert_allclose(
+        np.asarray(p(xs)), npch.chebval(t, c), rtol=0, atol=5e-15
+    )
 
 
 def test_chebder_chebint_match_numpy():
     rng = np.random.default_rng(1)
     c = rng.standard_normal(9)
     np.testing.assert_allclose(algorithms.chebder(c), npch.chebder(c), rtol=1e-15)
-    np.testing.assert_allclose(algorithms.chebint(c), npch.chebint(c),
-                               rtol=1e-15, atol=1e-16)
+    np.testing.assert_allclose(
+        algorithms.chebint(c), npch.chebint(c), rtol=1e-15, atol=1e-16
+    )
 
 
 def test_integ_roundtrip():
     p = chebax.fit(np.exp, domain=(0.0, 3.0))
     q = p.integ().deriv()
     xs = np.linspace(0.0, 3.0, 301)
-    np.testing.assert_allclose(np.asarray(q(xs)), np.asarray(p(xs)),
-                               rtol=0, atol=1e-14 * np.e**3)
+    np.testing.assert_allclose(
+        np.asarray(q(xs)), np.asarray(p(xs)), rtol=0, atol=1e-14 * np.e**3
+    )
 
 
 # ---- f32 pipeline ----------------------------------------------------------
+
 
 def test_astype_f32():
     p = chebax.fit(np.exp).astype(jnp.float32)
@@ -172,11 +184,14 @@ def test_astype_f32():
 
 # ---- pytree behaviour ------------------------------------------------------
 
+
 def test_pytree_through_jit():
     # jit may fuse to fma, so equality is to rounding, not bitwise
     p = chebax.fit(np.exp)
     y = jax.jit(lambda q, x: q(x))(p, jnp.asarray(XS))
-    np.testing.assert_allclose(np.asarray(y), np.asarray(p(XS)), rtol=0, atol=1e-15 * np.e)
+    np.testing.assert_allclose(
+        np.asarray(y), np.asarray(p(XS)), rtol=0, atol=1e-15 * np.e
+    )
     pw = chebax.fit(runge, breaks=RUNGE_BREAKS)
     y = jax.jit(lambda q, x: q(x))(pw, jnp.asarray(XS))
     np.testing.assert_allclose(np.asarray(y), np.asarray(pw(XS)), rtol=0, atol=1e-15)
@@ -190,6 +205,7 @@ def test_tree_map_preserves_structure():
 
 
 # ---- generator path --------------------------------------------------------
+
 
 def test_fit_with_mpmath():
     mp = pytest.importorskip("mpmath")
@@ -242,6 +258,7 @@ def test_fixed_degree():
 
 # ---- review 2026-07-30: constructor validation and mixed dtype --------------
 
+
 def test_series_constructor_validation():
     with pytest.raises(ValueError):
         chebax.ChebSeries(np.array([]))
@@ -281,11 +298,14 @@ def test_mixed_dtype_matches_piecewise():
 
 def cheb_mode(k):
     """T_k = cos(k arccos x), sampled in numpy or (dps builds) in mpmath."""
+
     def f(x):
         if hasattr(x, "_mpf_"):
             import mpmath as mp
+
             return mp.cos(k * mp.acos(x))
         return np.cos(k * np.arccos(np.clip(np.asarray(x, dtype=float), -1.0, 1.0)))
+
     return f
 
 

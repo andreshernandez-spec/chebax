@@ -49,13 +49,24 @@ def _beta_qref_mirror(a, b, ptail):
 
 
 def test_betaincinv():
-    for a, b in [(0.5, 0.5), (2.0, 3.0), (0.15, 4.0), (9.9, 9.9), (1.0, 1.0),
-                 (0.15, 0.15), (9.9, 0.15)]:
+    for a, b in [
+        (0.5, 0.5),
+        (2.0, 3.0),
+        (0.15, 4.0),
+        (9.9, 9.9),
+        (1.0, 1.0),
+        (0.15, 0.15),
+        (9.9, 0.15),
+    ]:
         x = np.asarray(chebax.betaincinv(a, b, PS))
         for p, v in zip(PS, x):
             if p <= 0.5:
-                e = abs(float(mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(v),
-                                         regularized=True)) - p)
+                e = abs(
+                    float(
+                        mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(v), regularized=True)
+                    )
+                    - p
+                )
             else:
                 e = abs((1.0 - v) - float(_beta_qref_mirror(a, b, 1.0 - p)))
             assert e <= 5e-13, (a, b, p, e)
@@ -64,7 +75,8 @@ def test_betaincinv():
 def test_betaincinv_gradients():
     def mpinv(a, b, p):
         return mp.findroot(
-            lambda t: mp.betainc(a, b, 0, t, regularized=True) - p, mp.mpf("0.5"))
+            lambda t: mp.betainc(a, b, 0, t, regularized=True) - p, mp.mpf("0.5")
+        )
 
     h = mp.mpf("1e-12")
     for a, b, p in [(0.5, 0.5, 0.3), (2.0, 3.0, 0.7), (7.7, 1.3, 0.1)]:
@@ -82,8 +94,15 @@ def test_betaincinv_gradients():
 def test_gammaincinv():
     for a in [0.1, 0.5, 1.0, 3.5, 20.0, 100.0]:
         x = np.asarray(chebax.gammaincinv(a, PS))
-        rt = np.abs(np.array([float(mp.gammainc(mp.mpf(a), 0, mp.mpf(v),
-                                                regularized=True)) for v in x]) - PS)
+        rt = np.abs(
+            np.array(
+                [
+                    float(mp.gammainc(mp.mpf(a), 0, mp.mpf(v), regularized=True))
+                    for v in x
+                ]
+            )
+            - PS
+        )
         assert rt.max() <= 5e-13, a
 
 
@@ -103,17 +122,34 @@ def test_gammaincinv_gradient():
 def test_stdtr_values_and_dnu():
     ts = np.linspace(-6.0, 6.0, 13)
     for nu in [0.5, 2.0, 4.0, 15.0]:
+
         def ref(t):
-            half = mp.betainc(mp.mpf(nu) / 2, mp.mpf("0.5"), 0,
-                              nu / (nu + t * t), regularized=True) / 2
+            half = (
+                mp.betainc(
+                    mp.mpf(nu) / 2,
+                    mp.mpf("0.5"),
+                    0,
+                    nu / (nu + t * t),
+                    regularized=True,
+                )
+                / 2
+            )
             return float(half if t < 0 else 1 - half)
+
         r = np.array([ref(t) for t in ts])
         got = np.asarray(chebax.stdtr(nu, ts))
         assert np.max(np.abs(got - r)) <= 5e-14, nu
     dnu = float(jax.grad(chebax.stdtr, argnums=0)(4.0, 1.5))
-    dnu_r = float(mp.diff(lambda n: 1 - mp.betainc(n / 2, mp.mpf("0.5"), 0,
-                                                   n / (n + mp.mpf("2.25")),
-                                                   regularized=True) / 2, mp.mpf(4)))
+    dnu_r = float(
+        mp.diff(
+            lambda n: 1
+            - mp.betainc(
+                n / 2, mp.mpf("0.5"), 0, n / (n + mp.mpf("2.25")), regularized=True
+            )
+            / 2,
+            mp.mpf(4),
+        )
+    )
     assert abs(dnu - dnu_r) / abs(dnu_r) <= 1e-12
 
 
@@ -156,9 +192,16 @@ def test_truncated_beta_reparameterization():
     h = 1e-6
     g_ref = (float(mp_tmean(2.0 + h)) - float(mp_tmean(2.0 - h))) / (2 * h)
     assert abs(g - g_ref) / abs(g_ref) <= 1e-4
-    x = np.asarray(chebax.betaincinv(2.0, b, np.asarray(
-        chebax.betainc_fn(2.0, b, lo) + u * (chebax.betainc_fn(2.0, b, hi)
-                                             - chebax.betainc_fn(2.0, b, lo)))))
+    x = np.asarray(
+        chebax.betaincinv(
+            2.0,
+            b,
+            np.asarray(
+                chebax.betainc_fn(2.0, b, lo)
+                + u * (chebax.betainc_fn(2.0, b, hi) - chebax.betainc_fn(2.0, b, lo))
+            ),
+        )
+    )
     assert (x > lo).all() and (x < hi).all()
 
 
@@ -187,10 +230,19 @@ def test_truncated_gamma_reparameterization():
     h = 1e-6
     g_ref = (float(mp_tmean(3.5 + h)) - float(mp_tmean(3.5 - h))) / (2 * h)
     assert abs(g - g_ref) / abs(g_ref) <= 1e-4
-    x = np.asarray(chebax.gammaincinv(3.5, np.asarray(
-        jax.scipy.special.gammainc(3.5, lo) + u * (
-            jax.scipy.special.gammainc(3.5, hi)
-            - jax.scipy.special.gammainc(3.5, lo)))))
+    x = np.asarray(
+        chebax.gammaincinv(
+            3.5,
+            np.asarray(
+                jax.scipy.special.gammainc(3.5, lo)
+                + u
+                * (
+                    jax.scipy.special.gammainc(3.5, hi)
+                    - jax.scipy.special.gammainc(3.5, lo)
+                )
+            ),
+        )
+    )
     assert (x > lo).all() and (x < hi).all()
 
 
@@ -198,10 +250,16 @@ def test_jit():
     p = jnp.asarray([0.2, 0.8])
     np.testing.assert_allclose(
         np.asarray(jax.jit(chebax.betaincinv)(2.0, 3.0, p)),
-        np.asarray(chebax.betaincinv(2.0, 3.0, p)), rtol=0, atol=1e-15)
+        np.asarray(chebax.betaincinv(2.0, 3.0, p)),
+        rtol=0,
+        atol=1e-15,
+    )
     np.testing.assert_allclose(
         np.asarray(jax.jit(chebax.gammaincinv)(3.5, p)),
-        np.asarray(chebax.gammaincinv(3.5, p)), rtol=0, atol=1e-15)
+        np.asarray(chebax.gammaincinv(3.5, p)),
+        rtol=0,
+        atol=1e-15,
+    )
 
 
 # ---- deep tails, median behavior, and failure semantics (review 2026-07-30)
@@ -211,13 +269,20 @@ def test_jit():
 # x = nu/(nu+t^2), which rounds to 1 near t = 0 and killed all first-order
 # behavior at the median.
 
+
 def test_deep_tail_betaincinv():
     mp = pytest.importorskip("mpmath")
     mp.mp.dps = 50
     # the contract is CDF accuracy: push the returned quantile back through
     # the exact CDF and require the target probability to eps-ish level
-    for a, b, p in [(1.0, 1.0, 1e-50), (2.0, 3.0, 1e-30), (2.0, 3.0, 1e-100),
-                    (0.5, 0.5, 1e-100), (0.1, 10.0, 1e-20), (10.0, 0.1, 1e-12)]:
+    for a, b, p in [
+        (1.0, 1.0, 1e-50),
+        (2.0, 3.0, 1e-30),
+        (2.0, 3.0, 1e-100),
+        (0.5, 0.5, 1e-100),
+        (0.1, 10.0, 1e-20),
+        (10.0, 0.1, 1e-12),
+    ]:
         x = float(chebax.betaincinv(a, b, p))
         assert x > 0.0, (a, b, p)
         roundtrip = float(mp.betainc(a, b, 0, mp.mpf(x), regularized=True))
@@ -249,13 +314,15 @@ def test_stdtr_median_first_order():
 def test_quantile_endpoints_and_nan():
     assert float(chebax.stdtrit(4.0, 0.0)) == -np.inf
     assert float(chebax.stdtrit(4.0, 1.0)) == np.inf
-    for v in [chebax.betaincinv(2.0, 3.0, jnp.nan),
-              chebax.betaincinv(2.0, 3.0, -0.5),
-              chebax.betaincinv(2.0, 3.0, 1.5),
-              chebax.gammaincinv(2.0, jnp.nan),
-              chebax.stdtr(4.0, jnp.nan),
-              chebax.stdtrit(4.0, jnp.nan),
-              chebax.betainc_fn(2.0, 3.0, jnp.nan)]:
+    for v in [
+        chebax.betaincinv(2.0, 3.0, jnp.nan),
+        chebax.betaincinv(2.0, 3.0, -0.5),
+        chebax.betaincinv(2.0, 3.0, 1.5),
+        chebax.gammaincinv(2.0, jnp.nan),
+        chebax.stdtr(4.0, jnp.nan),
+        chebax.stdtrit(4.0, jnp.nan),
+        chebax.betainc_fn(2.0, 3.0, jnp.nan),
+    ]:
         assert np.isnan(float(v))
 
 
@@ -285,6 +352,7 @@ def test_chi2inv():
     # a 2x-rescaled gammaincinv (which owns the accuracy contract);
     # scipy here is a wiring oracle at its own ~1e-10 accuracy
     from scipy import stats
+
     ps = np.array([1e-8, 0.05, 0.5, 0.95, 1 - 1e-8])
     for k in [0.7, 3.0, 11.5]:
         got = np.asarray(chebax.chi2inv(k, jnp.asarray(ps)))
@@ -310,9 +378,11 @@ def test_endpoint_contract():
     assert np.isposinf(float(chebax.gammaincinv(2.5, 1.0)))
     assert np.isneginf(float(chebax.stdtrit(4.0, 0.0)))
     assert np.isposinf(float(chebax.stdtrit(4.0, 1.0)))
-    for f in (lambda p: chebax.betaincinv(2.0, 3.0, p),
-              lambda p: chebax.gammaincinv(2.5, p),
-              lambda p: chebax.stdtrit(4.0, p)):
+    for f in (
+        lambda p: chebax.betaincinv(2.0, 3.0, p),
+        lambda p: chebax.gammaincinv(2.5, p),
+        lambda p: chebax.stdtrit(4.0, p),
+    ):
         assert np.isnan(float(f(np.nan)))
         assert float(jax.grad(f)(0.0)) == 0.0
     # shape gradients at the endpoints are masked to zero, not nan
@@ -329,8 +399,7 @@ def test_stdtr_extended_nu_range():
     # slice path.
     def tcdf(nu, t):
         x = mp.mpf(nu) / (nu + mp.mpf(t) ** 2)
-        p = mp.betainc(mp.mpf(nu) / 2, mp.mpf(1) / 2, 0, x,
-                       regularized=True) / 2
+        p = mp.betainc(mp.mpf(nu) / 2, mp.mpf(1) / 2, 0, x, regularized=True) / 2
         return p if t < 0 else 1 - p
 
     ts = np.concatenate([-np.logspace(2, -3, 9), [0.0], np.logspace(-3, 2, 9)])
@@ -352,9 +421,11 @@ def test_stdtr_tables_regenerate_bit_for_bit(tmp_path):
     import pathlib
     from chebax._src.recipes import stdtr_gen
     from chebax._src.recipes import stdtr_table as st
+
     stdtr_gen.main(tmp_path)
-    assert ((tmp_path / "stdtr_table.py").read_text()
-            == pathlib.Path(st.__file__).read_text())
+    assert (tmp_path / "stdtr_table.py").read_text() == pathlib.Path(
+        st.__file__
+    ).read_text()
 
 
 def test_normal_quantiles_at_the_floor_are_returned():
@@ -394,8 +465,7 @@ def test_deep_tail_verified_and_dead_zone_fixed():
             assert not np.isnan(x), (a, b, p)
             if x == 0.0:
                 continue
-            pr = mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x),
-                            regularized=True)
+            pr = mp.betainc(mp.mpf(a), mp.mpf(b), 0, mp.mpf(x), regularized=True)
             assert abs(float((pr - mp.mpf(p)) / mp.mpf(p))) <= 3e-13, (a, b, p)
     for a in (0.15, 2.5, 9.9):
         for p in ps:
@@ -405,6 +475,7 @@ def test_deep_tail_verified_and_dead_zone_fixed():
                 continue
             pr = mp.gammainc(mp.mpf(a), 0, mp.mpf(x), regularized=True)
             assert abs(float((pr - mp.mpf(p)) / mp.mpf(p))) <= 4e-13, (a, p)
+
 
 # ---- release blockers (review 2026-08-01): the float32 default, which
 # conftest's x64 hides; gammaincinv's upper tail and shape domain; and the
@@ -434,7 +505,7 @@ def test_gammaincinv_upper_tail():
             got = mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True)
             assert abs(float(got) / (1.0 - p) - 1) <= 3e-11, (a, q, x)
     p = float(np.nextafter(1.0, 0.0))
-    exact = -float(np.log1p(-p))          # a = 1 is the exponential quantile
+    exact = -float(np.log1p(-p))  # a = 1 is the exponential quantile
     assert abs(float(chebax.gammaincinv(1.0, p)) - exact) <= 4e-15 * exact
 
 
@@ -463,8 +534,7 @@ def test_gammainccinv_against_mpmath():
         xs = np.asarray(chebax.gammainccinv(a, np.asarray(ys)))
         assert np.all(np.isfinite(xs)), (a, xs)
         for y, x in zip(ys, xs):
-            got = mp.gammainc(mp.mpf(a), mp.mpf(float(x)), mp.inf,
-                              regularized=True)
+            got = mp.gammainc(mp.mpf(a), mp.mpf(float(x)), mp.inf, regularized=True)
             worst = max(worst, abs(float(got) / y - 1))
     assert worst <= 2e-11, worst
 
@@ -492,9 +562,10 @@ def test_gammainccinv_endpoints_and_gradients():
     for a, y in [(0.7, 0.3), (4.0, 1e-3), (40.0, 1e-8)]:
         gy = float(jax.grad(chebax.gammainccinv, argnums=1)(a, y))
         ga = float(jax.grad(chebax.gammainccinv, argnums=0)(a, y))
-        x = mp.findroot(lambda t: mp.gammainc(mp.mpf(a), t, mp.inf,
-                                              regularized=True) - y,
-                        mp.mpf(float(chebax.gammainccinv(a, y))))
+        x = mp.findroot(
+            lambda t: mp.gammainc(mp.mpf(a), t, mp.inf, regularized=True) - y,
+            mp.mpf(float(chebax.gammainccinv(a, y))),
+        )
         pdf = mp.exp((a - 1) * mp.log(x) - x - mp.loggamma(a))
         ry = float(-1 / pdf)
         rq = mp.diff(lambda t: mp.gammainc(t, x, mp.inf, regularized=True), a)
@@ -520,8 +591,15 @@ def test_stdtr_extreme_t():
     # t*t is inf past |t| ~ 1.3e154 and nu/(nu+t^2) has lost everything well
     # before that (stdtr(0.2, -1e154) returned 0.0 for 5.96e-32); the tail
     # runs on log|t|. Measured worst 6.0e-14 relative, bar 2.5e-13.
-    for nu, t in [(0.2, -1e154), (0.2, -1e155), (0.2, -1e300), (0.5, -1e200),
-                  (1.0, -1e290), (2.0, -1e150), (4.0, -1e70)]:
+    for nu, t in [
+        (0.2, -1e154),
+        (0.2, -1e155),
+        (0.2, -1e300),
+        (0.5, -1e200),
+        (1.0, -1e290),
+        (2.0, -1e150),
+        (4.0, -1e70),
+    ]:
         got = float(chebax.stdtr(nu, t))
         assert abs(got / float(_t_cdf_mp(nu, t)) - 1) <= 2.5e-13, (nu, t, got)
         assert float(chebax.stdtr(nu, -t)) == 1.0
@@ -539,12 +617,17 @@ def test_stdtrit_deep_tail():
     # return -inf for -131607.40128; the tail target is 2 min(p, 1-p), exact
     # in binary. Contract is the round trip through the mpmath CDF: measured
     # worst 1.4e-13 relative, bar 6e-13.
-    for nu, p in [(4.0, 1e-20), (20.0, 1e-30), (2.0, 1e-50), (15.0, 1e-15),
-                  (4.0, 1e-300)]:
+    for nu, p in [
+        (4.0, 1e-20),
+        (20.0, 1e-30),
+        (2.0, 1e-50),
+        (15.0, 1e-15),
+        (4.0, 1e-300),
+    ]:
         t = float(chebax.stdtrit(nu, p))
         assert np.isfinite(t), (nu, p)
         assert abs(float(_t_cdf_mp(nu, t)) / p - 1) <= 6e-13, (nu, p, t)
-    pu = 1 - 1e-16          # mirrored: 2 (1 - p) is exact for p >= 1/2
+    pu = 1 - 1e-16  # mirrored: 2 (1 - p) is exact for p >= 1/2
     t = float(chebax.stdtrit(4.0, pu))
     assert abs(float(1 - _t_cdf_mp(4.0, t)) / (1.0 - pu) - 1) <= 6e-13
     assert float(chebax.stdtrit(4.0, 0.5)) == 0.0
@@ -558,9 +641,21 @@ def test_log_stdtr():
     # -735.73). Measured worst 1.1e-15 relative to max(1, |ln F|), bar
     # 5e-15; gradients 1.9e-12 relative, bar 8e-12.
     from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf
+
     for nu in [0.5, 2.0, 4.0, 20.0]:
-        for t in [-1e300, -1e150, -1e40, -1e10, -100.0, -6.0, -1.0, 0.0,
-                  1.0, 6.0, 100.0]:
+        for t in [
+            -1e300,
+            -1e150,
+            -1e40,
+            -1e10,
+            -100.0,
+            -6.0,
+            -1.0,
+            0.0,
+            1.0,
+            6.0,
+            100.0,
+        ]:
             got = float(log_stdtr(nu, t))
             ref = float(mp.log(_t_cdf_mp(nu, t)))
             assert abs(got - ref) <= 5e-15 * max(1.0, abs(ref)), (nu, t, got)
@@ -648,19 +743,20 @@ def _mp_quantile(name, args, iters=60):
     e = mp.e
     if name == "betaincinv":
         a, b, p = args
-        f = lambda v: mp.betainc(mp.mpf(a), mp.mpf(b), 0, e ** v / (1 + e ** v),
-                                 regularized=True) - mp.mpf(p)
+        f = lambda v: mp.betainc(
+            mp.mpf(a), mp.mpf(b), 0, e**v / (1 + e**v), regularized=True
+        ) - mp.mpf(p)
         u = _mp_bisect(f, mp.mpf(-200), mp.mpf(200), iters)
-        return e ** u / (1 + e ** u)
+        return e**u / (1 + e**u)
     if name in ("gammaincinv", "chi2inv"):
         a, p = args
         a = mp.mpf(a) / 2 if name == "chi2inv" else mp.mpf(a)
-        f = lambda v: mp.gammainc(a, 0, e ** v, regularized=True) - mp.mpf(p)
+        f = lambda v: mp.gammainc(a, 0, e**v, regularized=True) - mp.mpf(p)
         x = e ** _mp_bisect(f, mp.mpf(-200), mp.mpf(300), iters)
         return 2 * x if name == "chi2inv" else x
     nu, p = args
     sgn = -1 if p < 0.5 else 1
-    f = lambda v: _t_cdf_mp(nu, sgn * e ** v) - mp.mpf(p)
+    f = lambda v: _t_cdf_mp(nu, sgn * e**v) - mp.mpf(p)
     return sgn * e ** _mp_bisect(f, mp.mpf(-200), mp.mpf(200), iters)
 
 
@@ -674,6 +770,7 @@ def test_x64_off_quantiles(tmp_path):
     import os
     import subprocess
     import sys
+
     cases = [[n, list(a), float(_mp_quantile(n, a))] for n, a in X64_OFF_CASES]
     ref = tmp_path / "cases.json"
     ref.write_text(json.dumps(cases))
@@ -681,8 +778,9 @@ def test_x64_off_quantiles(tmp_path):
     runner.write_text(X64_OFF_RUNNER)
     src = os.path.dirname(os.path.dirname(os.path.abspath(chebax.__file__)))
     env = {**os.environ, "JAX_PLATFORMS": "cpu", "PYTHONPATH": src}
-    out = subprocess.run([sys.executable, str(runner), str(ref)],
-                         capture_output=True, text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, str(runner), str(ref)], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-2000:]
     assert float(out.stdout) <= 7e-6
 
@@ -695,16 +793,22 @@ def test_stdtrit_shape_gradient_in_the_deep_tail():
     # Metric is agreement with a central difference, whose own floor is
     # what the bar is set by: measured worst 2.4e-7, bar 1e-6.
     worst = 0.0
-    for nu, p in ((4.0, 1e-300), (2.0, 1e-100), (0.5, 1e-30), (4.0, 1e-20),
-                  (4.0, 0.3), (20.0, 0.7)):
+    for nu, p in (
+        (4.0, 1e-300),
+        (2.0, 1e-100),
+        (0.5, 1e-30),
+        (4.0, 1e-20),
+        (4.0, 0.3),
+        (20.0, 0.7),
+    ):
         g = float(jax.grad(lambda n: chebax.stdtrit(n, p))(nu))
         assert np.isfinite(g), (nu, p, g)
         h = nu * 1e-6
-        fd = (float(chebax.stdtrit(nu + h, p))
-              - float(chebax.stdtrit(nu - h, p))) / (2 * h)
+        fd = (float(chebax.stdtrit(nu + h, p)) - float(chebax.stdtrit(nu - h, p))) / (
+            2 * h
+        )
         assert np.isfinite(fd), (nu, p, fd)
         worst = max(worst, abs(g / fd - 1))
     assert worst <= 1e-6, worst
     # the probability derivative may still overflow, and legitimately does
-    assert np.isposinf(float(jax.grad(
-        lambda q: chebax.stdtrit(4.0, q))(1e-300)))
+    assert np.isposinf(float(jax.grad(lambda q: chebax.stdtrit(4.0, q))(1e-300)))

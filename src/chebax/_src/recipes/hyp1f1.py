@@ -65,8 +65,7 @@ def _coefs_eager(tensor, sa, sb):
     b across the tensor's parameter axes. numpy."""
     out = []
     for k in range(tensor.shape[0]):
-        vb = [algorithms.chebval(sa, tensor[k, :, n])
-              for n in range(tensor.shape[2])]
+        vb = [algorithms.chebval(sa, tensor[k, :, n]) for n in range(tensor.shape[2])]
         out.append(algorithms.chebval(sb, np.array(vb)))
     return np.array(out)
 
@@ -74,7 +73,8 @@ def _coefs_eager(tensor, sa, sb):
 def _coefs_traced(tensor, sa, sb):
     t = jnp.asarray(tensor)
     va = jax.vmap(jax.vmap(lambda row: _chebval(sa, row, (-1.0, 1.0))))(
-        jnp.swapaxes(t, 1, 2))                                   # (NX, NB)
+        jnp.swapaxes(t, 1, 2)
+    )  # (NX, NB)
     return jax.vmap(lambda row: _chebval(sb, row, (-1.0, 1.0)))(va)
 
 
@@ -89,8 +89,13 @@ def _eval_logs(a, b, x, lnr, ltail):
     xd = jnp.where((x >= 0.0) & (x <= _ht.XS), x, 1.0)
     lm_in = jnp.log1p(a / b * xd * jnp.exp(lnr(xd)))
     xo = jnp.where(x > _ht.XS, x, 2.0 * _ht.XS)
-    lm_tl = (jax.scipy.special.gammaln(b) - jax.scipy.special.gammaln(a)
-             + xo + (a - b) * jnp.log(xo) + ltail(_ht.XS / xo))
+    lm_tl = (
+        jax.scipy.special.gammaln(b)
+        - jax.scipy.special.gammaln(a)
+        + xo
+        + (a - b) * jnp.log(xo)
+        + ltail(_ht.XS / xo)
+    )
     return lm_in, lm_tl
 
 
@@ -105,8 +110,7 @@ def eval_hyp1f1(a, b, x, lnr, ltail, log):
     out = lm if log else jnp.exp(jnp.where(big, 0.0, lm))
     out = jnp.where(big, jnp.inf, out)
     out = jnp.where(x < 0.0, jnp.nan, out)
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b),
-                     jnp.nan, out)
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -121,15 +125,16 @@ class Hyp1F1(Recipe):
         self.b = float(self.b)
 
     def __call__(self, x):
-        return eval_hyp1f1(self.a, self.b, x, self.lnr, self.ltail,
-                           log=False)
+        return eval_hyp1f1(self.a, self.b, x, self.lnr, self.ltail, log=False)
 
 
 def _series_at(a, b):
     sa, sb = float(_smap_log(a)), float(_smap_log(b))
     st = float(_smap_raw(b))
-    return (ChebSeries(_coefs_eager(_ht.TABLE_IN, sa, sb), (0.0, _ht.XS)),
-            ChebSeries(_coefs_eager(_ht.TABLE_TAIL, sa, st), (0.0, 1.0)))
+    return (
+        ChebSeries(_coefs_eager(_ht.TABLE_IN, sa, sb), (0.0, _ht.XS)),
+        ChebSeries(_coefs_eager(_ht.TABLE_TAIL, sa, st), (0.0, 1.0)),
+    )
 
 
 @functools.lru_cache(maxsize=128)
@@ -142,8 +147,10 @@ def _hyp1f1_cached(a, b, _tag):
 def _traced_series(a, b):
     sa, sb = _smap_log(a), _smap_log(b)
     st = _smap_raw(b)
-    return (ChebSeries(_coefs_traced(_ht.TABLE_IN, sa, sb), (0.0, _ht.XS)),
-            ChebSeries(_coefs_traced(_ht.TABLE_TAIL, sa, st), (0.0, 1.0)))
+    return (
+        ChebSeries(_coefs_traced(_ht.TABLE_IN, sa, sb), (0.0, _ht.XS)),
+        ChebSeries(_coefs_traced(_ht.TABLE_TAIL, sa, st), (0.0, 1.0)),
+    )
 
 
 def hyp1f1_fn(a, b, x):

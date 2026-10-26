@@ -18,17 +18,23 @@ Regenerate with:
     python -m chebax._src.recipes.stdtr_gen
 """
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 
 XSPLIT_T = 0.5
 BLO, BSPLIT, BHI = 0.1, 10.0, 100.0
-NX = 68        # x-nodes, shared (worst measured tail 53, orientation A hi)
-NB_A_LO = 28   # b-nodes per panel (worst measured: 21)
-NB_A_HI = 44   # (35)
-NB_B_LO = 66   # (53)
-NB_B_HI = 56   # (45)
+NX = 68  # x-nodes, shared (worst measured tail 53, orientation A hi)
+NB_A_LO = 28  # b-nodes per panel (worst measured: 21)
+NB_A_HI = 44  # (35)
+NB_B_LO = 66  # (53)
+NB_B_HI = 56  # (45)
 
 
 def _l(mp, a, b, x):
@@ -43,8 +49,9 @@ def _table(mp, first_half, blo, bhi, nb):
     for tb in nodes(mp, nb):
         b = lo + (tb + 1) / 2 * (hi - lo)
         a1, b1 = (h, b) if first_half else (b, h)
-        rows.append(dct(mp, [_l(mp, a1, b1, (t + 1) / 2 * mp.mpf(XSPLIT_T))
-                             for t in tx]))
+        rows.append(
+            dct(mp, [_l(mp, a1, b1, (t + 1) / 2 * mp.mpf(XSPLIT_T)) for t in tx])
+        )
     return to_f64(param_fit(mp, rows))
 
 
@@ -62,12 +69,25 @@ def main(out_dir=None):
         "T[k, j] = j-th b-coefficient of the k-th x coefficient; TABLE_A_* "
         "hold L(1/2, b, x), TABLE_B_* hold L(b, 1/2, x); *_LO has b in "
         "[BLO, BSPLIT], *_HI b in [BSPLIT, BHI]; x in [0, XSPLIT] for all",
-        {"nx": NX, "nb_a_lo": NB_A_LO, "nb_a_hi": NB_A_HI,
-         "nb_b_lo": NB_B_LO, "nb_b_hi": NB_B_HI,
-         "blo": BLO, "bsplit": BSPLIT, "bhi": BHI, "xsplit": XSPLIT_T},
+        {
+            "nx": NX,
+            "nb_a_lo": NB_A_LO,
+            "nb_a_hi": NB_A_HI,
+            "nb_b_lo": NB_B_LO,
+            "nb_b_hi": NB_B_HI,
+            "blo": BLO,
+            "bsplit": BSPLIT,
+            "bhi": BHI,
+            "xsplit": XSPLIT_T,
+        },
         {"BLO": BLO, "BSPLIT": BSPLIT, "BHI": BHI, "XSPLIT": XSPLIT_T},
-        {"TABLE_A_LO": a_lo, "TABLE_A_HI": a_hi,
-         "TABLE_B_LO": b_lo, "TABLE_B_HI": b_hi})
+        {
+            "TABLE_A_LO": a_lo,
+            "TABLE_A_HI": a_hi,
+            "TABLE_B_LO": b_lo,
+            "TABLE_B_HI": b_hi,
+        },
+    )
 
 
 if __name__ == "__main__":

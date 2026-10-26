@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th a-coefficient of the k-th argument coefficient; TABLE_IN ha
 
 import numpy as np
 
-META = {'nx_in': 32, 'na_in': 68, 'nt_tail': 26, 'na_tail': 30, 'xs': 8.0, 'alo': 0.1, 'ahi': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': 'eba2c6ff9760fa20'}
+META = {'nx_in': 32, 'na_in': 68, 'nt_tail': 26, 'na_tail': 30, 'xs': 8.0, 'alo': 0.1, 'ahi': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '8acf32e8ff8ef031'}
 XS = 8.0
 ALO = 0.1
 AHI = 10.0

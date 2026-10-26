@@ -43,8 +43,9 @@ class Matern(StationaryKernel):
     name: str = "Matérn"
     smoothness: AbstractUnwrappable
 
-    def __init__(self, smoothness: tp.Union[float, AbstractUnwrappable] = 1.5,
-                 **kwargs):
+    def __init__(
+        self, smoothness: tp.Union[float, AbstractUnwrappable] = 1.5, **kwargs
+    ):
         if isinstance(smoothness, AbstractUnwrappable):
             self.smoothness = smoothness
         else:
@@ -67,35 +68,43 @@ def main():
     # smoothness is identified by SHORT-range behavior: pair every base
     # point with a close neighbor so the design actually resolves nu
     base = jax.random.uniform(key, (150, 1), dtype=jnp.float64) * 6.0
-    close = base + 0.02 * jax.random.normal(jax.random.PRNGKey(9),
-                                            (150, 1), dtype=jnp.float64)
+    close = base + 0.02 * jax.random.normal(
+        jax.random.PRNGKey(9), (150, 1), dtype=jnp.float64
+    )
     x = jnp.sort(jnp.concatenate([base, close]), axis=0)
     n = x.shape[0]
     truth = Matern(smoothness=nu_true, lengthscale=ell_true, variance=sig2_true)
     K = truth.gram(x).as_matrix() + noise**2 * jnp.eye(n)
-    y = (jnp.linalg.cholesky(K)
-         @ jax.random.normal(jax.random.PRNGKey(1), (n, 1), dtype=jnp.float64))
+    y = jnp.linalg.cholesky(K) @ jax.random.normal(
+        jax.random.PRNGKey(1), (n, 1), dtype=jnp.float64
+    )
     data = gpjax.Dataset(X=x, y=y)
 
     kernel = Matern(smoothness=1.0)
-    prior = gpjax.gps.Prior(mean_function=gpjax.mean_functions.Zero(),
-                            kernel=kernel)
+    prior = gpjax.gps.Prior(mean_function=gpjax.mean_functions.Zero(), kernel=kernel)
     likelihood = gpjax.likelihoods.Gaussian(num_datapoints=n)
     posterior = prior * likelihood
 
     def nmll(p, d):
         return -gpjax.objectives.conjugate_mll(p, d)
 
-    fitted, history = gpjax.fit(model=posterior, objective=nmll,
-                                train_data=data,
-                                optim=optax.adam(0.05), num_iters=1500,
-                                key=jax.random.PRNGKey(2), verbose=False)
+    fitted, history = gpjax.fit(
+        model=posterior,
+        objective=nmll,
+        train_data=data,
+        optim=optax.adam(0.05),
+        num_iters=1500,
+        key=jax.random.PRNGKey(2),
+        verbose=False,
+    )
 
     k = fitted.prior.kernel
     print(f"true:    nu={nu_true}, ell={ell_true}, sig2={sig2_true}")
-    print(f"learned: nu={float(k.smoothness.unwrap()):.3f}, "
-          f"ell={float(k.lengthscale.unwrap()):.3f}, "
-          f"sig2={float(k.variance.unwrap()):.3f}")
+    print(
+        f"learned: nu={float(k.smoothness.unwrap()):.3f}, "
+        f"ell={float(k.lengthscale.unwrap()):.3f}, "
+        f"sig2={float(k.variance.unwrap()):.3f}"
+    )
     print(f"nmll: {float(history[0]):.2f} -> {float(history[-1]):.2f}")
     assert jnp.isfinite(history[-1])
     # nu is weakly identified from finite data; the clustered design

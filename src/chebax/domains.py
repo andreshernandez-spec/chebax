@@ -32,9 +32,20 @@ from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes import tweedie_table as _tw
 from chebax._src.recipes import vonmises_table as _vt
 
-__all__ = ["Domain", "BESSELI", "BESSELJ", "BESSELK", "BESSELY", "BETAINC",
-           "GAMMAINC", "HYP1F1", "STUDENT_T_DF", "TWEEDIE_P", "VONMISES_KAPPA",
-           "WRIGHT_RHO"]
+__all__ = [
+    "Domain",
+    "BESSELI",
+    "BESSELJ",
+    "BESSELK",
+    "BESSELY",
+    "BETAINC",
+    "GAMMAINC",
+    "HYP1F1",
+    "STUDENT_T_DF",
+    "TWEEDIE_P",
+    "VONMISES_KAPPA",
+    "WRIGHT_RHO",
+]
 
 
 class Domain(namedtuple("Domain", "lo hi what")):
@@ -53,9 +64,9 @@ class Domain(namedtuple("Domain", "lo hi what")):
 BETAINC = Domain(_bw.ALO, _bw.AHI, "betainc a and b")
 # the Temme-zone tables run in v = ASPLIT / a down to VLO, and VLO = 0
 # is a = inf
-GAMMAINC = Domain(_gt.ALO,
-                  math.inf if _glt.VLO == 0.0 else _glt.ASPLIT / _glt.VLO,
-                  "gammainc a")
+GAMMAINC = Domain(
+    _gt.ALO, math.inf if _glt.VLO == 0.0 else _glt.ASPLIT / _glt.VLO, "gammainc a"
+)
 HYP1F1 = Domain(_ht.ALO, _ht.AHI, "hyp1f1 a and b")
 STUDENT_T_DF = Domain(2.0 * _st.BLO, 2.0 * _st.BHI, "Student-t df")
 TWEEDIE_P = Domain(_tw.P_LO, _tw.P_HI, "Tweedie power p")

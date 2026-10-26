@@ -36,18 +36,24 @@ Both fit stages stay in mpmath (the M1 floor rule). Regenerate with:
 
 import math
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             table_path, to_f64,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    table_path,
+    to_f64,
+    write_table_module,
+)
 
 P_LO, P_HI = 1.05, 1.95
-RHO_MAX = 19.0          # (2 - P_LO) / (P_LO - 1)
-RHO_MIN = 1.0 / 19.0    # (2 - P_HI) / (P_HI - 1)
+RHO_MAX = 19.0  # (2 - P_LO) / (P_LO - 1)
+RHO_MIN = 1.0 / 19.0  # (2 - P_HI) / (P_HI - 1)
 ZA = 12.0
 S1 = 2.0
-N_TERMS = 64            # direct sum below the split; 54 measured worst need
-NS = 32                 # s-nodes (worst measured degree 24)
-NA = 64                 # ln-rho nodes (worst measured degree 51)
+N_TERMS = 64  # direct sum below the split; 54 measured worst need
+NS = 32  # s-nodes (worst measured degree 24)
+NA = 64  # ln-rho nodes (worst measured degree 51)
 
 
 def _log_w(mp, rho, z):
@@ -102,11 +108,27 @@ def main(out_dir=None):
         "chebax._src.recipes.tweedie_gen",
         "T[k, j] = j-th ln-rho coefficient of the k-th s coefficient; "
         "ln rho in [-A1, A1], s = Z1(rho)/Z in [0, 1], Z1 = ZA + S1 (1+rho)^2",
-        {"ns": NS, "na": NA, "za": ZA, "s1": S1, "n_terms": N_TERMS,
-         "p_lo": P_LO, "p_hi": P_HI},
-        {"P_LO": P_LO, "P_HI": P_HI, "RHO_MIN": RHO_MIN, "RHO_MAX": RHO_MAX,
-         "A1": math.log(RHO_MAX), "ZA": ZA, "S1": S1, "N_TERMS": N_TERMS},
-        {"TABLE_TAIL": tail})
+        {
+            "ns": NS,
+            "na": NA,
+            "za": ZA,
+            "s1": S1,
+            "n_terms": N_TERMS,
+            "p_lo": P_LO,
+            "p_hi": P_HI,
+        },
+        {
+            "P_LO": P_LO,
+            "P_HI": P_HI,
+            "RHO_MIN": RHO_MIN,
+            "RHO_MAX": RHO_MAX,
+            "A1": math.log(RHO_MAX),
+            "ZA": ZA,
+            "S1": S1,
+            "N_TERMS": N_TERMS,
+        },
+        {"TABLE_TAIL": tail},
+    )
 
 
 if __name__ == "__main__":

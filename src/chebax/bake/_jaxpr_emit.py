@@ -47,26 +47,28 @@ _BINOP = {"add": "+", "sub": "-", "mul": "*", "div": "/"}
 _CMP = {"lt": "<", "le": "<=", "gt": ">", "ge": ">=", "eq": "==", "ne": "!="}
 
 _UNARY = {
-    "neg":   ("-({0})",            "-({0})"),
-    "exp":   ("jnp.exp({0})",      "std::exp({0})"),
-    "log":   ("jnp.log({0})",      "std::log({0})"),
-    "log1p": ("jnp.log1p({0})",    "std::log1p({0})"),
-    "sqrt":  ("jnp.sqrt({0})",     "std::sqrt({0})"),
-    "sin":   ("jnp.sin({0})",      "std::sin({0})"),
-    "cos":   ("jnp.cos({0})",      "std::cos({0})"),
-    "abs":   ("jnp.abs({0})",      "std::fabs({0})"),
+    "neg": ("-({0})", "-({0})"),
+    "exp": ("jnp.exp({0})", "std::exp({0})"),
+    "log": ("jnp.log({0})", "std::log({0})"),
+    "log1p": ("jnp.log1p({0})", "std::log1p({0})"),
+    "sqrt": ("jnp.sqrt({0})", "std::sqrt({0})"),
+    "sin": ("jnp.sin({0})", "std::sin({0})"),
+    "cos": ("jnp.cos({0})", "std::cos({0})"),
+    "abs": ("jnp.abs({0})", "std::fabs({0})"),
     # returns x itself for +-0 and NaN, which is what jnp.sign does there
-    "sign":  ("jnp.sign({0})",
-              "(({0}) > 0.0 ? (T)(1) : (({0}) < 0.0 ? (T)(-1) : ({0})))"),
+    "sign": (
+        "jnp.sign({0})",
+        "(({0}) > 0.0 ? (T)(1) : (({0}) < 0.0 ? (T)(-1) : ({0})))",
+    ),
     "logistic": ("jax.nn.sigmoid({0})", "(1.0 / (1.0 + std::exp(-({0}))))"),
     "is_finite": ("jnp.isfinite({0})", "std::isfinite({0})"),
-    "not":   ("jnp.logical_not({0})", "(!({0}))"),
+    "not": ("jnp.logical_not({0})", "(!({0}))"),
     "lgamma": ("jax.scipy.special.gammaln({0})", "std::lgamma({0})"),
     # the large-a gammainc path assembles its Temme correction through
     # erfc, so a public gammainc(a > 10) hit "primitive not supported"
     # (review, 2026-08-02)
-    "erf":   ("jax.scipy.special.erf({0})",  "std::erf({0})"),
-    "erfc":  ("jax.scipy.special.erfc({0})", "std::erfc({0})"),
+    "erf": ("jax.scipy.special.erf({0})", "std::erf({0})"),
+    "erfc": ("jax.scipy.special.erfc({0})", "std::erfc({0})"),
 }
 
 _BINFN = {
@@ -74,7 +76,7 @@ _BINFN = {
     "max": ("jnp.maximum({0}, {1})", "std::fmax({0}, {1})"),
     "min": ("jnp.minimum({0}, {1})", "std::fmin({0}, {1})"),
     "and": ("jnp.logical_and({0}, {1})", "(({0}) && ({1}))"),
-    "or":  ("jnp.logical_or({0}, {1})", "(({0}) || ({1}))"),
+    "or": ("jnp.logical_or({0}, {1})", "(({0}) || ({1}))"),
     "atan2": ("jnp.arctan2({0}, {1})", "std::atan2({0}, {1})"),
 }
 
@@ -88,8 +90,9 @@ _NAMED_FOLDS = {
 _BOOL_OUT = {"is_finite", "not"}
 
 # a scalar equation of any of these folds to a literal at bake time (_fold)
-_FOLDABLE = (set(_BINOP) | set(_CMP) | set(_UNARY) | set(_BINFN)
-             | {"integer_pow", "select_n"})
+_FOLDABLE = (
+    set(_BINOP) | set(_CMP) | set(_UNARY) | set(_BINFN) | {"integer_pow", "select_n"}
+)
 
 
 class _Emit:
@@ -99,9 +102,9 @@ class _Emit:
         self.tiny = float(np.finfo(dtype).tiny)
         self.lines = []
         self.counter = 0
-        self.coef_names = {}      # id -> (name, series)
+        self.coef_names = {}  # id -> (name, series)
         self.endpoint_slope_dropped = False
-        self.folded = {}          # var -> its bake-time value (scalar subexpressions)
+        self.folded = {}  # var -> its bake-time value (scalar subexpressions)
 
     def fresh(self):
         self.counter += 1
@@ -114,7 +117,9 @@ class _Emit:
     def assign(self, expr, is_bool=False):
         sym = self.fresh()
         if self.cpp:
-            self.lines.append(f"    {'bool' if is_bool else self.ctype} {sym} = {expr};")
+            self.lines.append(
+                f"    {'bool' if is_bool else self.ctype} {sym} = {expr};"
+            )
         else:
             self.lines.append(f"    {sym} = {expr}")
         return sym
@@ -128,11 +133,11 @@ def _lit(val, cpp, ctype="double"):
         return ("True" if bool(a) else "False"), True
     v = float(a)
     if v != v:
-        return (f"(std::numeric_limits<{ctype}>::quiet_NaN())" if cpp
-                else "float('nan')"), False
+        return (
+            f"(std::numeric_limits<{ctype}>::quiet_NaN())" if cpp else "float('nan')"
+        ), False
     if v == float("inf") or v == float("-inf"):
-        s = (f"std::numeric_limits<{ctype}>::infinity()" if cpp
-             else "float('inf')")
+        s = f"std::numeric_limits<{ctype}>::infinity()" if cpp else "float('inf')"
         return (f"(-{s})" if v < 0 else s), False
     return (repr(v) + ("f" if cpp and ctype == "float" else "")), False
 
@@ -185,7 +190,8 @@ def _match_series(inst, const):
         raise NotImplementedError(
             f"a coefficient constant matches series fields {names} whose domains "
             f"differ ({sorted(domains)}); value-matching cannot identify it. "
-            "Make the coefficient vectors distinct")
+            "Make the coefficient vectors distinct"
+        )
     return hits[0]
 
 
@@ -225,11 +231,14 @@ def _evaluates_to_zero(cj):
     jaxpr = closed.jaxpr if closed is not None else cj
     consts = closed.consts if closed is not None else ()
     try:
-        args = [jnp.full(v.aval.shape, p, v.aval.dtype)
-                for p in (1.0, -2.5, 7.0) for v in jaxpr.invars]
+        args = [
+            jnp.full(v.aval.shape, p, v.aval.dtype)
+            for p in (1.0, -2.5, 7.0)
+            for v in jaxpr.invars
+        ]
         n = len(jaxpr.invars)
         for k in range(0, len(args), n):
-            outs = jax.core.eval_jaxpr(jaxpr, consts, *args[k:k + n])
+            outs = jax.core.eval_jaxpr(jaxpr, consts, *args[k : k + n])
             if any(float(np.max(np.abs(np.asarray(o)))) != 0.0 for o in outs):
                 return False
     except Exception:
@@ -262,12 +271,13 @@ def _emit_jaxpr(em, jaxpr, env):
     live = _live_vars(jaxpr)
     for eqn in jaxpr.eqns:
         if eqn.outvars and not any(id(v) in live for v in eqn.outvars):
-            continue        # dead: nothing downstream reads it
+            continue  # dead: nothing downstream reads it
         p = eqn.primitive.name
         out = eqn.outvars[0] if eqn.outvars else None
         if p in _LOOP_PRIMS:
             raise NotImplementedError(
-                "solver-based callables (while/scan/cond in the jaxpr) are not bakeable yet")
+                "solver-based callables (while/scan/cond in the jaxpr) are not bakeable yet"
+            )
         if p in _FOLDABLE:
             val = _fold(em, eqn)
             if val is not _MISSING:
@@ -285,13 +295,17 @@ def _emit_jaxpr(em, jaxpr, env):
                 em.endpoint_slope_dropped = True
                 env[out] = _lit(np.zeros(()), em.cpp, em.ctype)[0]
                 continue
-            coef_in = [v for v in eqn.invars
-                       if not isinstance(v, _Literal) and env[v] in em.coef_names]
+            coef_in = [
+                v
+                for v in eqn.invars
+                if not isinstance(v, _Literal) and env[v] in em.coef_names
+            ]
             if len(coef_in) != 1:
                 raise NotImplementedError(
                     "custom_jvp_call that is not a series evaluation (coefficient "
                     f"inputs: {len(coef_in)}); inlining it would drop its derivative "
-                    "rule and the artifact would differ from the runtime under AD")
+                    "rule and the artifact would differ from the runtime under AD"
+                )
             name, series = em.coef_names[env[coef_in[0]]]
             (x_in,) = [v for v in eqn.invars if v is not coef_in[0]]
             # the runtime's own map (series._chebval_impl): b + a and b - a
@@ -308,8 +322,10 @@ def _emit_jaxpr(em, jaxpr, env):
                 # keep the division unless asked for fast math.
                 tiny = _lit(em.tiny, False)[0]
                 scaled = _lit(half_v * em.tiny, False)[0]
-                t_expr = (f"jax.lax.optimization_barrier((({read(x_in)}) - {mid})"
-                          f" * {tiny}) / {scaled}")
+                t_expr = (
+                    f"jax.lax.optimization_barrier((({read(x_in)}) - {mid})"
+                    f" * {tiny}) / {scaled}"
+                )
             if em.cpp:
                 expr = f"detail::clenshaw(detail::{name}, {t_expr})"
             else:
@@ -328,8 +344,11 @@ def _emit_jaxpr(em, jaxpr, env):
                 inner_env[cv] = _register_const(em, None, cval)
             _emit_jaxpr(em, inner_jaxpr, inner_env)
             for ov, iv in zip(eqn.outvars, inner_jaxpr.outvars):
-                env[ov] = inner_env[iv] if not isinstance(iv, _Literal) \
+                env[ov] = (
+                    inner_env[iv]
+                    if not isinstance(iv, _Literal)
                     else _lit(iv.val, em.cpp, em.ctype)[0]
+                )
         elif p == "convert_element_type":
             nd = np.dtype(eqn.params["new_dtype"])
             src = read(eqn.invars[0])
@@ -339,12 +358,14 @@ def _emit_jaxpr(em, jaxpr, env):
                 # bool -> double masks and float promotions; multiplying by
                 # 1.0 is exact for floats and promotes bools, keeping the
                 # emitted python weak-typed
-                env[out] = em.assign(f"({em.ctype})({src})" if em.cpp
-                                     else f"({src}) * 1.0")
+                env[out] = em.assign(
+                    f"({em.ctype})({src})" if em.cpp else f"({src}) * 1.0"
+                )
             else:
                 raise NotImplementedError(
                     f"cast to {nd} in the traced computation; a double artifact "
-                    "cannot preserve reduced-precision semantics")
+                    "cannot preserve reduced-precision semantics"
+                )
         elif p in _PASSTHROUGH:
             env[out] = read(eqn.invars[0])
         elif p in _BINOP:
@@ -359,14 +380,18 @@ def _emit_jaxpr(em, jaxpr, env):
         elif p in _UNARY:
             if p == "not" and eqn.invars[0].aval.dtype != np.dtype(bool):
                 # jax's not is bitwise on integers, C's ! is logical
-                raise NotImplementedError("not on a non-boolean operand is not bakeable")
-            env[out] = em.assign(em.tmpl(_UNARY[p]).format(read(eqn.invars[0])),
-                                 is_bool=p in _BOOL_OUT)
+                raise NotImplementedError(
+                    "not on a non-boolean operand is not bakeable"
+                )
+            env[out] = em.assign(
+                em.tmpl(_UNARY[p]).format(read(eqn.invars[0])), is_bool=p in _BOOL_OUT
+            )
         elif p == "integer_pow":
             k = eqn.params["y"]
             x = read(eqn.invars[0])
-            env[out] = em.assign(f"std::pow({x}, {float(k)!r})" if em.cpp
-                                 else f"({x}) ** {k}")
+            env[out] = em.assign(
+                f"std::pow({x}, {float(k)!r})" if em.cpp else f"({x}) ** {k}"
+            )
         elif p == "select_n":
             pred, case0, case1 = (read(v) for v in eqn.invars)
             if em.cpp:
@@ -374,7 +399,9 @@ def _emit_jaxpr(em, jaxpr, env):
             else:
                 env[out] = em.assign(f"jnp.where({pred}, {case1}, {case0})")
         else:
-            raise NotImplementedError(f"primitive not supported by the bake emitter: {p}")
+            raise NotImplementedError(
+                f"primitive not supported by the bake emitter: {p}"
+            )
     return env
 
 
@@ -405,7 +432,9 @@ def trace_and_emit(inst, cpp, ctype="double", dtype="float64"):
             continue
         hit = _match_series(inst, a)
         if hit is None:
-            raise NotImplementedError(f"jaxpr constant of shape {a.shape} matches no series field")
+            raise NotImplementedError(
+                f"jaxpr constant of shape {a.shape} matches no series field"
+            )
         name = f"C_{hit[0].upper()}"
         coef_arrays[name] = np.asarray(hit[1].coef)
         env[cv] = name
@@ -415,6 +444,9 @@ def trace_and_emit(inst, cpp, ctype="double", dtype="float64"):
     env[x_var] = "x"
     env = _emit_jaxpr(em, closed.jaxpr, env)
     (out_var,) = closed.jaxpr.outvars
-    result = env[out_var] if not isinstance(out_var, _Literal) \
+    result = (
+        env[out_var]
+        if not isinstance(out_var, _Literal)
         else _lit(out_var.val, cpp, em.ctype)[0]
+    )
     return em.lines, coef_arrays, result, em.endpoint_slope_dropped

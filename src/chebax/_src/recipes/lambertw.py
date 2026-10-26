@@ -68,7 +68,7 @@ def _halley_log(lx, w):
 
 def _branch_series(p, sign):
     # W = -1 + s p - p^2/3 + 11 s p^3/72, s = +1 (k=0), -1 (k=-1)
-    return -1.0 + sign * p - p * p / 3.0 + sign * 11.0 * p ** 3 / 72.0
+    return -1.0 + sign * p - p * p / 3.0 + sign * 11.0 * p**3 / 72.0
 
 
 @jax.custom_jvp
@@ -80,8 +80,7 @@ def _w0(x):
     l2 = jnp.log(l1)
     init = jnp.where(xs < 1.0, _branch_series(p, 1.0), l1 - l2 + l2 / l1)
     big = xs > _LOG_FORM
-    w = jnp.where(big, _halley_log(l1, jnp.where(big, init, 1.0)),
-                  _halley(xs, init))
+    w = jnp.where(big, _halley_log(l1, jnp.where(big, init, 1.0)), _halley(xs, init))
     w = jnp.where(x == jnp.inf, jnp.inf, w)
     return jnp.where((x < _BR_LO) | jnp.isnan(x), jnp.nan, w)
 

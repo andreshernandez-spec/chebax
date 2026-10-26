@@ -55,7 +55,7 @@ def from_nat(eta):
     return eta[0] + 1.0, -2.0 * eta[1], -2.0 * eta[2]
 
 
-mean_stats = jax.jit(jax.grad(log_normalizer_nat))   # (E[ln x], E[x], E[1/x])
+mean_stats = jax.jit(jax.grad(log_normalizer_nat))  # (E[ln x], E[x], E[1/x])
 hess = jax.jit(jax.hessian(log_normalizer_nat))
 
 
@@ -114,9 +114,13 @@ def main():
         eta = to_nat(p, a, b)
         return log_normalizer_nat(eta) - eta @ mean_stats(eta)
 
-    h, g = entropy(*jnp.array([2.5, 1.5, 3.0])), jax.grad(entropy, (0, 1, 2))(2.5, 1.5, 3.0)
-    print(f"\nentropy = {float(h):.12f}, gradient = "
-          f"({float(g[0]):+.6f}, {float(g[1]):+.6f}, {float(g[2]):+.6f})")
+    h, g = entropy(*jnp.array([2.5, 1.5, 3.0])), jax.grad(entropy, (0, 1, 2))(
+        2.5, 1.5, 3.0
+    )
+    print(
+        f"\nentropy = {float(h):.12f}, gradient = "
+        f"({float(g[0]):+.6f}, {float(g[1]):+.6f}, {float(g[2]):+.6f})"
+    )
     return p, a, b
 
 

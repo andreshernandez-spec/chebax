@@ -45,7 +45,7 @@ class _SphericalJ(Recipe):
         x = jnp.asarray(x)
         inner_region = x <= _ext.MID_X0
         xi = jnp.where(inner_region, x, _ext.MID_X0)
-        inner = self._c0 * xi ** self.n * self.inst.g(xi * xi)
+        inner = self._c0 * xi**self.n * self.inst.g(xi * xi)
         xs = jnp.where(inner_region, 1.0, x)  # masked lanes get a safe dummy
         outer = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
         out = jnp.where(inner_region, inner, outer)
@@ -70,13 +70,15 @@ class _SphericalY(Recipe):
         xc = jnp.where(x < _yt.XMIN, _yt.XMIN, x)
         val = jnp.sqrt(jnp.pi / (2 * xc)) * self.inst(xc)
         out = jnp.where(x > 0, val, -jnp.inf)
-        out = jnp.where(x == jnp.inf, 0.0, out)      # same 1/x decay
+        out = jnp.where(x == jnp.inf, 0.0, out)  # same 1/x decay
         return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 
 def _check_n(n):
     if n != int(n) or not 0 <= int(n) <= _NMAX:
-        raise ValueError(f"spherical Bessel wrappers cover integer n in [0, {_NMAX}], got {n}")
+        raise ValueError(
+            f"spherical Bessel wrappers cover integer n in [0, {_NMAX}], got {n}"
+        )
     return int(n)
 
 

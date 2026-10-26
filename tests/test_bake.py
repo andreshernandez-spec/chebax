@@ -38,12 +38,16 @@ from chebax._src.series import ChebSeries
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-XS_GRID = np.sort(np.concatenate([
-    np.linspace(0.05, 8.0, 10),
-    [7.9999, 8.0, 30.0, 30.0001],
-    np.linspace(8.1, 29.9, 10),
-    np.logspace(np.log10(31.0), 4, 10),
-]))
+XS_GRID = np.sort(
+    np.concatenate(
+        [
+            np.linspace(0.05, 8.0, 10),
+            [7.9999, 8.0, 30.0, 30.0001],
+            np.linspace(8.1, 29.9, 10),
+            np.logspace(np.log10(31.0), 4, 10),
+        ]
+    )
+)
 
 RUNNER = """
 import sys
@@ -144,8 +148,12 @@ def test_jax_module_standalone(tmp_path, v):
     # CPU: the parent pytest process holds the GPU memory pool, and the
     # accuracy contract is device-independent anyway
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
-    out = subprocess.run([sys.executable, str(runner), str(mod), str(mod32), str(npz)],
-                         capture_output=True, text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, str(runner), str(mod), str(mod32), str(npz)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert out.returncode == 0, out.stderr[-2000:]
     assert "ok" in out.stdout
 
@@ -161,9 +169,13 @@ def test_jax_module_f32_artifact_vs_f32_runtime(tmp_path):
     src = os.path.dirname(os.path.dirname(os.path.abspath(chebax.__file__)))
     env = {**os.environ, "JAX_PLATFORMS": "cpu", "PYTHONPATH": src}
     env.pop("JAX_ENABLE_X64", None)
-    rejected = tmp_path / "rejected.py"   # baking under x64 off must refuse
-    out = subprocess.run([sys.executable, str(runner), str(mod), "2.5", str(rejected)],
-                         capture_output=True, text=True, env=env)
+    rejected = tmp_path / "rejected.py"  # baking under x64 off must refuse
+    out = subprocess.run(
+        [sys.executable, str(runner), str(mod), "2.5", str(rejected)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert out.returncode == 0, out.stderr[-2000:]
     assert not rejected.exists()
     assert float(out.stdout.strip()) <= 2e-7
@@ -173,8 +185,11 @@ def test_jax_module_f32_artifact_vs_f32_runtime(tmp_path):
     # rather than the artifact (2.6e-7 relative, green in CI only because CI
     # has no GPU).
     with jax.default_device(jax.devices("cpu")[0]):
-        here = np.asarray(_load(mod, "baked32_here").besselj(
-            jnp.asarray(np.linspace(0.05, 100.0, 41), jnp.float32)))
+        here = np.asarray(
+            _load(mod, "baked32_here").besselj(
+                jnp.asarray(np.linspace(0.05, 100.0, 41), jnp.float32)
+            )
+        )
     np.testing.assert_array_equal(here, np.load(str(rejected) + ".npy"))
 
 
@@ -214,12 +229,18 @@ def test_xsf_header_compiles_and_matches(tmp_path):
     main.write_text(
         '#include "baked.h"\n#include <cstdio>\n'
         'int main() { double x; while (std::scanf("%lf", &x) == 1) '
-        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n"
+    )
     exe = tmp_path / "baked_exe"
-    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
-                   check=True, cwd=tmp_path)
+    subprocess.run(
+        ["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+        check=True,
+        cwd=tmp_path,
+    )
     inp = "\n".join(repr(float(x)) for x in XS_GRID)
-    out = subprocess.run([str(exe)], input=inp, capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        [str(exe)], input=inp, capture_output=True, text=True, check=True
+    )
     got = np.array([float(t) for t in out.stdout.split()])
     J, _ = _refs(2.5)
     assert np.max(np.abs(got - J)) / np.max(np.abs(J)) <= 5e-15
@@ -232,7 +253,11 @@ BAKEABLE = [
     ("bessely", lambda: chebax.bessely(1.5), np.logspace(-5, 3, 20)),
     ("betainc", lambda: chebax.betainc(2.0, 3.0), np.linspace(0.0, 1.0, 21)),
     ("gammainc", lambda: chebax.gammainc(2.5), np.linspace(0.0, 50.0, 21)),
-    ("spherical", lambda: __import__("chebax").spherical_jn(2), np.linspace(0.1, 40.0, 20)),
+    (
+        "spherical",
+        lambda: __import__("chebax").spherical_jn(2),
+        np.linspace(0.1, 40.0, 20),
+    ),
 ]
 
 
@@ -241,6 +266,7 @@ def test_generic_bake_python_matches_runtime(tmp_path, family, make, xs):
     # the artifact is derived from the runtime's own trace, so it must agree
     # to reassociation-free precision
     import importlib.util
+
     inst = make()
     mod = tmp_path / "baked.py"
     name = bake.jax_module(inst, mod)
@@ -263,12 +289,21 @@ def test_generic_bake_cpp_matches_runtime(tmp_path, family, make, xs):
     main.write_text(
         '#include "baked.h"\n#include <cstdio>\n'
         'int main() { double x; while (std::scanf("%lf", &x) == 1) '
-        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n"
+    )
     exe = tmp_path / "exe"
-    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
-                   check=True, cwd=tmp_path)
-    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs),
-                         capture_output=True, text=True, check=True)
+    subprocess.run(
+        ["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+        check=True,
+        cwd=tmp_path,
+    )
+    out = subprocess.run(
+        [str(exe)],
+        input="\n".join(repr(float(x)) for x in xs),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     got = np.array([float(t) for t in out.stdout.split()])
     ref = np.asarray(inst(xs))
     np.testing.assert_allclose(got, ref, rtol=1e-12, atol=1e-300)
@@ -310,6 +345,7 @@ def test_truncate_drops_converged_tail():
 
 def test_jax_module_truncate_tol(tmp_path):
     import importlib.util
+
     inst = chebax.besselk(1.5)
     mod = tmp_path / "baked32.py"
     name = bake.jax_module(inst, mod, truncate_tol=1e-7)
@@ -340,15 +376,24 @@ def test_bake_cpp_float32(tmp_path, family, make, xs):
     main.write_text(
         '#include "baked32.h"\n#include <cstdio>\n'
         'int main() { float x; while (std::scanf("%f", &x) == 1) '
-        'std::printf("%.9e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+        'std::printf("%.9e\\n", chebax_baked::' + name + "(x)); return 0; }\n"
+    )
     exe = tmp_path / "exe32"
-    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
-                   check=True, cwd=tmp_path)
+    subprocess.run(
+        ["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+        check=True,
+        cwd=tmp_path,
+    )
     ref_full = np.asarray(inst(xs))
     keep = (np.abs(np.log(np.abs(ref_full) + 1e-300)) <= 40.0) & (ref_full != 0)
     xs_k = np.asarray(xs)[keep]
-    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs_k),
-                         capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        [str(exe)],
+        input="\n".join(repr(float(x)) for x in xs_k),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     got = np.array([float(t) for t in out.stdout.split()])
     ref = np.asarray(inst(xs_k))
     np.testing.assert_allclose(got, ref, rtol=1e-5)
@@ -397,8 +442,9 @@ def test_bake_dtype_branch_recipe(tmp_path):
     name = bake.jax_module(inst, mod, name="branchy")
     m = _load(mod, "branchy_mod")
     xs = np.linspace(0.0, 3.0, 11)
-    np.testing.assert_allclose(np.asarray(getattr(m, name)(xs)),
-                               np.asarray(inst(xs)), rtol=1e-13)
+    np.testing.assert_allclose(
+        np.asarray(getattr(m, name)(xs)), np.asarray(inst(xs)), rtol=1e-13
+    )
     assert np.all(np.asarray(m.branchy(xs)) > 0)  # the f64 branch, not -s(x)
     with pytest.raises(TypeError, match="baked for float64 input"):
         m.branchy(jnp.asarray(xs, jnp.float32))
@@ -440,8 +486,11 @@ def test_bake_spells_static_values_as_identifiers(tmp_path):
     mod = tmp_path / "quoted.py"
     bake.jax_module(_StaticTag('"""x', _exp_series()), mod, name="quoted")
     m = _load(mod, "quoted_mod")
-    np.testing.assert_allclose(np.asarray(m.quoted(np.linspace(0.0, 3.0, 5))),
-                               np.exp(np.linspace(0.0, 3.0, 5)), rtol=1e-13)
+    np.testing.assert_allclose(
+        np.asarray(m.quoted(np.linspace(0.0, 3.0, 5))),
+        np.exp(np.linspace(0.0, 3.0, 5)),
+        rtol=1e-13,
+    )
 
 
 def _run_header(tmp_path, hdr, name, xs):
@@ -449,12 +498,21 @@ def _run_header(tmp_path, hdr, name, xs):
     main.write_text(
         f'#include "{hdr.name}"\n#include <cstdio>\n'
         'int main() { double x; while (std::scanf("%lf", &x) == 1) '
-        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n"
+    )
     exe = tmp_path / "exe"
-    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
-                   check=True, cwd=tmp_path)
-    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs),
-                         capture_output=True, text=True, check=True)
+    subprocess.run(
+        ["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+        check=True,
+        cwd=tmp_path,
+    )
+    out = subprocess.run(
+        [str(exe)],
+        input="\n".join(repr(float(x)) for x in xs),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     return np.array([float(t) for t in out.stdout.split()])
 
 
@@ -468,8 +526,7 @@ def test_bake_extreme_domain_uses_the_runtime_map(tmp_path):
     inst = _StaticTag("edge", ChebSeries([0.0, 1.0], (1e308, 1.5e308)))
     xs = np.array([1e308, 1.1e308, 1.25e308, 1.4e308, 1.5e308])
     ref = np.asarray(inst(xs))
-    np.testing.assert_allclose(ref, [-1.0, -0.6, 0.0, 0.6, 1.0], rtol=4e-16,
-                               atol=1e-16)
+    np.testing.assert_allclose(ref, [-1.0, -0.6, 0.0, 0.6, 1.0], rtol=4e-16, atol=1e-16)
     mod = tmp_path / "edge.py"
     name = bake.jax_module(inst, mod, name="edge")
     got = np.asarray(getattr(_load(mod, "edge_mod"), name)(xs))
@@ -478,8 +535,9 @@ def test_bake_extreme_domain_uses_the_runtime_map(tmp_path):
         pytest.skip("g++ not available")
     hdr = tmp_path / "edge.h"
     name = bake.xsf_header(inst, hdr, name="edge")
-    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, xs), ref,
-                               rtol=2.3e-16, atol=1e-16)
+    np.testing.assert_allclose(
+        _run_header(tmp_path, hdr, name, xs), ref, rtol=2.3e-16, atol=1e-16
+    )
 
 
 def test_bake_widest_domains_under_jit(tmp_path):
@@ -498,12 +556,12 @@ def test_bake_widest_domains_under_jit(tmp_path):
         pytest.skip("g++ not available")
     hdr = tmp_path / "wide.h"
     name = bake.xsf_header(inst, hdr, name="wide")
-    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, np.asarray(xs)),
-                               ref, rtol=1e-15)
+    np.testing.assert_allclose(
+        _run_header(tmp_path, hdr, name, np.asarray(xs)), ref, rtol=1e-15
+    )
 
 
-@pytest.mark.parametrize("taken", ["jnp", "jax", "_clenshaw",
-                                   "TypeError", "C_LTIL"])
+@pytest.mark.parametrize("taken", ["jnp", "jax", "_clenshaw", "TypeError", "C_LTIL"])
 def test_bake_rejects_names_the_artifact_uses(tmp_path, taken):
     # valid identifiers that the emitted module already binds: name="jnp"
     # replaced the import, "_clenshaw" the helper, and the artifact failed
@@ -515,8 +573,7 @@ def test_bake_rejects_names_the_artifact_uses(tmp_path, taken):
 
 def test_bake_rejects_the_header_macro_as_a_name(tmp_path):
     with pytest.raises(ValueError, match="used by the emitted source"):
-        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h",
-                        name="XSF_HOST_DEVICE")
+        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h", name="XSF_HOST_DEVICE")
 
 
 def test_default_header_name_encodes_a_tuple_static(tmp_path):
@@ -530,8 +587,9 @@ def test_default_header_name_encodes_a_tuple_static(tmp_path):
     if shutil.which("g++") is None:
         pytest.skip("g++ not available")
     xs = np.linspace(0.1, 7.9, 9)
-    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, xs),
-                               np.asarray(inst(xs)), rtol=1e-12)
+    np.testing.assert_allclose(
+        _run_header(tmp_path, hdr, name, xs), np.asarray(inst(xs)), rtol=1e-12
+    )
 
 
 @pytest.mark.parametrize("bad", [np.inf, -np.inf, np.nan], ids=["inf", "-inf", "nan"])
@@ -541,11 +599,21 @@ def test_bake_rejects_nonfinite_table(tmp_path, bad):
     k = chebax.besselk(1.5)
     coef = np.asarray(k.ltil.coef).copy()
     coef[3] = bad
-    broken = type(k)(*[getattr(k, f) for f in k._static_fields],
-                     *[ChebSeries(jnp.asarray(coef), k.ltil.domain) if f == "ltil"
-                       else getattr(k, f) for f in k._series_fields])
-    for fn, p in ((bake.jax_module, tmp_path / "n.py"),
-                  (bake.xsf_header, tmp_path / "n.h")):
+    broken = type(k)(
+        *[getattr(k, f) for f in k._static_fields],
+        *[
+            (
+                ChebSeries(jnp.asarray(coef), k.ltil.domain)
+                if f == "ltil"
+                else getattr(k, f)
+            )
+            for f in k._series_fields
+        ],
+    )
+    for fn, p in (
+        (bake.jax_module, tmp_path / "n.py"),
+        (bake.xsf_header, tmp_path / "n.h"),
+    ):
         with pytest.raises(ValueError, match="nonfinite coefficient"):
             fn(broken, p)
         assert not p.exists()
@@ -564,13 +632,18 @@ def test_cpp_sign_matches_jnp(tmp_path, ctype, fmt):
     main.write_text(
         '#include "signy.h"\n#include <cstdio>\n'
         f'int main() {{ {ctype} x; while (std::scanf("{fmt}", &x) == 1) '
-        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n"
+    )
     exe = tmp_path / "exe"
-    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
-                   check=True, cwd=tmp_path)
+    subprocess.run(
+        ["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+        check=True,
+        cwd=tmp_path,
+    )
     xs = ["nan", "0.0", "-0.0", "1.5", "-1.5", "-2.9", "inf", "-inf"]
-    out = subprocess.run([str(exe)], input="\n".join(xs),
-                         capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        [str(exe)], input="\n".join(xs), capture_output=True, text=True, check=True
+    )
     got = np.array([float(t) for t in out.stdout.split()])
     ref = np.array([float(inst(jnp.asarray(float(t), jnp.float64))) for t in xs])
     assert np.isnan(got[0]) and np.isnan(ref[0]), "sign(NaN) must propagate"
@@ -578,8 +651,12 @@ def test_cpp_sign_matches_jnp(tmp_path, ctype, fmt):
     assert got[2] == 0.0 and np.signbit(got[2]), "sign(-0.0) keeps its sign"
     # finite lanes against mpmath: sign(x) * exp(|x|), the recipe's closed form
     fin = np.isfinite(ref)
-    exact = np.array([float(mp.sign(mp.mpf(t)) * mp.exp(abs(mp.mpf(t))))
-                      for t in np.asarray(xs)[fin]])
+    exact = np.array(
+        [
+            float(mp.sign(mp.mpf(t)) * mp.exp(abs(mp.mpf(t))))
+            for t in np.asarray(xs)[fin]
+        ]
+    )
     rtol = 5e-15 if ctype == "double" else 1e-6
     np.testing.assert_allclose(got[fin], exact, rtol=rtol)
     assert np.all(np.signbit(got[fin]) == np.signbit(ref[fin]))
@@ -658,8 +735,7 @@ _ALL_RECIPES = [
 ]
 
 
-@pytest.mark.parametrize("name,build", _ALL_RECIPES,
-                         ids=[r[0] for r in _ALL_RECIPES])
+@pytest.mark.parametrize("name,build", _ALL_RECIPES, ids=[r[0] for r in _ALL_RECIPES])
 def test_every_public_recipe_bakes(name, build, tmp_path):
     import importlib.util
 

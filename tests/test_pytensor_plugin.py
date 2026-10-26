@@ -45,16 +45,18 @@ def test_betainc_values_and_shape_gradients():
 
     ga, gb = jax.grad(mean_out, (0, 1))(2.5, 3.5)
     h = 1e-6
-    ga_fd = (sps.betainc(2.5 + h, 3.5, xv).mean()
-             - sps.betainc(2.5 - h, 3.5, xv).mean()) / (2 * h)
-    gb_fd = (sps.betainc(2.5, 3.5 + h, xv).mean()
-             - sps.betainc(2.5, 3.5 - h, xv).mean()) / (2 * h)
+    ga_fd = (
+        sps.betainc(2.5 + h, 3.5, xv).mean() - sps.betainc(2.5 - h, 3.5, xv).mean()
+    ) / (2 * h)
+    gb_fd = (
+        sps.betainc(2.5, 3.5 + h, xv).mean() - sps.betainc(2.5, 3.5 - h, xv).mean()
+    ) / (2 * h)
     assert abs(float(ga) - ga_fd) <= 1e-6
     assert abs(float(gb) - gb_fd) <= 1e-6
 
     # grad w.r.t. x is the Beta density
     gx = jax.grad(lambda xv1: f(2.5, 3.5, jnp.asarray([xv1]))[0])(0.4)
-    pdf = 0.4 ** 1.5 * 0.6 ** 2.5 / sps.beta(2.5, 3.5)
+    pdf = 0.4**1.5 * 0.6**2.5 / sps.beta(2.5, 3.5)
     assert abs(float(gx) - pdf) <= 1e-10
 
 
@@ -66,14 +68,17 @@ def test_betainc_values_drop_the_loop_in_box():
     from chebax.pytensor import _betainc_scalar_ab
 
     xs = jnp.zeros(8)
-    in_box = jax.jit(lambda x: _betainc_scalar_ab(jnp.float64(2.5),
-                                                  jnp.float64(3.5), x))
+    in_box = jax.jit(
+        lambda x: _betainc_scalar_ab(jnp.float64(2.5), jnp.float64(3.5), x)
+    )
     assert in_box.lower(xs).compile().as_text().count("while(") == 0
-    out_box = jax.jit(lambda x: _betainc_scalar_ab(jnp.float64(150.0),
-                                                   jnp.float64(3.5), x))
+    out_box = jax.jit(
+        lambda x: _betainc_scalar_ab(jnp.float64(150.0), jnp.float64(3.5), x)
+    )
     assert out_box.lower(xs).compile().as_text().count("while(") > 0
-    plain = jax.jit(lambda x: jax.scipy.special.betainc(jnp.full(8, 2.5),
-                                                        jnp.full(8, 3.5), x))
+    plain = jax.jit(
+        lambda x: jax.scipy.special.betainc(jnp.full(8, 2.5), jnp.full(8, 3.5), x)
+    )
     assert plain.lower(xs).compile().as_text().count("while(") > 0
 
 
@@ -91,16 +96,20 @@ def test_forward_ops_keep_a_float32_graph_float32():
     fb = jaxify([a, b, x], pt.betainc(a, b, x))
     got = fb(np.float32(2.5), np.float32(3.5), xv)
     assert got.dtype == np.float32
-    np.testing.assert_allclose(np.asarray(got, np.float64),
-                               sps.betainc(2.5, 3.5, xv.astype(np.float64)),
-                               atol=5e-6)
+    np.testing.assert_allclose(
+        np.asarray(got, np.float64),
+        sps.betainc(2.5, 3.5, xv.astype(np.float64)),
+        atol=5e-6,
+    )
     fg = jaxify([a, x], pt.gammainc(a, x))
     xg = np.linspace(0.5, 5.0, 5, dtype=np.float32)
     gotg = fg(np.float32(3.0), xg)
     assert gotg.dtype == np.float32
-    np.testing.assert_allclose(np.asarray(gotg, np.float64),
-                               sps.gammainc(3.0, xg.astype(np.float64)),
-                               atol=5e-6)
+    np.testing.assert_allclose(
+        np.asarray(gotg, np.float64),
+        sps.gammainc(3.0, xg.astype(np.float64)),
+        atol=5e-6,
+    )
 
 
 def test_betainc_out_of_box_values_fine_grads_nan():
@@ -130,13 +139,11 @@ def test_betainc_x_derivative_in_both_modes():
         return np.asarray(rev), np.asarray(fwd)
 
     for got in modes(150.0, 3.5, [0.4]):
-        np.testing.assert_allclose(got, stats.beta.pdf(0.4, 150.0, 3.5),
-                                   rtol=1e-9)
+        np.testing.assert_allclose(got, stats.beta.pdf(0.4, 150.0, 3.5), rtol=1e-9)
     # The rule clipped x before forming the density, so endpoint limits
     # came back finite (5e153 for an infinite one). Against the core
     # recipe, whose endpoint slopes are set explicitly.
-    for av, bv in ((0.5, 2.0), (2.0, 0.5), (1.0, 3.0), (3.0, 1.0),
-                   (2.5, 3.5)):
+    for av, bv in ((0.5, 2.0), (2.0, 0.5), (1.0, 3.0), (3.0, 1.0), (2.5, 3.5)):
         xv = [0.0, 0.4, 1.0]
         ref = [float(jax.grad(chebax.betainc_fn, 2)(av, bv, t)) for t in xv]
         for got in modes(av, bv, xv):
@@ -154,8 +161,9 @@ def test_betainc_batched_shapes_keep_plain_jax():
     av = np.array([2.5, 9.0])
     bv = np.array([3.5, 1.5])
     xv = np.array([0.3, 0.7])
-    np.testing.assert_allclose(np.asarray(f(av, bv, xv)),
-                               sps.betainc(av, bv, xv), rtol=1e-12)
+    np.testing.assert_allclose(
+        np.asarray(f(av, bv, xv)), sps.betainc(av, bv, xv), rtol=1e-12
+    )
 
 
 def test_quantile_ops_values_and_gradients():
@@ -163,20 +171,23 @@ def test_quantile_ops_values_and_gradients():
     pv = np.array([0.05, 0.5, 0.95])
 
     f = jaxify([a, b, p], pt.betaincinv(a, b, p))
-    np.testing.assert_allclose(np.asarray(f(2.0, 3.0, pv)),
-                               sps.betaincinv(2.0, 3.0, pv), rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(f(2.0, 3.0, pv)), sps.betaincinv(2.0, 3.0, pv), rtol=1e-10
+    )
     g = jax.grad(lambda av: jnp.sum(f(av, 3.0, jnp.asarray(pv))))(2.0)
     assert np.isfinite(float(g))
 
     fg = jaxify([a, p], pt.gammaincinv(a, p))
-    np.testing.assert_allclose(np.asarray(fg(3.5, pv)),
-                               sps.gammaincinv(3.5, pv), rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(fg(3.5, pv)), sps.gammaincinv(3.5, pv), rtol=1e-10
+    )
     g = jax.grad(lambda av: jnp.sum(fg(av, jnp.asarray(pv))))(3.5)
     assert np.isfinite(float(g))
 
     fc = jaxify([a, p], pt.gammainccinv(a, p))
-    np.testing.assert_allclose(np.asarray(fc(3.5, pv)),
-                               sps.gammainccinv(3.5, pv), rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(fc(3.5, pv)), sps.gammainccinv(3.5, pv), rtol=1e-10
+    )
 
 
 def test_bessel_ops():
@@ -184,11 +195,9 @@ def test_bessel_ops():
     xv = np.array([0.5, 2.0, 8.0, 50.0])
 
     fi = jaxify([v, x], pt.ive(v, x))
-    np.testing.assert_allclose(np.asarray(fi(1.7, xv)),
-                               sps.ive(1.7, xv), rtol=1e-10)
+    np.testing.assert_allclose(np.asarray(fi(1.7, xv)), sps.ive(1.7, xv), rtol=1e-10)
     fk = jaxify([v, x], pt.kve(v, x))
-    np.testing.assert_allclose(np.asarray(fk(2.5, xv)),
-                               sps.kve(2.5, xv), rtol=1e-10)
+    np.testing.assert_allclose(np.asarray(fk(2.5, xv)), sps.kve(2.5, xv), rtol=1e-10)
     # kve stays finite far past where K underflows, and K_{-v} = K_v
     big = np.asarray(fk(-2.5, np.array([800.0])))
     np.testing.assert_allclose(big, sps.kve(2.5, 800.0), rtol=1e-10)
@@ -207,13 +216,15 @@ def test_erf_family_pure_jax():
         np.testing.assert_allclose(np.asarray(fx(xv)), sps.erfcx(xv), rtol=1e-12)
     fi = jaxify([x], pt.erfcinv(x))
     yv = np.array([0.1, 0.5, 1.0, 1.9])
-    np.testing.assert_allclose(np.asarray(fi(yv)), sps.erfcinv(yv),
-                               rtol=1e-10, atol=1e-12)
+    np.testing.assert_allclose(
+        np.asarray(fi(yv)), sps.erfcinv(yv), rtol=1e-10, atol=1e-12
+    )
 
 
 def test_batched_parameters_fall_back():
     try:
         import tensorflow_probability  # noqa: F401
+
         pytest.skip("tfp installed; fallback goes to tfp instead of raising")
     except ImportError:
         pass
@@ -229,8 +240,9 @@ def test_mode_jax_end_to_end():
     x = pt.dvector("x")
     fn = pytensor.function([a, b, x], pt.betaincinv(a, b, x), mode="JAX")
     pv = np.array([0.2, 0.8])
-    np.testing.assert_allclose(np.asarray(fn(2.0, 3.0, pv)),
-                               sps.betaincinv(2.0, 3.0, pv), rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(fn(2.0, 3.0, pv)), sps.betaincinv(2.0, 3.0, pv), rtol=1e-10
+    )
 
 
 def test_forward_gamma_cdfs_values_and_gradients():
@@ -285,8 +297,7 @@ def test_forward_gamma_drops_the_loop_for_a_concrete_shape():
     # it. Both are correct; only the first is visible in the HLO.
     from chebax.pytensor import _forward_gamma
 
-    fwd = _forward_gamma(None, "igamma", chebax.gammainc_fn,
-                         jax.scipy.special.gammainc)
+    fwd = _forward_gamma(None, "igamma", chebax.gammainc_fn, jax.scipy.special.gammainc)
     xs = jnp.zeros(8)
     concrete = jax.jit(lambda x: fwd(jnp.float64(3.0), x))
     assert concrete.lower(xs).compile().as_text().count("while(") == 0

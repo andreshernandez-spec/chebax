@@ -61,7 +61,8 @@ def canon_param(p, who, name):
     raise ValueError(
         f"{who} takes {name} as a scalar (uniform per call), got shape "
         f"{a.shape}. For one parameter set per group use "
-        f"chebax.pergroup({who}, group_idx).")
+        f"chebax.pergroup({who}, group_idx)."
+    )
 
 
 @jax.custom_jvp
@@ -111,8 +112,10 @@ def float_params(impl):
     @functools.wraps(impl)
     def public(*args, **kw):
         arg = sig.bind(*args, **kw).arguments
-        return impl(*(canon_param(arg[n], who, n) for n in params),
-                    canon_float(arg[point]))
+        return impl(
+            *(canon_param(arg[n], who, n) for n in params), canon_float(arg[point])
+        )
+
     public.__name__ = public.__qualname__ = who
     return public
 
@@ -174,5 +177,7 @@ def digamma64(z):
         acc -= 1.0 / z
         z += 1.0
     zi = 1.0 / (z * z)
-    tail = 1 / 12 - zi * (1 / 120 - zi * (1 / 252 - zi * (1 / 240 - zi * (1 / 132 - zi * (691 / 32760)))))
+    tail = 1 / 12 - zi * (
+        1 / 120 - zi * (1 / 252 - zi * (1 / 240 - zi * (1 / 132 - zi * (691 / 32760))))
+    )
     return acc + math.log(z) - 0.5 / z - zi * tail

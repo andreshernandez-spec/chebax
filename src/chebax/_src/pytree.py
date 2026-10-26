@@ -16,6 +16,7 @@ so a caller mutating one would corrupt every later call served from that
 slot; build a new instance instead.
 """
 
+
 class Recipe:
     _static_fields = ()
     _series_fields = ()
@@ -24,7 +25,9 @@ class Recipe:
     def __init__(self, *args):
         names = self._static_fields + self._series_fields
         if len(args) != len(names):
-            raise TypeError(f"{type(self).__name__} expects {names}, got {len(args)} args")
+            raise TypeError(
+                f"{type(self).__name__} expects {names}, got {len(args)} args"
+            )
         for name, val in zip(names, args):
             setattr(self, name, val)
         self._post_init()
@@ -34,28 +37,34 @@ class Recipe:
         if self._frozen:
             raise AttributeError(
                 f"{type(self).__name__} is immutable (cached instances are shared); "
-                f"cannot set {name!r}")
+                f"cannot set {name!r}"
+            )
         object.__setattr__(self, name, value)
 
     def __delattr__(self, name):
         if self._frozen:
             raise AttributeError(
                 f"{type(self).__name__} is immutable (cached instances are shared); "
-                f"cannot delete {name!r}")
+                f"cannot delete {name!r}"
+            )
         object.__delattr__(self, name)
 
     def _post_init(self):
         pass
 
     def astype(self, dtype):
-        return type(self)(*[getattr(self, f) for f in self._static_fields],
-                          *[getattr(self, f).astype(dtype) for f in self._series_fields])
+        return type(self)(
+            *[getattr(self, f) for f in self._static_fields],
+            *[getattr(self, f).astype(dtype) for f in self._series_fields],
+        )
 
     def truncate(self, tol):
         """Instance with every series' converged tail dropped (see
         ChebSeries.truncate); nested recipe children truncate too."""
-        return type(self)(*[getattr(self, f) for f in self._static_fields],
-                          *[getattr(self, f).truncate(tol) for f in self._series_fields])
+        return type(self)(
+            *[getattr(self, f) for f in self._static_fields],
+            *[getattr(self, f).truncate(tol) for f in self._series_fields],
+        )
 
     def __repr__(self):
         statics = ", ".join(f"{f}={getattr(self, f)!r}" for f in self._static_fields)
@@ -72,8 +81,10 @@ class Recipe:
         return f"{type(self).__name__}({statics}, dtype={dtype})"
 
     def tree_flatten(self):
-        return (tuple(getattr(self, f) for f in self._series_fields),
-                tuple(getattr(self, f) for f in self._static_fields))
+        return (
+            tuple(getattr(self, f) for f in self._series_fields),
+            tuple(getattr(self, f) for f in self._static_fields),
+        )
 
     @classmethod
     def tree_unflatten(cls, aux, children):

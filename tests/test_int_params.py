@@ -98,8 +98,7 @@ KW_CASES = [
 ]
 
 
-@pytest.mark.parametrize("name,params,xname,x", KW_CASES,
-                         ids=[c[0] for c in KW_CASES])
+@pytest.mark.parametrize("name,params,xname,x", KW_CASES, ids=[c[0] for c in KW_CASES])
 def test_keyword_call_matches_positional(name, params, xname, x):
     # stdtr(nu=4, t=t) skipped the promotion and raised under grad, and
     # stdtr(nu=jnp.array([4.]), t=.3) died on a coefficient shape
@@ -128,10 +127,13 @@ def test_keyword_call_matches_positional(name, params, xname, x):
 def test_tweedie_keywords_match_positional():
     args = {"p": 1.5, "mu": 2.0, "phi": 1.0, "y": 1.5}
     g = jax.grad(lambda p, y: chebax.tweedie_logpdf(p, 2.0, 1.0, y), (0, 1))
-    gk = jax.grad(lambda p, y: chebax.tweedie_logpdf(
-        y=y, phi=1, mu=2, p=jnp.reshape(p, (1,))), (0, 1))
+    gk = jax.grad(
+        lambda p, y: chebax.tweedie_logpdf(y=y, phi=1, mu=2, p=jnp.reshape(p, (1,))),
+        (0, 1),
+    )
     assert float(chebax.tweedie_logpdf(**args)) == float(
-        chebax.tweedie_logpdf(*args.values()))
+        chebax.tweedie_logpdf(*args.values())
+    )
     assert list(map(float, gk(1.5, 1.5))) == list(map(float, g(1.5, 1.5)))
 
 
@@ -142,8 +144,10 @@ def test_integer_evaluation_point_with_coefficient_gradient():
     cp = jnp.asarray([[1.0, 2.0, 0.5], [0.3, -1.0, 2.0]])
     for x in (1, np.int64(1), np.array([0, 1, 2])):
         xf = np.asarray(x, dtype=float)
-        for make, coef in ((lambda c: ChebSeries(c, (-1.0, 2.0)), c),
-                           (lambda c: PiecewiseCheb(c, (0.0, 1.0, 2.0)), cp)):
+        for make, coef in (
+            (lambda c: ChebSeries(c, (-1.0, 2.0)), c),
+            (lambda c: PiecewiseCheb(c, (0.0, 1.0, 2.0)), cp),
+        ):
             gi = jax.grad(lambda c: jnp.sum(make(c)(x)))(coef)
             gf = jax.grad(lambda c: jnp.sum(make(c)(xf)))(coef)
             np.testing.assert_array_equal(np.asarray(gi), np.asarray(gf))

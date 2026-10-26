@@ -60,8 +60,7 @@ def w_eta(d):
     without rounding lambda first (the gamma density at large a)."""
     dm = jnp.where(d == 0.0, 1.0, d)
     ratio_direct = 2.0 * (d - jnp.log1p(d)) / (dm * dm)
-    ratio_series = (1.0 - 2.0 * d / 3.0 + d * d / 2.0
-                    - 2.0 * d ** 3 / 5.0 + d ** 4 / 3.0)
+    ratio_series = 1.0 - 2.0 * d / 3.0 + d * d / 2.0 - 2.0 * d**3 / 5.0 + d**4 / 3.0
     ratio = jnp.where(jnp.abs(d) < 1e-3, ratio_series, ratio_direct)
     eta = d * jnp.sqrt(ratio)
     return 0.5 * eta * eta, eta
@@ -85,8 +84,10 @@ def temme_log_pq(y, aw, tval, rt):
     corr = jnp.exp(-aw) / rt * tval
     p_in = jnp.where(y > 0.0, 0.5, 0.5 * jax.scipy.special.erfc(-y) - corr)
     q_in = jnp.where(y < 0.0, 0.5, 0.5 * jax.scipy.special.erfc(y) + corr)
-    return (jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in)),
-            jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in)))
+    return (
+        jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in)),
+        jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in)),
+    )
 
 
 def eval_large(a, x, temme, dlow, dup, kind):
@@ -98,14 +99,17 @@ def eval_large(a, x, temme, dlow, dup, kind):
     in_low = lam <= _glt.LHI
     in_up = x * _glt.SHI >= (a - 1.0)
     xl = jnp.where(pos & in_low, x, 0.25 * a)
-    lp_low = (a * jnp.log(xl) - xl - jax.scipy.special.gammaln(a + 1.0)
-              + dlow(xl / a))
+    lp_low = a * jnp.log(xl) - xl - jax.scipy.special.gammaln(a + 1.0) + dlow(xl / a)
     # at x = inf the bracket is inf - inf: mask it and set ln Q = -inf
     # by hand (the small-a path does the same)
     big = x == jnp.inf
     xu = jnp.where(in_up & ~big, x, 12.0 * a)
-    lq_up = ((a - 1.0) * jnp.log(xu) - xu - jax.scipy.special.gammaln(a)
-             + dup((a - 1.0) / xu))
+    lq_up = (
+        (a - 1.0) * jnp.log(xu)
+        - xu
+        - jax.scipy.special.gammaln(a)
+        + dup((a - 1.0) / xu)
+    )
     lq_up = jnp.where(big, -jnp.inf, lq_up)
 
     # masked lanes clipped to the Temme zone's own lambda range so eta
@@ -120,46 +124,51 @@ def eval_large(a, x, temme, dlow, dup, kind):
     q_t = 0.5 * jax.scipy.special.erfc(y) + corr
 
     if kind == "p":
-        core = jnp.where(in_low, jnp.exp(lp_low),
-                         jnp.where(in_up, 1.0 - jnp.exp(lq_up), p_t))
+        core = jnp.where(
+            in_low, jnp.exp(lp_low), jnp.where(in_up, 1.0 - jnp.exp(lq_up), p_t)
+        )
         out = jnp.where(pos, core, 0.0)
     elif kind == "q":
-        core = jnp.where(in_low, 1.0 - jnp.exp(lp_low),
-                         jnp.where(in_up, jnp.exp(lq_up), q_t))
+        core = jnp.where(
+            in_low, 1.0 - jnp.exp(lp_low), jnp.where(in_up, jnp.exp(lq_up), q_t)
+        )
         out = jnp.where(pos, core, 1.0)
     else:
         # log forms: see temme_log_pq; y^2 = a w exactly
         lp_t, lq_t = temme_log_pq(y, a * w, tval, rt)
         if kind == "logp":
-            core = jnp.where(in_low, lp_low,
-                             jnp.where(in_up, jnp.log1p(-jnp.exp(lq_up)),
-                                       lp_t))
+            core = jnp.where(
+                in_low, lp_low, jnp.where(in_up, jnp.log1p(-jnp.exp(lq_up)), lp_t)
+            )
             out = jnp.where(pos, core, -jnp.inf)
         else:
-            core = jnp.where(in_low, jnp.log1p(-jnp.exp(lp_low)),
-                             jnp.where(in_up, lq_up, lq_t))
+            core = jnp.where(
+                in_low, jnp.log1p(-jnp.exp(lp_low)), jnp.where(in_up, lq_up, lq_t)
+            )
             out = jnp.where(pos, core, 0.0)
     return jnp.where(jnp.isnan(x) | jnp.isnan(a), jnp.nan, out)
 
 
 def series_eager(a):
     v = _glt.ASPLIT / a
-    return (ChebSeries(param_coefs(_glt.TABLE_TEMME, _glt.VLO, 1.0, v),
-                       (_glt.ELO, _glt.EHI)),
-            ChebSeries(param_coefs(_glt.TABLE_LOW, _glt.VLO, 1.0, v),
-                       (0.0, _glt.LHI)),
-            ChebSeries(param_coefs(_glt.TABLE_UP, _glt.VLO, 1.0, v),
-                       (0.0, _glt.SHI)))
+    return (
+        ChebSeries(
+            param_coefs(_glt.TABLE_TEMME, _glt.VLO, 1.0, v), (_glt.ELO, _glt.EHI)
+        ),
+        ChebSeries(param_coefs(_glt.TABLE_LOW, _glt.VLO, 1.0, v), (0.0, _glt.LHI)),
+        ChebSeries(param_coefs(_glt.TABLE_UP, _glt.VLO, 1.0, v), (0.0, _glt.SHI)),
+    )
 
 
 def series_traced(a):
     v = _glt.ASPLIT / a
-    return (ChebSeries(traced_coefs(_glt.TABLE_TEMME, _glt.VLO, 1.0, v),
-                       (_glt.ELO, _glt.EHI)),
-            ChebSeries(traced_coefs(_glt.TABLE_LOW, _glt.VLO, 1.0, v),
-                       (0.0, _glt.LHI)),
-            ChebSeries(traced_coefs(_glt.TABLE_UP, _glt.VLO, 1.0, v),
-                       (0.0, _glt.SHI)))
+    return (
+        ChebSeries(
+            traced_coefs(_glt.TABLE_TEMME, _glt.VLO, 1.0, v), (_glt.ELO, _glt.EHI)
+        ),
+        ChebSeries(traced_coefs(_glt.TABLE_LOW, _glt.VLO, 1.0, v), (0.0, _glt.LHI)),
+        ChebSeries(traced_coefs(_glt.TABLE_UP, _glt.VLO, 1.0, v), (0.0, _glt.SHI)),
+    )
 
 
 @jax.tree_util.register_pytree_node_class

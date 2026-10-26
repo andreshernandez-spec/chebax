@@ -31,17 +31,26 @@ from chebax._src.recipes import erf_table as et
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-XPOS = np.sort(np.concatenate([
-    np.logspace(-3, np.log10(6.0), 14), [6.0, 6.0001],
-    np.logspace(np.log10(6.2), 4, 10),
-]))
-XD = np.concatenate([-XPOS[::-1], XPOS])          # dawsn: both signs
+XPOS = np.sort(
+    np.concatenate(
+        [
+            np.logspace(-3, np.log10(6.0), 14),
+            [6.0, 6.0001],
+            np.logspace(np.log10(6.2), 4, 10),
+        ]
+    )
+)
+XD = np.concatenate([-XPOS[::-1], XPOS])  # dawsn: both signs
 XE = np.concatenate([-np.linspace(0.1, 5.0, 8)[::-1], XPOS])  # erfcx: mild negatives
 
 
 def test_dawsn_values():
-    ref = np.array([float(mp.sqrt(mp.pi) / 2 * mp.exp(-mp.mpf(x) ** 2) * mp.erfi(mp.mpf(x)))
-                    for x in XD])
+    ref = np.array(
+        [
+            float(mp.sqrt(mp.pi) / 2 * mp.exp(-mp.mpf(x) ** 2) * mp.erfi(mp.mpf(x)))
+            for x in XD
+        ]
+    )
     got = np.asarray(chebax.dawsn(XD))
     assert np.max(np.abs(got - ref) / np.abs(ref)) <= 5e-15
     assert float(chebax.dawsn(0.0)) == 0.0
@@ -78,10 +87,12 @@ def test_erfcx_negative_overflow():
 
 def test_jit():
     xs = jnp.asarray(XPOS[:8])
-    np.testing.assert_allclose(np.asarray(jax.jit(chebax.dawsn)(xs)),
-                               np.asarray(chebax.dawsn(xs)), rtol=1e-14)
-    np.testing.assert_allclose(np.asarray(jax.jit(chebax.erfcx)(xs)),
-                               np.asarray(chebax.erfcx(xs)), rtol=1e-14)
+    np.testing.assert_allclose(
+        np.asarray(jax.jit(chebax.dawsn)(xs)), np.asarray(chebax.dawsn(xs)), rtol=1e-14
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.jit(chebax.erfcx)(xs)), np.asarray(chebax.erfcx(xs)), rtol=1e-14
+    )
 
 
 # ---- review 2026-08-01: the series cache must be keyed per x64 mode --------
@@ -102,8 +113,12 @@ def test_series_cache_keyed_per_x64_mode():
     # subprocess. A cache filled under x64 off used to pin float32
     # coefficients, and dawsn kept returning the float32 value after.
     env = {k: v for k, v in os.environ.items() if k != "JAX_ENABLE_X64"}
-    out = subprocess.run([sys.executable, "-c", _FLIP], capture_output=True, text=True,
-                         env={**env, "JAX_PLATFORMS": "cpu"})
+    out = subprocess.run(
+        [sys.executable, "-c", _FLIP],
+        capture_output=True,
+        text=True,
+        env={**env, "JAX_PLATFORMS": "cpu"},
+    )
     assert out.returncode == 0, out.stderr[-2000:]
     (v32, d32), (v64, d64) = ast.literal_eval(out.stdout.strip())
     assert (d32, d64) == ("float32", "float64")
@@ -113,6 +128,7 @@ def test_series_cache_keyed_per_x64_mode():
 
 
 # ---- review 2026-08-01: coefficient conversion loses nothing silently ------
+
 
 def test_wide_integer_coefficients_rejected():
     # jnp.asarray narrows int64 to int32 first, so 2**53 + 1 used to arrive
@@ -150,11 +166,13 @@ def test_constructor_still_takes_tracers():
     f = lambda c: chebax.ChebSeries(c, (0.0, 1.0))(0.3)
     c = jnp.asarray([1.0, 2.0, 3.0])
     assert float(jax.jit(f)(c)) == pytest.approx(float(f(c)), rel=1e-15)
-    np.testing.assert_allclose(np.asarray(jax.grad(f)(c)),
-                               npch.chebvander(np.array([-0.4]), 2)[0], atol=1e-15)
+    np.testing.assert_allclose(
+        np.asarray(jax.grad(f)(c)), npch.chebvander(np.array([-0.4]), 2)[0], atol=1e-15
+    )
 
 
 # ---- review 2026-08-01: O(n) deriv/integ, no cached dense matrices ---------
+
 
 def _mp_chebder(c):
     """Exact-arithmetic derivative coefficients, plain-c0 convention."""
@@ -192,8 +210,10 @@ def test_deriv_integ_coefficients_against_mpmath():
     for n in (1, 2, 3, 4, 5, 9, 17, 64, 128, 257, 1024):
         c = rng.standard_normal(n)
         s = chebax.ChebSeries(c)
-        for got, ref, bar in ((s.deriv().coef, _mp_chebder(c), 1.5e-15),
-                              (s.integ().coef, _mp_chebint(c), 8e-16)):
+        for got, ref, bar in (
+            (s.deriv().coef, _mp_chebder(c), 1.5e-15),
+            (s.integ().coef, _mp_chebint(c), 8e-16),
+        ):
             assert np.all(np.isfinite(np.asarray(got))), n
             scale = max(float(max(abs(v) for v in ref)), 1e-300)
             err = max(abs(float(a) - float(b)) for a, b in zip(np.asarray(got), ref))
@@ -219,10 +239,18 @@ def test_deriv_integ_match_numpy_polynomial():
     rng = np.random.default_rng(11)
     c = rng.standard_normal(33)
     s = chebax.ChebSeries(c)
-    np.testing.assert_allclose(np.asarray(s.deriv().coef), npch.chebder(c), rtol=0,
-                               atol=1e-14 * np.max(np.abs(npch.chebder(c))))
-    np.testing.assert_allclose(np.asarray(s.integ().coef), npch.chebint(c), rtol=0,
-                               atol=1e-15 * np.max(np.abs(npch.chebint(c))))
+    np.testing.assert_allclose(
+        np.asarray(s.deriv().coef),
+        npch.chebder(c),
+        rtol=0,
+        atol=1e-14 * np.max(np.abs(npch.chebder(c))),
+    )
+    np.testing.assert_allclose(
+        np.asarray(s.integ().coef),
+        npch.chebint(c),
+        rtol=0,
+        atol=1e-15 * np.max(np.abs(npch.chebint(c))),
+    )
 
 
 def test_series_module_retains_no_caches():
@@ -251,7 +279,9 @@ def test_piecewise_deriv_matches_per_segment():
     d = np.asarray(pw.deriv().coef)
     for i, (lo, hi) in enumerate(zip(pw.breaks, pw.breaks[1:])):
         seg = chebax.ChebSeries(pw.coef[i], (lo, hi))
-        np.testing.assert_allclose(d[i], np.asarray(seg.deriv().coef), rtol=0, atol=1e-15)
+        np.testing.assert_allclose(
+            d[i], np.asarray(seg.deriv().coef), rtol=0, atol=1e-15
+        )
 
 
 def test_deriv_integ_on_traced_coefficients():
@@ -260,8 +290,9 @@ def test_deriv_integ_on_traced_coefficients():
     for f in (lambda q: q.deriv(), lambda q: q.integ()):
         eager = np.asarray(f(chebax.ChebSeries(c, (0.0, 2.0))).coef)
         traced = jax.jit(lambda c: f(chebax.ChebSeries(c, (0.0, 2.0))).coef)(c)
-        np.testing.assert_allclose(np.asarray(traced), eager, rtol=0,
-                                   atol=1e-14 * np.max(np.abs(eager)))
+        np.testing.assert_allclose(
+            np.asarray(traced), eager, rtol=0, atol=1e-14 * np.max(np.abs(eager))
+        )
     # gradient wrt the coefficients is sum(chebder(e_k)) = T_k'(1) = k^2,
     # exactly (domain width 2 makes the chain factor 1); measured exact,
     # where npch.chebder's divisions are already 1 ulp off at k = 21
@@ -275,5 +306,8 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     erf_gen.main(tmp_path)
-    assert (tmp_path / "erf_table.py").read_text() == pathlib.Path(et.__file__).read_text()
+    assert (tmp_path / "erf_table.py").read_text() == pathlib.Path(
+        et.__file__
+    ).read_text()

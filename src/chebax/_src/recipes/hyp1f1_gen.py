@@ -34,16 +34,21 @@ Regenerate with:
     python -m chebax._src.recipes.hyp1f1_gen
 """
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, table_path,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    table_path,
+    write_table_module,
+)
 
 XS_K = 30.0
 ALO, AHI = 0.1, 10.0
-NX_IN = 136   # x-nodes (worst measured 112, the (10, 0.1) corner)
-NA_IN = 32    # ln-a nodes (worst measured 26)
-NB_IN = 44    # ln-b nodes (worst measured 36)
+NX_IN = 136  # x-nodes (worst measured 112, the (10, 0.1) corner)
+NA_IN = 32  # ln-a nodes (worst measured 26)
+NB_IN = 44  # ln-b nodes (worst measured 36)
 NT_TAIL = 40  # t-nodes (worst measured 33; near-diagonal strips report
-              # up to 38 on |T| ~ 1e-13, covered too)
+# up to 38 on |T| ~ 1e-13, covered too)
 NA_TAIL = 32  # ln-a nodes (worst measured 26)
 NB_TAIL = 25  # b-nodes, RAW axis (worst measured 20)
 
@@ -56,8 +61,13 @@ def _lnr(mp, a, b, x):
 
 def _ltail(mp, a, b, t):
     x = mp.mpf(XS_K) / t
-    return (mp.log(mp.hyp1f1(a, b, x)) + mp.loggamma(a) - mp.loggamma(b)
-            - x + (b - a) * mp.log(x))
+    return (
+        mp.log(mp.hyp1f1(a, b, x))
+        + mp.loggamma(a)
+        - mp.loggamma(b)
+        - x
+        + (b - a) * mp.log(x)
+    )
 
 
 def _param(mp, tnode, lo, hi, log):
@@ -78,8 +88,7 @@ def inner_rows(mp, a_index):
     rows = []
     for tb in nodes(mp, NB_IN):
         b = _param(mp, tb, ALO, AHI, log=True)
-        rows.append(dct(mp, [_lnr(mp, a, b, (t + 1) / 2 * mp.mpf(XS_K))
-                             for t in tx]))
+        rows.append(dct(mp, [_lnr(mp, a, b, (t + 1) / 2 * mp.mpf(XS_K)) for t in tx]))
     return rows
 
 
@@ -103,8 +112,10 @@ def generate_table(mp, rows_fn, nx, na, nb):
     # sheets[i][j][k]: a-node i, b-node j, argument-coefficient k. Fit b
     # per (i, k), then a per (k, j'): both stages stay in mp.
     out = np.empty((nx, na, nb))
-    bfit = [[dct(mp, [sheets[i][j][k] for j in range(nb)]) for k in range(nx)]
-            for i in range(na)]
+    bfit = [
+        [dct(mp, [sheets[i][j][k] for j in range(nb)]) for k in range(nx)]
+        for i in range(na)
+    ]
     for k in range(nx):
         for j in range(nb):
             col = dct(mp, [bfit[i][k][j] for i in range(na)])
@@ -128,11 +139,20 @@ def main(out_dir=None):
         "with argument t = XS/x in [0, 1]; a and b in [ALO, AHI] for both, "
         "the a-axes and TABLE_IN's b-axis mapped in ln(parameter), "
         "TABLE_TAIL's b-axis raw",
-        {"nx_in": NX_IN, "na_in": NA_IN, "nb_in": NB_IN,
-         "nt_tail": NT_TAIL, "na_tail": NA_TAIL, "nb_tail": NB_TAIL,
-         "xs": XS_K, "alo": ALO, "ahi": AHI},
+        {
+            "nx_in": NX_IN,
+            "na_in": NA_IN,
+            "nb_in": NB_IN,
+            "nt_tail": NT_TAIL,
+            "na_tail": NA_TAIL,
+            "nb_tail": NB_TAIL,
+            "xs": XS_K,
+            "alo": ALO,
+            "ahi": AHI,
+        },
         {"XS": XS_K, "ALO": ALO, "AHI": AHI},
-        {"TABLE_IN": inner, "TABLE_TAIL": tail})
+        {"TABLE_IN": inner, "TABLE_TAIL": tail},
+    )
 
 
 if __name__ == "__main__":

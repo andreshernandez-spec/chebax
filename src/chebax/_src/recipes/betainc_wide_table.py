@@ -6,7 +6,7 @@ Axes: T[k, i, j] = (i-th a-coefficient, j-th b-coefficient) of the k-th x coeffi
 
 import numpy as np
 
-META = {'n_tensor_lohi': (76, 64, 60), 'n_tensor_hilo': (24, 60, 20), 'n_tensor_hihi': (76, 62, 60), 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '6349cbd091dc23ea'}
+META = {'n_tensor_lohi': (76, 64, 60), 'n_tensor_hilo': (24, 60, 20), 'n_tensor_hihi': (76, 62, 60), 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '617b2ddd06a31954'}
 ALO = 0.1
 ASPLIT = 10.0
 AHI = 100.0

@@ -54,14 +54,17 @@ def pergroup(fn, group_idx, num_groups=None):
         raise ValueError(f"group_idx must be integers, got {idx.dtype}")
     shape = idx.shape
     flat = idx.reshape(-1)
-    if num_groups is not None and (isinstance(num_groups, bool)
-                                   or int(num_groups) != num_groups):
+    if num_groups is not None and (
+        isinstance(num_groups, bool) or int(num_groups) != num_groups
+    ):
         # 2.9 used to truncate to 2 in silence (review, 2026-08-02)
         raise ValueError(f"num_groups must be an integer, got {num_groups!r}")
     g = int(flat.max()) + 1 if num_groups is None else int(num_groups)
     if flat.min() < 0 or flat.max() >= g:
-        raise ValueError(f"group_idx values must lie in [0, {g}), got "
-                         f"[{flat.min()}, {flat.max()}]")
+        raise ValueError(
+            f"group_idx values must lie in [0, {g}), got "
+            f"[{flat.min()}, {flat.max()}]"
+        )
 
     counts = np.bincount(flat, minlength=g)
     m = int(counts.max())
@@ -84,7 +87,7 @@ def pergroup(fn, group_idx, num_groups=None):
     for gi in range(g):
         c = counts[gi]
         src = gi if c else donor
-        own = order[starts[src]:starts[src] + counts[src]]
+        own = order[starts[src] : starts[src] + counts[src]]
         gather[gi, :c] = own[:c]
         gather[gi, c:] = own[np.arange(m - c) % own.size]
 
@@ -109,25 +112,26 @@ def pergroup(fn, group_idx, num_groups=None):
     @merge.defjvp
     def _merge_jvp(primals, tangents):
         (yg,), (dyg,) = primals, tangents
-        dy = jnp.zeros(flat.size, dyg.dtype).at[owner].add(
-            dyg * share.astype(dyg.dtype))
+        dy = (
+            jnp.zeros(flat.size, dyg.dtype).at[owner].add(dyg * share.astype(dyg.dtype))
+        )
         return yg[back], dy
 
     def wrapped(*args):
         *params, x = args
         if not params:
-            raise TypeError("pergroup: fn takes at least one parameter "
-                            "before x")
+            raise TypeError("pergroup: fn takes at least one parameter " "before x")
         x = jnp.asarray(x)
         if x.shape != shape:
-            raise ValueError(f"x has shape {x.shape}, group_idx has "
-                             f"shape {shape}")
+            raise ValueError(f"x has shape {x.shape}, group_idx has " f"shape {shape}")
         ps = []
         for k, p in enumerate(params):
             p = jnp.asarray(p)
             if p.shape != (g,):
-                raise ValueError(f"parameter {k} has shape {p.shape}, "
-                                 f"expected ({g},) for {g} groups")
+                raise ValueError(
+                    f"parameter {k} has shape {p.shape}, "
+                    f"expected ({g},) for {g} groups"
+                )
             ps.append(jnp.where(empty, p[donor], p) if any_empty else p)
         yg = jax.vmap(fn)(*ps, x.reshape(-1)[gather])
         return merge(yg.reshape(-1)).reshape(shape)

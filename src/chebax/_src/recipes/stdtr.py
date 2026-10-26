@@ -38,11 +38,17 @@ def _t_logpdf(nu, t):
     # exact zero t-derivative at t = 0, which second derivatives need.
     t2 = t * t
     ok = jnp.isfinite(t2)
-    l1 = jnp.where(ok, jnp.log1p(jnp.where(ok, t2, 0.0) / nu),
-                   2.0 * jnp.log(jnp.where(ok, 1.0, jnp.abs(t))) - jnp.log(nu))
-    return (jax.scipy.special.gammaln(0.5 * (nu + 1.0))
-            - jax.scipy.special.gammaln(0.5 * nu)
-            - 0.5 * jnp.log(nu * jnp.pi) - 0.5 * (nu + 1.0) * l1)
+    l1 = jnp.where(
+        ok,
+        jnp.log1p(jnp.where(ok, t2, 0.0) / nu),
+        2.0 * jnp.log(jnp.where(ok, 1.0, jnp.abs(t))) - jnp.log(nu),
+    )
+    return (
+        jax.scipy.special.gammaln(0.5 * (nu + 1.0))
+        - jax.scipy.special.gammaln(0.5 * nu)
+        - 0.5 * jnp.log(nu * jnp.pi)
+        - 0.5 * (nu + 1.0) * l1
+    )
 
 
 def _half_series(hb):
@@ -51,14 +57,17 @@ def _half_series(hb):
     uniform per call, panel select at hb = 10. All four tables share the
     x-node count, so the selects act elementwise on coefficient vectors."""
     lo = hb <= _st.BSPLIT
-    ca = jnp.where(lo,
-                   traced_coefs(_st.TABLE_A_LO, _st.BLO, _st.BSPLIT, hb),
-                   traced_coefs(_st.TABLE_A_HI, _st.BSPLIT, _st.BHI, hb))
-    cb = jnp.where(lo,
-                   traced_coefs(_st.TABLE_B_LO, _st.BLO, _st.BSPLIT, hb),
-                   traced_coefs(_st.TABLE_B_HI, _st.BSPLIT, _st.BHI, hb))
-    return (ChebSeries(ca, (0.0, _st.XSPLIT)),
-            ChebSeries(cb, (0.0, _st.XSPLIT)))
+    ca = jnp.where(
+        lo,
+        traced_coefs(_st.TABLE_A_LO, _st.BLO, _st.BSPLIT, hb),
+        traced_coefs(_st.TABLE_A_HI, _st.BSPLIT, _st.BHI, hb),
+    )
+    cb = jnp.where(
+        lo,
+        traced_coefs(_st.TABLE_B_LO, _st.BLO, _st.BSPLIT, hb),
+        traced_coefs(_st.TABLE_B_HI, _st.BSPLIT, _st.BHI, hb),
+    )
+    return (ChebSeries(ca, (0.0, _st.XSPLIT)), ChebSeries(cb, (0.0, _st.XSPLIT)))
 
 
 def _stdtr_parts(nu, t):
@@ -78,7 +87,7 @@ def _stdtr_parts(nu, t):
     hb = 0.5 * nu
     half = jnp.asarray(0.5)
     ca, cb = _half_series(hb)
-    t2 = t * t                        # may be inf; only its comparison is used
+    t2 = t * t  # may be inf; only its comparison is used
     central = t2 <= nu
     tc = jnp.where(central, t, 0.0)
     # <= 1/2 by construction, no overflow; masked lanes get a safe dummy so
@@ -91,8 +100,7 @@ def _stdtr_parts(nu, t):
     tt = jnp.where(central, jnp.sqrt(nu), jnp.abs(t))
     z = 2.0 * jnp.log(tt) - jnp.log(nu)
     lx, l1x = -jax.nn.softplus(z), -jax.nn.softplus(-z)
-    l_tail = (hb * lx + 0.5 * l1x - jnp.log(hb) - _ln_beta(hb, half)
-              + cb(jnp.exp(lx)))
+    l_tail = hb * lx + 0.5 * l1x - jnp.log(hb) - _ln_beta(hb, half) + cb(jnp.exp(lx))
     return central, l_mid, jnp.minimum(l_tail, 0.0)
 
 
@@ -100,8 +108,7 @@ def _stdtr_impl(nu, t):
     central, l_mid, l_tail = _stdtr_parts(nu, t)
     hp = 0.5 * jnp.exp(jnp.where(central, l_mid, l_tail))
     sgn = jnp.where(t >= 0.0, 1.0, -1.0)
-    F = jnp.where(central, 0.5 + sgn * hp,
-                  jnp.where(t >= 0.0, 1.0 - hp, hp))
+    F = jnp.where(central, 0.5 + sgn * hp, jnp.where(t >= 0.0, 1.0 - hp, hp))
     return jnp.where(jnp.isnan(t) | jnp.isnan(nu), jnp.nan, F)
 
 
@@ -111,8 +118,7 @@ def _log_stdtr_impl(nu, t):
     # every branch is a log of the series value, never of a difference of
     # two numbers near 1/2: below the median the lower tail is 1/2 I, above
     # it the survival half is, and log1p/expm1 keep the complement exact
-    mid = jnp.where(up, jax.nn.softplus(l_mid),
-                    jnp.log(-jnp.expm1(l_mid))) - _LN2
+    mid = jnp.where(up, jax.nn.softplus(l_mid), jnp.log(-jnp.expm1(l_mid))) - _LN2
     tail = jnp.where(up, jnp.log1p(-0.5 * jnp.exp(l_tail)), l_tail - _LN2)
     L = jnp.where(central, mid, tail)
     return jnp.where(jnp.isnan(t) | jnp.isnan(nu), jnp.nan, L)
@@ -185,8 +191,7 @@ def _log_stdtr_jvp(primals, tangents):
     # where F underflows (there it tends to nu/|t|, not to 0/0)
     dL_dt = jnp.where(fin, jnp.exp(_t_logpdf(nu_c, ts) - L), 0.0)
     t_safe = jnp.where(fin & (ts != 0.0), ts, 1.0)
-    _, dL_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,),
-                        (dnu,))
+    _, dL_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,), (dnu,))
     dL_dnu = jnp.where(fin & (ts != 0.0), dL_dnu, 0.0)
     dL = dL_dt * dt + dL_dnu
     return L, jnp.where(jnp.isnan(L), jnp.nan, dL)
@@ -216,14 +221,17 @@ def _stdtrit_impl(nu, p):
     aq = jnp.abs(2.0 * pc - 1.0)
     central = ptail >= 0.5
     ca, cb = _half_series(0.5 * nu)
-    w = _betaincinv_core(jnp.asarray(0.5), 0.5 * nu,
-                         jnp.where(central, aq, 0.25), ca, cb)
-    x = _betaincinv_core(0.5 * nu, jnp.asarray(0.5),
-                         jnp.where(central, 0.5, ptail), cb, ca)
+    w = _betaincinv_core(
+        jnp.asarray(0.5), 0.5 * nu, jnp.where(central, aq, 0.25), ca, cb
+    )
+    x = _betaincinv_core(
+        0.5 * nu, jnp.asarray(0.5), jnp.where(central, 0.5, ptail), cb, ca
+    )
     # sqrt(nu (1-x)) / sqrt(x), not sqrt(nu (1-x)/x): the ratio overflows
     # for x below ~1e-308 while the quantile itself is still representable
-    mag = jnp.where(central, jnp.sqrt(nu * w / (1.0 - w)),
-                    jnp.sqrt(nu * (1.0 - x)) / jnp.sqrt(x))
+    mag = jnp.where(
+        central, jnp.sqrt(nu * w / (1.0 - w)), jnp.sqrt(nu * (1.0 - x)) / jnp.sqrt(x)
+    )
     t = jnp.where(pc < 0.5, -mag, mag)
     t = jnp.where(p <= 0.0, -jnp.inf, jnp.where(p >= 1.0, jnp.inf, t))
     oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(nu)
@@ -262,8 +270,9 @@ def _stdtrit_jvp(primals, tangents):
     # nothing underflows on the way.
     t_safe = jnp.where(finite & (ts != 0.0), ts, 1.0)
     live = finite & (ts != 0.0)
-    lnF, dlnF_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,),
-                            (jnp.asarray(1.0),))
+    lnF, dlnF_dnu = jax.jvp(
+        lambda n: _log_stdtr_impl(n, t_safe), (nu_c,), (jnp.asarray(1.0),)
+    )
     dt_dnu = -jnp.exp(lnF - _t_logpdf(nu_c, t_safe)) * dlnF_dnu
     dt_dnu = jnp.where(live, dt_dnu, 0.0)
     dt = dp / pdf + dt_dnu * dnu

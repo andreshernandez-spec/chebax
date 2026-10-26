@@ -6,7 +6,7 @@ Axes: T[k, i, j] = (i-th a-coefficient, j-th b-coefficient) of the k-th argument
 
 import numpy as np
 
-META = {'nx_in': 136, 'na_in': 32, 'nb_in': 44, 'nt_tail': 40, 'na_tail': 32, 'nb_tail': 25, 'xs': 30.0, 'alo': 0.1, 'ahi': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '5c71d4c417477048'}
+META = {'nx_in': 136, 'na_in': 32, 'nb_in': 44, 'nt_tail': 40, 'na_tail': 32, 'nb_tail': 25, 'xs': 30.0, 'alo': 0.1, 'ahi': 10.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '6ab2c62d3e53a575'}
 XS = 30.0
 ALO = 0.1
 AHI = 10.0

@@ -23,10 +23,16 @@ mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
 NUS = [0.03, 0.5, 1.0, 1.5, 2.0, 3.0, 5.5, 7.77, 9.5, 9.97]
-XY = np.sort(np.concatenate([
-    np.logspace(-6, np.log10(5.0), 16), [5.0, 5.0001, 30.0, 30.0001],
-    np.linspace(5.2, 30.0, 12), np.logspace(np.log10(30.5), 4, 10),
-]))
+XY = np.sort(
+    np.concatenate(
+        [
+            np.logspace(-6, np.log10(5.0), 16),
+            [5.0, 5.0001, 30.0, 30.0001],
+            np.linspace(5.2, 30.0, 12),
+            np.logspace(np.log10(30.5), 4, 10),
+        ]
+    )
+)
 
 
 def _refs(v):
@@ -44,18 +50,21 @@ def test_values():
 
 def test_dx():
     for v in [0.03, 1.0, 1.5, 5.5, 9.97]:
-        Yp = np.array([float(mp.diff(lambda t: mp.bessely(mp.mpf(v), t), mp.mpf(x)))
-                       for x in XY])
-        Jp = np.array([float(mp.diff(lambda t: mp.besselj(mp.mpf(v), t), mp.mpf(x)))
-                       for x in XY])
+        Yp = np.array(
+            [float(mp.diff(lambda t: mp.bessely(mp.mpf(v), t), mp.mpf(x))) for x in XY]
+        )
+        Jp = np.array(
+            [float(mp.diff(lambda t: mp.besselj(mp.mpf(v), t), mp.mpf(x))) for x in XY]
+        )
         g = np.asarray(jax.vmap(jax.grad(chebax.bessely(v)))(jnp.asarray(XY)))
         assert np.max(np.abs(g - Yp) / np.hypot(Jp, Yp)) <= 1e-13, v
 
 
 def test_dnu():
     for v in [0.5, 1.0, 1.7, 9.5]:
-        Yn = np.array([float(mp.diff(lambda t: mp.bessely(t, mp.mpf(x)), mp.mpf(v)))
-                       for x in XY])
+        Yn = np.array(
+            [float(mp.diff(lambda t: mp.bessely(t, mp.mpf(x)), mp.mpf(v))) for x in XY]
+        )
         _, M = _refs(v)
         got = np.asarray(chebax.bessely_dnu(v)(XY))
         assert np.max(np.abs(got - Yn) / (np.abs(Yn) + M)) <= 1e-13, v
@@ -83,5 +92,8 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     bessely_gen.main(tmp_path)
-    assert (tmp_path / "bessely_table.py").read_text() == pathlib.Path(yt.__file__).read_text()
+    assert (tmp_path / "bessely_table.py").read_text() == pathlib.Path(
+        yt.__file__
+    ).read_text()

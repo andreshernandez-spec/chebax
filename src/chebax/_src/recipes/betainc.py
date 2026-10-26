@@ -49,7 +49,6 @@ from chebax._src.recipes import betainc_wide_table as _bw
 from chebax._src.recipes._common import canon_param, canon_tag, check_range, edge_slope
 from chebax._src.series import ChebSeries, _chebval
 
-
 # panel registry: (a-high?, b-high?) -> (tensor, a-box, b-box). The
 # LOxLO panel is the original tensor, so in-box users pay nothing; the
 # wide panels (increment 23) extend the box to [0.1, 100]^2 and are
@@ -77,8 +76,7 @@ def _tensor_coefs_from(tensor, abox, bbox, a, b):
 
 
 def _tensor_coefs(a, b):
-    return _tensor_coefs_from(_bt.TENSOR, (_bt.ALO, _bt.AHI),
-                              (_bt.ALO, _bt.AHI), a, b)
+    return _tensor_coefs_from(_bt.TENSOR, (_bt.ALO, _bt.AHI), (_bt.ALO, _bt.AHI), a, b)
 
 
 def _panel_of(v):
@@ -89,21 +87,25 @@ def _eager_series_pair(a, b):
     """(cab, cba) ChebSeries at concrete (a, b), panel-dispatched. numpy."""
     ta, ab_, bb_ = _PANELS[(_panel_of(a), _panel_of(b))]
     tb, ab2, bb2 = _PANELS[(_panel_of(b), _panel_of(a))]
-    return (ChebSeries(_tensor_coefs_from(ta, ab_, bb_, a, b), (0.0, _bt.XSPLIT)),
-            ChebSeries(_tensor_coefs_from(tb, ab2, bb2, b, a), (0.0, _bt.XSPLIT)))
+    return (
+        ChebSeries(_tensor_coefs_from(ta, ab_, bb_, a, b), (0.0, _bt.XSPLIT)),
+        ChebSeries(_tensor_coefs_from(tb, ab2, bb2, b, a), (0.0, _bt.XSPLIT)),
+    )
 
 
 def _tensor_coefs_traced_from(tensor, abox, bbox, a, b):
     sa, sb = _smap(a, abox), _smap(b, bbox)
     t = jnp.asarray(tensor)
     va = jax.vmap(jax.vmap(lambda row: _chebval(sa, row, (-1.0, 1.0))))(
-        jnp.swapaxes(t, 1, 2))                      # (NX, NB)
+        jnp.swapaxes(t, 1, 2)
+    )  # (NX, NB)
     return jax.vmap(lambda row: _chebval(sb, row, (-1.0, 1.0)))(va)  # (NX,)
 
 
 def tensor_coefs_traced(a, b):
-    return _tensor_coefs_traced_from(_bt.TENSOR, (_bt.ALO, _bt.AHI),
-                                     (_bt.ALO, _bt.AHI), a, b)
+    return _tensor_coefs_traced_from(
+        _bt.TENSOR, (_bt.ALO, _bt.AHI), (_bt.ALO, _bt.AHI), a, b
+    )
 
 
 def with_panel_series(a, b, make):
@@ -118,32 +120,36 @@ def with_panel_series(a, b, make):
         def f():
             ta, ab_, bb_ = _PANELS[(pa, pb)]
             tb, ab2, bb2 = _PANELS[(pb, pa)]
-            cab = ChebSeries(_tensor_coefs_traced_from(ta, ab_, bb_, a, b),
-                             (0.0, _bt.XSPLIT))
-            cba = ChebSeries(_tensor_coefs_traced_from(tb, ab2, bb2, b, a),
-                             (0.0, _bt.XSPLIT))
+            cab = ChebSeries(
+                _tensor_coefs_traced_from(ta, ab_, bb_, a, b), (0.0, _bt.XSPLIT)
+            )
+            cba = ChebSeries(
+                _tensor_coefs_traced_from(tb, ab2, bb2, b, a), (0.0, _bt.XSPLIT)
+            )
             return make(cab, cba)
+
         return f
 
-    idx = ((a > _bw.ASPLIT).astype(jnp.int32) * 2
-           + (b > _bw.ASPLIT).astype(jnp.int32))
-    return jax.lax.switch(idx, [branch(0, 0), branch(0, 1),
-                                branch(1, 0), branch(1, 1)])
+    idx = (a > _bw.ASPLIT).astype(jnp.int32) * 2 + (b > _bw.ASPLIT).astype(jnp.int32)
+    return jax.lax.switch(idx, [branch(0, 0), branch(0, 1), branch(1, 0), branch(1, 1)])
 
 
 def _log_direct(a, b, x, lser):
     """ln I_x(a,b) for x in (0, 1/2], from the direct series."""
-    lnB = (jax.scipy.special.gammaln(a) + jax.scipy.special.gammaln(b)
-           - jax.scipy.special.gammaln(a + b))
+    lnB = (
+        jax.scipy.special.gammaln(a)
+        + jax.scipy.special.gammaln(b)
+        - jax.scipy.special.gammaln(a + b)
+    )
     return a * jnp.log(x) + b * jnp.log1p(-x) - jnp.log(a) - lnB + lser(x)
 
 
 def eval_betainc(a, b, x, cab, cba):
     x = jnp.asarray(x)
     interior = (x > 0.0) & (x < 1.0)
-    xi = jnp.where(interior, x, 0.25)          # masked lanes get a safe dummy
+    xi = jnp.where(interior, x, 0.25)  # masked lanes get a safe dummy
     xd = jnp.where(xi <= _bt.XSPLIT, xi, 0.25)
-    yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)   # exact for x in [1/2, 1]
+    yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)  # exact for x in [1/2, 1]
     direct = jnp.exp(_log_direct(a, b, xd, cab))
     reflected = 1.0 - jnp.exp(_log_direct(b, a, yd, cba))
     core = jnp.where(xi <= _bt.XSPLIT, direct, reflected)
@@ -186,9 +192,9 @@ class BetaInc(Recipe):
         self.b = float(self.b)
 
     def __call__(self, x):
-        return with_edge_slopes(self.a, self.b, x,
-                                eval_betainc(self.a, self.b, x, self.cab,
-                                             self.cba))
+        return with_edge_slopes(
+            self.a, self.b, x, eval_betainc(self.a, self.b, x, self.cab, self.cba)
+        )
 
 
 @functools.lru_cache(maxsize=128)
@@ -208,8 +214,7 @@ def betainc_fn(a, b, x):
     a = canon_param(a, "betainc_fn", "a")
     b = canon_param(b, "betainc_fn", "b")
     x = jnp.asarray(x)
-    out = with_panel_series(a, b,
-                            lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+    out = with_panel_series(a, b, lambda cab, cba: eval_betainc(a, b, x, cab, cba))
     return with_edge_slopes(a, b, x, out)
 
 
@@ -231,8 +236,7 @@ def log_betainc_fn(a, b, x):
     a = canon_param(a, "log_betainc_fn", "a")
     b = canon_param(b, "log_betainc_fn", "b")
     x = jnp.asarray(x)
-    return with_panel_series(a, b,
-                             lambda cab, cba: _log_eval(a, b, x, cab, cba))
+    return with_panel_series(a, b, lambda cab, cba: _log_eval(a, b, x, cab, cba))
 
 
 def _log_eval(a, b, x, cab, cba):

@@ -31,15 +31,22 @@ Both fit stages stay in mpmath (the M1 floor rule). Regenerate with:
 import math
 import pathlib
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path, write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 from chebax._src.recipes.besselj_gen import VMAX
 
 XMIN = 1e-6
 XS_K = 8.0
 VSPLIT = 1.0
-NU_IN = 80   # u-nodes (degree 79; worst measured tail at 66)
-NV_IN = 56   # v-nodes per panel (worst measured 45)
+NU_IN = 80  # u-nodes (degree 79; worst measured tail at 66)
+NV_IN = 56  # v-nodes per panel (worst measured 45)
 NT_TAIL = 24
 NV_TAIL = 32
 
@@ -63,8 +70,10 @@ def generate_inner_tables():
         for lo, hi in ((0, VSPLIT), (VSPLIT, VMAX)):
             lo, hi = mp.mpf(lo), mp.mpf(hi)
             vnodes = [lo + (t + 1) / 2 * (hi - lo) for t in nodes(mp, NV_IN)]
-            rows = [dct(mp, [_ltil(mp, v, u0 + (t + 1) / 2 * (u1 - u0)) for t in tu])
-                    for v in vnodes]
+            rows = [
+                dct(mp, [_ltil(mp, v, u0 + (t + 1) / 2 * (u1 - u0)) for t in tu])
+                for v in vnodes
+            ]
             out.append(to_f64(param_fit(mp, rows)))
     return out[0], out[1]
 
@@ -81,7 +90,9 @@ def generate_tail_table():
             samples = []
             for t in tt:
                 x = xs / ((t + 1) / 2)
-                samples.append(mp.log(mp.besselk(v, x)) + x + mp.log(mp.sqrt(2 * x / mp.pi)))
+                samples.append(
+                    mp.log(mp.besselk(v, x)) + x + mp.log(mp.sqrt(2 * x / mp.pi))
+                )
             rows.append(dct(mp, samples))
         return to_f64(param_fit(mp, rows))
 
@@ -96,11 +107,26 @@ def main(out_dir=None):
         "TABLE_IN_LO has v in [0, VSPLIT], TABLE_IN_HI v in [VSPLIT, VMAX], "
         "argument u = ln x in [U0, U1]; TABLE_TAIL has v in [0, VMAX], "
         "argument t = XS/x in [0, 1]",
-        {"nu_in": NU_IN, "nv_in": NV_IN, "nt_tail": NT_TAIL, "nv_tail": NV_TAIL,
-         "xmin": XMIN, "xs": XS_K, "vsplit": VSPLIT, "vmax": VMAX},
-        {"XMIN": XMIN, "XS": XS_K, "VSPLIT": VSPLIT, "VMAX": VMAX,
-         "U0": math.log(XMIN), "U1": math.log(XS_K)},
-        {"TABLE_IN_LO": lo, "TABLE_IN_HI": hi, "TABLE_TAIL": tail})
+        {
+            "nu_in": NU_IN,
+            "nv_in": NV_IN,
+            "nt_tail": NT_TAIL,
+            "nv_tail": NV_TAIL,
+            "xmin": XMIN,
+            "xs": XS_K,
+            "vsplit": VSPLIT,
+            "vmax": VMAX,
+        },
+        {
+            "XMIN": XMIN,
+            "XS": XS_K,
+            "VSPLIT": VSPLIT,
+            "VMAX": VMAX,
+            "U0": math.log(XMIN),
+            "U1": math.log(XS_K),
+        },
+        {"TABLE_IN_LO": lo, "TABLE_IN_HI": hi, "TABLE_TAIL": tail},
+    )
 
 
 if __name__ == "__main__":

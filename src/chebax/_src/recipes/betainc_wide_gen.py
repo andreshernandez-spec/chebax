@@ -30,9 +30,15 @@ Regenerate with:
     python -m chebax._src.recipes.betainc_wide_gen
 """
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 
 ALO, ASPLIT, AHI = 0.1, 10.0, 100.0
 XSPLIT_W = 0.5
@@ -62,8 +68,7 @@ def panel_rows(mp, arange, brange, nx, na, nb, a_index):
     rows = []
     for tb in nodes(mp, nb):
         b = blo + (tb + 1) / 2 * (bhi - blo)
-        rows.append(dct(mp, [_l(mp, a, b, (t + 1) / 2 * mp.mpf(XSPLIT_W))
-                             for t in tx]))
+        rows.append(dct(mp, [_l(mp, a, b, (t + 1) / 2 * mp.mpf(XSPLIT_W)) for t in tx]))
     return rows
 
 
@@ -76,8 +81,10 @@ def generate_panel(mp, arange, brange, nx, na, nb):
     # sheets[i][j][k]: a-node i, b-node j, x-coefficient k. Fit b per
     # (i, k), then a per (k, j'): both stages stay in mp.
     out = np.empty((nx, na, nb))
-    bfit = [[dct(mp, [sheets[i][j][k] for j in range(nb)]) for k in range(nx)]
-            for i in range(na)]
+    bfit = [
+        [dct(mp, [sheets[i][j][k] for j in range(nb)]) for k in range(nx)]
+        for i in range(na)
+    ]
     for k in range(nx):
         for j in range(nb):
             col = dct(mp, [bfit[i][k][j] for i in range(na)])
@@ -103,7 +110,8 @@ def main(out_dir=None):
         "original betainc_table.TENSOR",
         {f"n_{n.lower()}": (nx, na, nb) for n, _, _, nx, na, nb in PANELS},
         {"ALO": ALO, "ASPLIT": ASPLIT, "AHI": AHI, "XSPLIT": XSPLIT_W},
-        tables)
+        tables,
+    )
 
 
 if __name__ == "__main__":

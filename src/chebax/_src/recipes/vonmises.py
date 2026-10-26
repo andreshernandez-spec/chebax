@@ -34,7 +34,6 @@ from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.besseli import besseli_fn
 from chebax._src.series import ChebSeries
 
-
 # a solve is accepted when its CDF residual is this small relative to
 # min(p, 1-p); healthy solves land at the eps floor below instead
 _RESID_RTOL = 1e-6
@@ -87,8 +86,10 @@ def _vonmises_cdf_jvp(primals, tangents):
     ks = jnp.maximum(k, 1e-8)
     _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (dkappa,))
     interior = (th > -jnp.pi) & (th < jnp.pi)
-    lead = jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi))
-                     / (2 * jnp.pi), 0.0) * dkappa
+    lead = (
+        jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi)) / (2 * jnp.pi), 0.0)
+        * dkappa
+    )
     dF = d_th + jnp.where(k < 1e-8, lead, d_k_ad)
     # nan has to survive reverse mode too: a where whose nan branch is a
     # constant is linear in nothing and transposes to a zero cotangent.
@@ -135,18 +136,23 @@ def _vonmises_icdf_cj(kappa, p):
     # concentrates and Newton then creeps additively: measured, it needed
     # 25 iterations where this one is converged by 15.
     tiny = jnp.finfo(pc.dtype).tiny
-    th0 = jnp.clip(jax.scipy.special.ndtri(pc)
-                   / jnp.sqrt(jnp.maximum(kappa, tiny)), -jnp.pi, jnp.pi)
+    th0 = jnp.clip(
+        jax.scipy.special.ndtri(pc) / jnp.sqrt(jnp.maximum(kappa, tiny)),
+        -jnp.pi,
+        jnp.pi,
+    )
     th0 = th0 + jnp.zeros_like(pc)
-    th = newton_bisect(f_and_df, th0, jnp.full_like(th0, -jnp.pi),
-                        jnp.full_like(th0, jnp.pi), iters)
+    th = newton_bisect(
+        f_and_df, th0, jnp.full_like(th0, -jnp.pi), jnp.full_like(th0, jnp.pi), iters
+    )
     # Convergence is checked, never assumed, and so is resolvability: a
     # residual at the eps floor means nothing where the density is too
     # small to turn it into a theta (see the docstring).
     f_fin, _ = f_and_df(th)
     pmin = jnp.minimum(pc, 1.0 - pc)
-    bad = ((jnp.abs(f_fin) > jnp.maximum(_RESID_RTOL * pmin, resid_atol))
-           | (pmin < pmin_floor))
+    bad = (jnp.abs(f_fin) > jnp.maximum(_RESID_RTOL * pmin, resid_atol)) | (
+        pmin < pmin_floor
+    )
     th = jnp.where(bad, jnp.nan, th)
     th = jnp.where(p <= 0.0, -jnp.pi, jnp.where(p >= 1.0, jnp.pi, th))
     oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(kappa)
@@ -161,13 +167,11 @@ def _vonmises_icdf_jvp(primals, tangents):
     interior = (th > -jnp.pi) & (th < jnp.pi)
     ths = jnp.where(interior, th, 0.0)
     pdf = jnp.exp(_log_pdf(kappa, ths))
-    _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths),
-                       (kappa,), (dkappa,))
+    _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths), (kappa,), (dkappa,))
     dth = (dp - d_cdf) / pdf
     # scale, not select: the endpoints are a genuine zero, and a rejected
     # solve must hand back nan in reverse mode as well as forward
-    return th, dth * jnp.where(interior, 1.0,
-                               jnp.where(jnp.isnan(th), jnp.nan, 0.0))
+    return th, dth * jnp.where(interior, 1.0, jnp.where(jnp.isnan(th), jnp.nan, 0.0))
 
 
 # Public entry points: the rules sit on the private names so an integer,

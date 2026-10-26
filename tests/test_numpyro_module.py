@@ -37,8 +37,12 @@ mp = pytest.importorskip("mpmath")
 from scipy import stats  # noqa: E402
 
 import chebax  # noqa: E402
-from chebax.numpyro import (TruncatedBeta, TruncatedGamma,  # noqa: E402
-                            TruncatedStudentT, Tweedie)
+from chebax.numpyro import (
+    TruncatedBeta,
+    TruncatedGamma,  # noqa: E402
+    TruncatedStudentT,
+    Tweedie,
+)
 
 mp.mp.dps = 40
 
@@ -65,6 +69,7 @@ def _ks(d, key, ref_cdf, n=20000):
 
 # ---------------------------------------------------------------- mpmath
 
+
 def _mp_bisect(f, lo, hi, iters=200):
     flo = f(lo)
     for _ in range(iters):
@@ -80,25 +85,34 @@ def _law(kind, p):
     """(cdf, logpdf) of one base law at 40 dps."""
     if kind == "gamma":
         c, r = mp.mpf(p[0]), mp.mpf(p[1])
-        return (lambda x: mp.gammainc(c, 0, r * x, regularized=True),
-                lambda x: (c * mp.log(r) + (c - 1) * mp.log(x) - r * x
-                           - mp.loggamma(c)))
+        return (
+            lambda x: mp.gammainc(c, 0, r * x, regularized=True),
+            lambda x: (c * mp.log(r) + (c - 1) * mp.log(x) - r * x - mp.loggamma(c)),
+        )
     if kind == "beta":
         a, b = mp.mpf(p[0]), mp.mpf(p[1])
         lnb = mp.loggamma(a) + mp.loggamma(b) - mp.loggamma(a + b)
-        return (lambda x: mp.betainc(a, b, 0, x, regularized=True),
-                lambda x: (a - 1) * mp.log(x) + (b - 1) * mp.log(1 - x) - lnb)
+        return (
+            lambda x: mp.betainc(a, b, 0, x, regularized=True),
+            lambda x: (a - 1) * mp.log(x) + (b - 1) * mp.log(1 - x) - lnb,
+        )
     nu = mp.mpf(p[0])
 
     def cdf(t):
-        half = mp.betainc(nu / 2, mp.mpf(0.5), 0, nu / (nu + t * t),
-                          regularized=True) / 2
+        half = (
+            mp.betainc(nu / 2, mp.mpf(0.5), 0, nu / (nu + t * t), regularized=True) / 2
+        )
         return 1 - half if t > 0 else half
 
-    return (cdf,
-            lambda t: (mp.loggamma((nu + 1) / 2) - mp.loggamma(nu / 2)
-                       - mp.log(nu * mp.pi) / 2
-                       - (nu + 1) / 2 * mp.log1p(t * t / nu)))
+    return (
+        cdf,
+        lambda t: (
+            mp.loggamma((nu + 1) / 2)
+            - mp.loggamma(nu / 2)
+            - mp.log(nu * mp.pi) / 2
+            - (nu + 1) / 2 * mp.log1p(t * t / nu)
+        ),
+    )
 
 
 def _trunc_ref(kind, p, lo, hi, v, q, span):
@@ -121,8 +135,7 @@ DEEP = [
     ("gamma", (3.0, 1.0), 50.0, 51.0, 50.5, 0.5, (50.0, 51.0)),
     ("gamma", (2.0, 1.0), 1e-30, 2e-30, 1.5e-30, 0.25, (1e-30, 2e-30)),
     ("gamma", (3.0, 1.0), 50.0, np.inf, 55.0, 0.5, (50.0, 1e3)),
-    ("beta", (2.0, 3.0), 0.999999, 0.9999999, 0.99999945, 0.5,
-     (0.999999, 0.9999999)),
+    ("beta", (2.0, 3.0), 0.999999, 0.9999999, 0.99999945, 0.5, (0.999999, 0.9999999)),
     ("beta", (0.5, 3.0), 1e-8, 2e-8, 1.5e-8, 0.5, (1e-8, 2e-8)),
     ("t", (4.0,), 1e5, 2e5, 1.5e5, 0.5, (1e5, 2e5)),
     ("t", (4.0,), -2e5, -1e5, -1.5e5, 0.75, (-2e5, -1e5)),
@@ -150,14 +163,14 @@ def _build(kind, p, lo, hi):
 
 # ------------------------------------------------------------- contract
 
+
 def test_truncated_gamma_log_prob_and_sampling():
     c, r, lo, hi = 3.0, 2.0, 1.0, 6.0
     d = TruncatedGamma(c, r, low=lo, high=hi)
     xs = np.linspace(1.05, 5.95, 9)
     g = stats.gamma(c, scale=1.0 / r)
     ref = g.logpdf(xs) - np.log(g.cdf(hi) - g.cdf(lo))
-    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref,
-                               rtol=1e-10)
+    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref, rtol=1e-10)
     assert np.isneginf(float(d.log_prob(0.5)))
     assert np.isneginf(float(d.log_prob(7.0)))
     assert float(d.cdf(0.5)) == 0.0 and float(d.cdf(7.0)) == 1.0
@@ -167,8 +180,9 @@ def test_truncated_gamma_log_prob_and_sampling():
     # one-sided truncation with high = inf
     d1 = TruncatedGamma(c, r, low=1.0)
     ref1 = g.logpdf(xs) - np.log(g.sf(1.0))
-    np.testing.assert_allclose(np.asarray(d1.log_prob(jnp.asarray(xs))), ref1,
-                               rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(d1.log_prob(jnp.asarray(xs))), ref1, rtol=1e-10
+    )
 
 
 def test_truncated_beta_log_prob_and_sampling():
@@ -177,8 +191,7 @@ def test_truncated_beta_log_prob_and_sampling():
     xs = np.linspace(0.25, 0.75, 9)
     be = stats.beta(a, b)
     ref = be.logpdf(xs) - np.log(be.cdf(hi) - be.cdf(lo))
-    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref,
-                               rtol=1e-10)
+    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref, rtol=1e-10)
     s, ks = _ks(d, random.PRNGKey(1), _scipy_trunc_cdf(be, lo, hi))
     assert ks.pvalue > 0.01
     assert s.min() >= lo and s.max() <= hi
@@ -190,15 +203,15 @@ def test_truncated_studentt_log_prob_and_sampling():
     xs = np.linspace(-0.9, 2.4, 9)
     t = stats.t(df)
     ref = t.logpdf(xs) - np.log(t.cdf(hi) - t.cdf(lo))
-    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref,
-                               rtol=1e-9)
+    np.testing.assert_allclose(np.asarray(d.log_prob(jnp.asarray(xs))), ref, rtol=1e-9)
     s, ks = _ks(d, random.PRNGKey(2), _scipy_trunc_cdf(t, lo, hi))
     assert ks.pvalue > 0.01
     assert s.min() >= lo and s.max() <= hi
     # untruncated default degrades to plain t
     d0 = TruncatedStudentT(df)
-    np.testing.assert_allclose(np.asarray(d0.log_prob(jnp.asarray(xs))),
-                               t.logpdf(xs), rtol=1e-9)
+    np.testing.assert_allclose(
+        np.asarray(d0.log_prob(jnp.asarray(xs))), t.logpdf(xs), rtol=1e-9
+    )
 
 
 def test_deep_tail_sampling_follows_the_truncated_law():
@@ -206,8 +219,7 @@ def test_deep_tail_sampling_follows_the_truncated_law():
     # same tail the class works in; scipy's cdf is 1.0 at both ends here
     c, lo, hi = 3.0, 50.0, 51.0
     d = TruncatedGamma(c, 1.0, low=lo, high=hi)
-    s, ks = _ks(d, random.PRNGKey(6), _scipy_trunc_cdf(stats.gamma(c), lo, hi),
-                n=5000)
+    s, ks = _ks(d, random.PRNGKey(6), _scipy_trunc_cdf(stats.gamma(c), lo, hi), n=5000)
     assert ks.pvalue > 0.01
     assert s.min() >= lo and s.max() <= hi
 
@@ -254,22 +266,23 @@ def test_nuts_with_latent_shape():
     from numpyro.infer import MCMC, NUTS
 
     df_true, lo, hi = 4.0, -1.0, 2.5
-    y = TruncatedStudentT(df_true, low=lo, high=hi).sample(
-        random.PRNGKey(4), (300,))
+    y = TruncatedStudentT(df_true, low=lo, high=hi).sample(random.PRNGKey(4), (300,))
 
     def model(y):
         df = numpyro.sample("df", ndist.Uniform(0.5, 15.0))
         with numpyro.plate("data", y.shape[0]):
             numpyro.sample("y", TruncatedStudentT(df, low=lo, high=hi), obs=y)
 
-    mcmc = MCMC(NUTS(model), num_warmup=300, num_samples=300, num_chains=1,
-                progress_bar=False)
+    mcmc = MCMC(
+        NUTS(model), num_warmup=300, num_samples=300, num_chains=1, progress_bar=False
+    )
     mcmc.run(random.PRNGKey(5), np.asarray(y))
     post = mcmc.get_samples()["df"]
     assert np.isfinite(np.asarray(post)).all()
 
 
 # ------------------------------------------------- the review's blockers
+
 
 def test_deep_tail_truncations_against_mpmath():
     # Before the log-space normalizer every one of these had (F(lo), F(hi))
@@ -282,8 +295,7 @@ def test_deep_tail_truncations_against_mpmath():
         got = [float(d.log_prob(v)), float(d.cdf(v)), float(d.icdf(q))]
         assert np.isfinite(got).all(), (kind, p, lo, hi, got)
         assert lo <= got[2] <= hi, (kind, p, lo, hi, got[2])
-        worst = max(worst, _rel(got[0], rlp), _rel(got[1], rc),
-                    _rel(got[2], ri))
+        worst = max(worst, _rel(got[0], rlp), _rel(got[1], rc), _rel(got[2], ri))
     assert worst <= 7e-13, worst
 
 
@@ -310,9 +322,12 @@ def _mp_interval_logprob(kind, p, lo, hi, v):
         # 1 - X is Beta(b, a); mpmath's own I(hi) - I(lo) cancels near 1
         z = mp.betainc(mp.mpf(p[1]), a, 1 - hi, 1 - lo, regularized=True)
     else:
+
         def sf(t):
-            return mp.betainc(a / 2, mp.mpf(0.5), 0, a / (a + t * t),
-                              regularized=True) / 2
+            return (
+                mp.betainc(a / 2, mp.mpf(0.5), 0, a / (a + t * t), regularized=True) / 2
+            )
+
         z = sf(lo) - sf(hi)
     return lpdf(v) - mp.log(z)
 
@@ -326,6 +341,7 @@ def test_shape_gradient_where_the_other_tail_rounds_to_one_float():
     # betainc shape derivative carries it), bar 2e-10.
     worst = 0.0
     for kind, p, lo, hi, v in SAME_FLOAT:
+
         def lp(s, kind=kind, p=p, lo=lo, hi=hi):
             return _build(kind, (s,) + p[1:], lo, hi).log_prob(v)
 
@@ -333,11 +349,12 @@ def test_shape_gradient_where_the_other_tail_rounds_to_one_float():
             return _build(kind, (s,) + p[1:], lo, hi).cdf(v)
 
         got = [float(jax.grad(lp)(p[0]))]
-        if kind == "gamma":           # forward mode was never affected
+        if kind == "gamma":  # forward mode was never affected
             got.append(float(jax.jacfwd(lp)(p[0])))
         assert np.isfinite(got).all(), (kind, p, lo, hi, got)
-        ref = mp.diff(lambda s: _mp_interval_logprob(kind, (s,) + p[1:], lo,
-                                                     hi, v), mp.mpf(p[0]))
+        ref = mp.diff(
+            lambda s: _mp_interval_logprob(kind, (s,) + p[1:], lo, hi, v), mp.mpf(p[0])
+        )
         for g in got:
             worst = max(worst, float(abs(g - ref) / max(1, abs(ref))))
         # cdf takes the same select; the beta's costs 100 s of eager AD
@@ -355,8 +372,7 @@ def test_ordinary_truncations_unchanged_against_mpmath():
         rlp, rc, ri = _trunc_ref(kind, p, lo, hi, v, q, span)
         got = [float(d.log_prob(v)), float(d.cdf(v)), float(d.icdf(q))]
         assert np.isfinite(got).all(), (kind, p, lo, hi, got)
-        worst = max(worst, _rel(got[0], rlp), _rel(got[1], rc),
-                    _rel(got[2], ri))
+        worst = max(worst, _rel(got[0], rlp), _rel(got[1], rc), _rel(got[2], ri))
     assert worst <= 5e-14, worst
 
 
@@ -386,8 +402,7 @@ def test_gamma_qinv_survives_a_collapsed_asymptotic_init():
     # init now starts from max(WH, asymptotic). Metric: relative error of
     # Q(a, x) at the returned x vs s, mpmath the judge. Measured worst
     # 2.7e-14, bar 1e-13.
-    cases = [(50.0, 1e-8), (200.0, 1e-6), (30.0, 1e-12),
-             (500.0, 1e-8), (1000.0, 1e-4)]
+    cases = [(50.0, 1e-8), (200.0, 1e-6), (30.0, 1e-12), (500.0, 1e-8), (1000.0, 1e-4)]
     worst = 0.0
     for a, s in cases:
         x = float(chebax.gammainccinv(a, s))
@@ -405,8 +420,10 @@ def test_batched_bounds_broadcast():
     d = TruncatedGamma(2.0, 1.0, low=lo, high=hi)
     x = np.asarray(d.icdf(jnp.asarray([0.25, 0.5])))
     assert np.all((x >= np.asarray(lo)) & (x <= np.asarray(hi))), x
-    ref = [float(TruncatedGamma(2.0, 1.0, low=1e-30, high=2e-30).icdf(0.25)),
-           float(TruncatedGamma(2.0, 1.0, low=50.0, high=51.0).icdf(0.5))]
+    ref = [
+        float(TruncatedGamma(2.0, 1.0, low=1e-30, high=2e-30).icdf(0.25)),
+        float(TruncatedGamma(2.0, 1.0, low=50.0, high=51.0).icdf(0.5)),
+    ]
     np.testing.assert_allclose(x, ref, rtol=1e-12)
     assert np.isfinite(np.asarray(d.log_prob(jnp.asarray([1.5e-30, 50.5])))).all()
     s = np.asarray(d.sample(random.PRNGKey(7), (5,)))
@@ -433,7 +450,7 @@ def test_infinite_bound_gradients_are_finite():
         rev = float(jax.grad(f)(th))
         assert np.isfinite(rev), rev
         assert abs(rev - fd) <= 1e-5 * max(1.0, abs(fd)), (rev, fd)
-        if i < 2:                     # the two the review reported
+        if i < 2:  # the two the review reported
             fwd = float(jax.jacfwd(f)(th))
             assert abs(fwd - fd) <= 1e-5 * max(1.0, abs(fd)), (fwd, fd)
     # the values themselves were always fine
@@ -446,12 +463,15 @@ def test_endpoint_densities_are_finite_where_the_density_is():
     # (c-1) log 0 is 0 * -inf at c = 1, where the density is the rate; same
     # for both Beta endpoints at concentration 1. The genuinely infinite and
     # genuinely zero endpoints keep their sign.
-    assert abs(float(TruncatedGamma(1.0, 2.0, low=0.0, high=5.0).log_prob(0.0))
-               - (np.log(2.0) - np.log(-np.expm1(-10.0)))) < 1e-12
-    assert np.isposinf(
-        float(TruncatedGamma(0.5, 2.0, low=0.0, high=5.0).log_prob(0.0)))
-    assert np.isneginf(
-        float(TruncatedGamma(2.0, 2.0, low=0.0, high=5.0).log_prob(0.0)))
+    assert (
+        abs(
+            float(TruncatedGamma(1.0, 2.0, low=0.0, high=5.0).log_prob(0.0))
+            - (np.log(2.0) - np.log(-np.expm1(-10.0)))
+        )
+        < 1e-12
+    )
+    assert np.isposinf(float(TruncatedGamma(0.5, 2.0, low=0.0, high=5.0).log_prob(0.0)))
+    assert np.isneginf(float(TruncatedGamma(2.0, 2.0, low=0.0, high=5.0).log_prob(0.0)))
     b = TruncatedBeta(1.0, 3.0)
     assert abs(float(b.log_prob(0.0)) - np.log(3.0)) < 1e-12
     assert np.isneginf(float(b.log_prob(1.0)))
@@ -467,12 +487,9 @@ def test_endpoint_densities_are_finite_where_the_density_is():
 def test_validate_args_accepts_the_default_bounds():
     # constraints.real rejects inf, so validate_args used to reject
     # TruncatedStudentT's own untruncated defaults
-    assert np.isfinite(
-        float(TruncatedStudentT(4.0, validate_args=True).log_prob(0.5)))
-    assert np.isfinite(
-        float(TruncatedGamma(3.0, validate_args=True).log_prob(2.0)))
-    assert np.isfinite(
-        float(TruncatedBeta(2.0, 3.0, validate_args=True).log_prob(0.5)))
+    assert np.isfinite(float(TruncatedStudentT(4.0, validate_args=True).log_prob(0.5)))
+    assert np.isfinite(float(TruncatedGamma(3.0, validate_args=True).log_prob(2.0)))
+    assert np.isfinite(float(TruncatedBeta(2.0, 3.0, validate_args=True).log_prob(0.5)))
 
 
 def test_validation_with_traced_bounds():
@@ -480,14 +497,18 @@ def test_validation_with_traced_bounds():
     # numpy or python value with numpy, which fails once the bounds are
     # traced: any jitted log_prob, and NUTS on numpy data
     import numpyro
+
     y = np.asarray([0.2, 0.5, 0.8])
-    makers = [lambda c: TruncatedGamma(c, low=0.1, high=3.0),
-              lambda c: TruncatedBeta(c, 3.0, low=0.1, high=0.9),
-              lambda c: TruncatedStudentT(c, low=-1.0)]
+    makers = [
+        lambda c: TruncatedGamma(c, low=0.1, high=3.0),
+        lambda c: TruncatedBeta(c, 3.0, low=0.1, high=0.9),
+        lambda c: TruncatedStudentT(c, low=-1.0),
+    ]
     with numpyro.validation_enabled():
         for make in makers:
             lp_arr, lp_one = jax.jit(
-                lambda c: (make(c).log_prob(y), make(c).log_prob(0.5)))(2.5)
+                lambda c: (make(c).log_prob(y), make(c).log_prob(0.5))
+            )(2.5)
             assert np.isfinite(np.asarray(lp_arr)).all()
             assert np.isfinite(float(lp_one))
 
@@ -498,6 +519,7 @@ def test_shape_parameters_checked_at_construction():
     # OBSOLETE [0.1, 10] panel constant, so TruncatedBeta(20, 3) raised
     # long after the tables reached 100 (review, 2026-08-02).
     from chebax.domains import BETAINC
+
     assert BETAINC.hi == 100.0
     assert float(TruncatedBeta(20.0, 3.0, low=0.1, high=0.9).log_prob(0.5)) < 0
     with pytest.raises(ValueError, match=r"concentration1 in \[0.1, 100"):
@@ -513,8 +535,9 @@ def test_shape_parameters_checked_at_construction():
     with pytest.raises(ValueError, match="pergroup"):
         TruncatedStudentT(jnp.asarray([4.0, 5.0]))
     # a traced shape cannot be checked eagerly and must still trace
-    assert np.isfinite(float(jax.jit(
-        lambda v: TruncatedStudentT(v, low=-1.0).log_prob(0.5))(4.0)))
+    assert np.isfinite(
+        float(jax.jit(lambda v: TruncatedStudentT(v, low=-1.0).log_prob(0.5))(4.0))
+    )
 
 
 def test_size_one_shapes_and_nan_values():
@@ -526,28 +549,36 @@ def test_size_one_shapes_and_nan_values():
     # follow-up, 2026-10-26). log_prob(nan) is -inf with numpyro's
     # validation on (the 0.22 default) or off.
     import numpyro
-    for kind, p, lo, hi, v in (("gamma", (3.0, 2.0), 1.0, 6.0, 2.3),
-                               ("beta", (2.5, 3.5), 0.2, 0.8, 0.42),
-                               ("t", (4.0,), -1.0, 2.5, 0.8)):
+
+    for kind, p, lo, hi, v in (
+        ("gamma", (3.0, 2.0), 1.0, 6.0, 2.3),
+        ("beta", (2.5, 3.5), 0.2, 0.8, 0.42),
+        ("t", (4.0,), -1.0, 2.5, 0.8),
+    ):
         d = _build(kind, p, lo, hi)
         d1 = _build(kind, (jnp.asarray([p[0]]),) + p[1:], lo, hi)
         assert d1.batch_shape == (1,), (kind, d1.batch_shape)
-        for got, ref in ((d1.log_prob(v), d.log_prob(v)), (d1.cdf(v), d.cdf(v)),
-                         (d1.icdf(0.3), d.icdf(0.3))):
+        for got, ref in (
+            (d1.log_prob(v), d.log_prob(v)),
+            (d1.cdf(v), d.cdf(v)),
+            (d1.icdf(0.3), d.icdf(0.3)),
+        ):
             assert jnp.shape(got) == (1,), (kind, jnp.shape(got))
             assert float(got[0]) == float(ref), kind
         assert d1.sample(random.PRNGKey(0), (3,)).shape == (3, 1), kind
-        g = jax.grad(lambda s: _build(kind, (jnp.reshape(s, (1,)),) + p[1:],
-                                      lo, hi).log_prob(v).sum())(p[0])
-        g0 = jax.grad(lambda s: _build(kind, (s,) + p[1:], lo,
-                                       hi).log_prob(v))(p[0])
+        g = jax.grad(
+            lambda s: _build(kind, (jnp.reshape(s, (1,)),) + p[1:], lo, hi)
+            .log_prob(v)
+            .sum()
+        )(p[0])
+        g0 = jax.grad(lambda s: _build(kind, (s,) + p[1:], lo, hi).log_prob(v))(p[0])
         assert float(g) == float(g0), kind
         for validate in (False, True):
             with numpyro.validation_enabled(validate):
                 dv = _build(kind, p, lo, hi)
                 assert np.isnan(float(dv.cdf(np.nan))), (kind, validate)
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")   # out-of-support notice
+                    warnings.simplefilter("ignore")  # out-of-support notice
                     lp = float(dv.log_prob(np.nan))
                 assert lp == -np.inf, (kind, validate, lp)
     t1 = Tweedie(1.0, 1.0, jnp.asarray([1.5]))
@@ -556,10 +587,12 @@ def test_size_one_shapes_and_nan_values():
 
 
 def test_icdf_endpoints_are_the_bounds_exactly():
-    for kind, p, lo, hi in [("gamma", (3.0, 2.0), 1.0, 6.0),
-                            ("beta", (2.5, 3.5), 0.2, 0.8),
-                            ("t", (4.0,), -1.0, 2.5),
-                            ("gamma", (3.0, 1.0), 50.0, 51.0)]:
+    for kind, p, lo, hi in [
+        ("gamma", (3.0, 2.0), 1.0, 6.0),
+        ("beta", (2.5, 3.5), 0.2, 0.8),
+        ("t", (4.0,), -1.0, 2.5),
+        ("gamma", (3.0, 1.0), 50.0, 51.0),
+    ]:
         d = _build(kind, p, lo, hi)
         assert float(d.icdf(0.0)) == lo
         assert float(d.icdf(1.0)) == hi
@@ -616,13 +649,18 @@ def test_x64_off_deep_tails(tmp_path):
     runner.write_text(X64_OFF_RUNNER)
     src = os.path.dirname(os.path.dirname(os.path.abspath(chebax.__file__)))
     env = {**os.environ, "JAX_PLATFORMS": "cpu", "PYTHONPATH": src}
-    out = subprocess.run([sys.executable, str(runner), str(ref_file)],
-                         capture_output=True, text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, str(runner), str(ref_file)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert out.returncode == 0, out.stderr[-2000:]
     assert float(out.stdout) <= 2e-4, out.stdout
 
 
 # ---------------------------------------------------------------- Tweedie
+
 
 def test_tweedie_log_prob_and_sampling():
     # log_prob is the recipe; sampling matches the law's mean, variance and
@@ -630,11 +668,12 @@ def test_tweedie_log_prob_and_sampling():
     mu, phi, p = 2.0, 0.8, 1.4
     d = Tweedie(mu, phi, p)
     y = jnp.asarray([0.0, 0.3, 2.0, 7.5])
-    np.testing.assert_array_equal(np.asarray(d.log_prob(y)),
-                                  np.asarray(chebax.tweedie_logpdf(p, mu, phi, y)))
+    np.testing.assert_array_equal(
+        np.asarray(d.log_prob(y)), np.asarray(chebax.tweedie_logpdf(p, mu, phi, y))
+    )
     s = np.asarray(d.sample(random.PRNGKey(0), (200_000,)))
-    var = phi * mu ** p
-    p0 = np.exp(-mu ** (2 - p) / (phi * (2 - p)))
+    var = phi * mu**p
+    p0 = np.exp(-(mu ** (2 - p)) / (phi * (2 - p)))
     n = s.size
     assert abs(s.mean() - mu) <= 5 * np.sqrt(var / n)
     assert abs(s.var() - var) / var <= 0.02
@@ -651,9 +690,13 @@ def test_tweedie_power_contract():
     # a traced power is not checked eagerly and must still trace, with
     # numpyro's validation on (the 0.22 default)
     import numpyro
+
     with numpyro.validation_enabled():
-        lp = jax.jit(lambda p: Tweedie(jnp.asarray([1.0, 3.0]), 0.5, p)
-                     .log_prob(np.asarray([0.0, 2.5])))(1.6)
+        lp = jax.jit(
+            lambda p: Tweedie(jnp.asarray([1.0, 3.0]), 0.5, p).log_prob(
+                np.asarray([0.0, 2.5])
+            )
+        )(1.6)
     assert np.isfinite(np.asarray(lp)).all()
 
 

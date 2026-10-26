@@ -410,6 +410,23 @@ def test_validate_args_accepts_the_default_bounds():
         float(TruncatedBeta(2.0, 3.0, validate_args=True).log_prob(0.5)))
 
 
+def test_validation_with_traced_bounds():
+    # numpyro 0.22 validates by default, and its interval check compares a
+    # numpy or python value with numpy, which fails once the bounds are
+    # traced: any jitted log_prob, and NUTS on numpy data
+    import numpyro
+    y = np.asarray([0.2, 0.5, 0.8])
+    makers = [lambda c: TruncatedGamma(c, low=0.1, high=3.0),
+              lambda c: TruncatedBeta(c, 3.0, low=0.1, high=0.9),
+              lambda c: TruncatedStudentT(c, low=-1.0)]
+    with numpyro.validation_enabled():
+        for make in makers:
+            lp_arr, lp_one = jax.jit(
+                lambda c: (make(c).log_prob(y), make(c).log_prob(0.5)))(2.5)
+            assert np.isfinite(np.asarray(lp_arr)).all()
+            assert np.isfinite(float(lp_one))
+
+
 def test_shape_parameters_checked_at_construction():
     # The box these check is chebax.domains.BETAINC, read off the table
     # module that governs the computation. This test used to codify the

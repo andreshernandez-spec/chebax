@@ -211,6 +211,11 @@ class _Truncated(dist.Distribution):
         num = jnp.where(n.upper, _logdiffexp(n.lo_s, s), _logdiffexp(f, n.lo_f))
         return jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
 
+    def _validate_sample(self, value):
+        # numpyro checks the support with numpy unless the value is a jax
+        # array, and numpy cannot compare against traced bounds
+        return super()._validate_sample(jnp.asarray(value))
+
     @validate_sample
     def log_prob(self, value):
         value = jnp.asarray(value)

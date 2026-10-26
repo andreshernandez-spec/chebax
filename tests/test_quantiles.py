@@ -557,7 +557,7 @@ def test_log_stdtr():
     # probability itself underflows (stdtr(4, -1e80) is 0.0 while ln F is
     # -735.73). Measured worst 1.1e-15 relative to max(1, |ln F|), bar
     # 5e-15; gradients 1.9e-12 relative, bar 8e-12.
-    from chebax._src.recipes.quantiles import log_stdtr, log_stdtr_sf
+    from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf
     for nu in [0.5, 2.0, 4.0, 20.0]:
         for t in [-1e300, -1e150, -1e40, -1e10, -100.0, -6.0, -1.0, 0.0,
                   1.0, 6.0, 100.0]:

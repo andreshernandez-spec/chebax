@@ -108,6 +108,15 @@ def _pick(mask, when_true, when_false):
     return when_true() if taken else when_false()
 
 
+def _batched(dist_, out):
+    """out broadcast against the distribution's batch shape. The shape
+    parameters reach the computation as scalars, so a (1,) concentration
+    set batch_shape (1,) while cdf came back () (review follow-up,
+    2026-10-26)."""
+    return jnp.broadcast_to(
+        out, lax.broadcast_shapes(jnp.shape(out), dist_.batch_shape))
+
+
 def _check_bounds_eagerly(low, high):
     try:  # traced bounds cannot be checked at construction time
         if not np.all(np.asarray(low) < np.asarray(high)):
@@ -217,7 +226,7 @@ class _Truncated(dist.Distribution):
                   lambda: self._icdf_lower(jnp.exp(lp)))
         x = jnp.clip(x, self.low, self.high)
         x = jnp.where(q <= 0.0, self.low, jnp.where(q >= 1.0, self.high, x))
-        return jnp.where(bad, jnp.nan, x)
+        return _batched(self, jnp.where(bad, jnp.nan, x))
 
     def cdf(self, value):
         n = self._norm()
@@ -229,7 +238,7 @@ class _Truncated(dist.Distribution):
         # the median and every class returned cdf(nan) = 1 (review,
         # 2026-10-26), where icdf and the core functions give nan
         out = jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
-        return jnp.where(jnp.isnan(value), jnp.nan, out)
+        return _batched(self, jnp.where(jnp.isnan(value), jnp.nan, out))
 
     def _validate_sample(self, value):
         # numpyro checks the support with numpy unless the value is a jax
@@ -242,7 +251,7 @@ class _Truncated(dist.Distribution):
         inside = (value >= self.low) & (value <= self.high)
         out = jnp.where(inside, self._log_density(value) - self._norm().lnz,
                         -jnp.inf)
-        return jnp.where(jnp.isnan(value), jnp.nan, out)
+        return _batched(self, jnp.where(jnp.isnan(value), jnp.nan, out))
 
 
 class TruncatedGamma(_Truncated):
@@ -449,12 +458,14 @@ class Tweedie(dist.Distribution):
                            _dom.TWEEDIE_P.hi)
         self.power = jnp.asarray(power)
         self.mu, self.phi = promote_shapes(jnp.asarray(mu), jnp.asarray(phi))
-        batch_shape = lax.broadcast_shapes(jnp.shape(mu), jnp.shape(phi))
+        batch_shape = lax.broadcast_shapes(jnp.shape(mu), jnp.shape(phi),
+                                           jnp.shape(power))
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
     @validate_sample
     def log_prob(self, value):
-        return chebax.tweedie_logpdf(self.power, self.mu, self.phi, value)
+        return _batched(self, chebax.tweedie_logpdf(self.power, self.mu,
+                                                    self.phi, value))
 
     def sample(self, key, sample_shape=()):
         shape = sample_shape + self.batch_shape

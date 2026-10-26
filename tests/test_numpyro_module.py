@@ -518,18 +518,22 @@ def test_shape_parameters_checked_at_construction():
 
 def test_size_one_shapes_and_nan_values():
     # A size-one shape is the one value it holds, the rule of the core
-    # functions and the README; the constructors used to reject it. And
-    # nan is no point of the support: every class gave cdf(nan) = 1
-    # (review, 2026-10-26).
+    # functions and the README; the constructors used to reject it. Its
+    # shape still counts toward batch_shape, and every output must carry
+    # it: cdf came back () under batch_shape (1,) at first. And nan is no
+    # point of the support: every class gave cdf(nan) = 1 (review and its
+    # follow-up, 2026-10-26).
     for kind, p, lo, hi, v in (("gamma", (3.0, 2.0), 1.0, 6.0, 2.3),
                                ("beta", (2.5, 3.5), 0.2, 0.8, 0.42),
                                ("t", (4.0,), -1.0, 2.5, 0.8)):
         d = _build(kind, p, lo, hi)
-        d1 = _build(kind, tuple(jnp.asarray([q]) for q in p), lo, hi)
+        d1 = _build(kind, (jnp.asarray([p[0]]),) + p[1:], lo, hi)
         assert d1.batch_shape == (1,), (kind, d1.batch_shape)
         for got, ref in ((d1.log_prob(v), d.log_prob(v)), (d1.cdf(v), d.cdf(v)),
                          (d1.icdf(0.3), d.icdf(0.3))):
-            assert float(jnp.reshape(got, ())) == float(ref), kind
+            assert jnp.shape(got) == (1,), (kind, jnp.shape(got))
+            assert float(got[0]) == float(ref), kind
+        assert d1.sample(random.PRNGKey(0), (3,)).shape == (3, 1), kind
         g = jax.grad(lambda s: _build(kind, (jnp.reshape(s, (1,)),) + p[1:],
                                       lo, hi).log_prob(v).sum())(p[0])
         g0 = jax.grad(lambda s: _build(kind, (s,) + p[1:], lo,
@@ -538,7 +542,8 @@ def test_size_one_shapes_and_nan_values():
         assert np.isnan(float(d.cdf(np.nan))), kind
         assert np.isnan(float(d.log_prob(np.nan))), kind
     t1 = Tweedie(1.0, 1.0, jnp.asarray([1.5]))
-    assert float(t1.log_prob(2.0)) == float(Tweedie(1.0, 1.0, 1.5).log_prob(2.0))
+    assert t1.batch_shape == (1,) and t1.log_prob(2.0).shape == (1,)
+    assert float(t1.log_prob(2.0)[0]) == float(Tweedie(1.0, 1.0, 1.5).log_prob(2.0))
 
 
 def test_icdf_endpoints_are_the_bounds_exactly():

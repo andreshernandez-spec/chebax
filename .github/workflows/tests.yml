@@ -11,6 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        python-version: ["3.11", "3.13"]
+        shard: ["0/2", "1/2"]       # conftest runs one half per runner
         include:
           - python-version: "3.11"
             jax-pin: "jax==0.5.3"   # the tested floor (pyproject's jax>=)
@@ -30,6 +32,8 @@ jobs:
       - name: Run suite (the slow tests run once, in the slow job)
         # two workers, not four: four peaked at 15.5 GB together, and the
         # runner has 16
+        env:
+          CHEBAX_SHARD: ${{ matrix.shard }}
         run: python -m pytest -q -m "not slow" -n 2
 
   slow:
@@ -91,10 +95,16 @@ jobs:
           python -m pip install -e ".[gen,test,examples]"
           python -m pip install nbconvert ipykernel
       - name: Execute every notebook
+        # two at a time: the three longest take ~5.5 min each. Only 05
+        # writes files, into its own temp dir
         run: |
-          set -e
-          for nb in notebooks/0*.ipynb; do
-            echo "== $nb"
-            JAX_PLATFORMS=cpu timeout 1500 python -m nbconvert \
-              --to notebook --execute --stdout "$nb" > /dev/null
-          done
+          run() {
+            if JAX_PLATFORMS=cpu timeout 1500 python -m nbconvert \
+                --to notebook --execute --stdout "$1" > /dev/null 2> "$1.log"; then
+              echo "ok   $1"
+            else
+              echo "FAIL $1"; cat "$1.log"; return 1
+            fi
+          }
+          export -f run
+          ls notebooks/0*.ipynb | xargs -P 2 -n 1 bash -c 'run "$0"'

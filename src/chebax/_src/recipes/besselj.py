@@ -87,9 +87,9 @@ class _JBase(Recipe):
 
     def _inner(self, x):
         xi = self._xin(x)
-        # (x/2)^0 = 1, but the generic power rule is 0 * (x/2)^-1 at the
-        # origin: NaN gradient for a constant prefactor
-        pref = 1.0 if self.v == 0.0 else jnp.power(xi / 2, self.v)
+        # Integer powers avoid 0 * inf in higher derivatives at the origin.
+        power = int(self.v) if self.v.is_integer() else self.v
+        pref = jnp.power(xi / 2, power)
         return self._inv_gamma * pref * self.g(xi * xi)
 
     def _mid(self, x):

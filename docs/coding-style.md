@@ -8,23 +8,24 @@ are in [Architecture](architecture.md).
 
 ## Formatting and imports
 
-Use four spaces, ordinary Python spacing, two blank lines between top-level
-definitions, and parenthesized multiline expressions. Aim for 88 columns in
-handwritten code; keep a formula together when splitting it obscures the
-mathematics. Put one statement on each line. Group imports as standard library,
-third party, then chebax, with a blank line between groups. Use `np` for NumPy
-and `jnp` for JAX NumPy.
+Code is formatted with black, at the version the `lint` extra pins and with
+the settings in `pyproject.toml` (88 columns). Run `black src tests examples`
+before committing; CI checks the same paths. Black decides layout; where it
+splits a formula awkwardly, rename an intermediate or restructure the
+expression rather than fighting the formatter. Group imports as standard
+library, third party, then chebax, with a blank line between groups. Use `np`
+for NumPy and `jnp` for JAX NumPy.
 
 Generated `*_table.py` files follow `_gen_common.write_table_module` exactly.
-Do not format, rename symbols in, or edit them by hand. Changing a generator,
-including a comment, changes its recorded source hash and requires regenerating
-its outputs. Changing `_gen_common.py` requires regenerating every affected
-table.
+Do not format, rename symbols in, or edit them by hand; black excludes them.
+Changing a generator, including a comment or a reformat, changes its recorded
+source hash and requires regenerating its outputs. Changing `_gen_common.py`
+requires regenerating every table. Black also leaves `experiments/` alone,
+since a changed experiment must be re-run and its result updated, and the
+executed notebooks.
 
-The repository currently has no configured formatter, linter, or type checker.
-Formatting and naming are reviewed manually. Any future automated policy must
-exclude generated tables and be introduced with an explicit migration, rather
-than silently reformatting numerical code.
+There is no linter or type checker. Naming and the rest of this guide are
+reviewed manually.
 
 ## Names
 

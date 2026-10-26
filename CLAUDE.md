@@ -104,6 +104,10 @@ python -m pytest -q -m slow -n 4                  # table regeneration, ~4.5 min
                                                   #  commits; CI runs them as separate
                                                   #  jobs on every push (bake header test
                                                   #  skips without g++; conftest enables x64)
+python -m black src tests examples                # format (the lint extra pins black;
+                                                  #  CI runs --check). Reformatting a
+                                                  #  generator changes its source hash:
+                                                  #  regenerate its table too
 python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-tables
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables

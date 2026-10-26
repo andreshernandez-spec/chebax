@@ -167,9 +167,8 @@ The endpoint and argument contract matrices live in `test_contracts.py`,
 Family tests own accuracy sweeps and formula-specific derivative identities.
 
 `test_layers.py` checks the dependency directions in the table above
-statically, function-local imports included. There is no formatter, linter or
-style check; review checks shared-helper reuse, naming, and documentation
-manually. The [October review](review-2026-10-26.md) records what was found
-and how each item was resolved. A future formatter or linter policy must
-exclude generated tables, and numerical tests are no substitute for
-architecture review.
+statically, function-local imports included, and CI checks black formatting
+(see [Coding style](coding-style.md)). There is no linter; review checks
+shared-helper reuse, naming, and documentation manually. The
+[October review](review-2026-10-26.md) records what was found and how each
+item was resolved. Numerical tests are no substitute for architecture review.

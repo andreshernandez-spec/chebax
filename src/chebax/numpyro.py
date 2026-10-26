@@ -24,9 +24,9 @@ unresolvable, in logs as much as out of them, and comes back with a
 relative error of about eps over its mass.
 
 The chebax contract applies: shape parameters are uniform per call (a
-scalar or one traced latent each; batched shape arrays are not served,
-use chebax.pergroup for per-group shapes), and a non-scalar shape is
-rejected at construction. Domains, from the underlying tables and
+scalar, a size-one array or one traced latent each; batched shape arrays
+are not served, use chebax.pergroup for per-group shapes), and a shape
+holding more than one value is rejected at construction. Domains, from the underlying tables and
 checked eagerly when the value is not traced: TruncatedBeta needs
 (concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
 needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
@@ -118,7 +118,9 @@ def _check_bounds_eagerly(low, high):
 
 
 def _check_scalar(owner, name, v):
-    if jnp.ndim(v) != 0:
+    # size, not ndim: a (1,) array is the one value it holds, as in the
+    # core functions, and numpyro's own broadcasting hands those back
+    if jnp.size(v) != 1:
         raise ValueError(
             f"{owner} needs a scalar {name}: chebax shape parameters are "
             "uniform per call, use chebax.pergroup for per-group shapes")
@@ -126,7 +128,7 @@ def _check_scalar(owner, name, v):
 
 def _check_shape_range(owner, name, v, lo, hi):
     try:  # a traced shape cannot be checked at construction time
-        x = float(np.asarray(v))
+        x = float(np.asarray(v).reshape(()))
     except jax.errors.TracerArrayConversionError:
         return
     if not lo <= x <= hi:
@@ -220,10 +222,15 @@ class _Truncated(dist.Distribution):
 
     def cdf(self, value):
         n = self._norm()
-        v = jnp.clip(jnp.asarray(value), self.low, self.high)
+        value = jnp.asarray(value)
+        v = jnp.clip(value, self.low, self.high)
         f, s = self._log_cdf_sf(v)
         num = _tail_logdiffexp(n.upper, (n.lo_s, s), (f, n.lo_f))
-        return jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
+        # nan is no point of the support: the base laws read it as above
+        # the median and every class returned cdf(nan) = 1 (review,
+        # 2026-10-26), where icdf and the core functions give nan
+        out = jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
+        return jnp.where(jnp.isnan(value), jnp.nan, out)
 
     def _validate_sample(self, value):
         # numpyro checks the support with numpy unless the value is a jax
@@ -234,8 +241,9 @@ class _Truncated(dist.Distribution):
     def log_prob(self, value):
         value = jnp.asarray(value)
         inside = (value >= self.low) & (value <= self.high)
-        return jnp.where(inside, self._log_density(value) - self._norm().lnz,
-                         -jnp.inf)
+        out = jnp.where(inside, self._log_density(value) - self._norm().lnz,
+                        -jnp.inf)
+        return jnp.where(jnp.isnan(value), jnp.nan, out)
 
 
 class TruncatedGamma(_Truncated):
@@ -271,7 +279,9 @@ class TruncatedGamma(_Truncated):
         # a nan rate gradient (the default one-sided truncation)
         inside = (value > 0.0) & jnp.isfinite(value)
         v = jnp.where(inside, value, 1.0)
-        f, s = _gamma_log_pq(self.concentration, self.rate * v)
+        # the a-box cond needs a scalar predicate
+        c = jnp.reshape(self.concentration, ())
+        f, s = _gamma_log_pq(c, self.rate * v)
         below = value <= 0.0
         return (jnp.where(inside, f, jnp.where(below, -jnp.inf, 0.0)),
                 jnp.where(inside, s, jnp.where(below, 0.0, -jnp.inf)))

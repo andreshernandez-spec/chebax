@@ -83,6 +83,19 @@ def _logdiffexp(a, b):
     return jnp.where(fin, a_s + jnp.log(-jnp.expm1(d)), -jnp.inf)
 
 
+def _tail_logdiffexp(upper, upper_pair, lower_pair):
+    """_logdiffexp of upper_pair where upper holds, else of lower_pair.
+
+    Select the operands, not the results. Deep in one tail the other
+    tail's two logs round to the same value, its log difference is
+    log(0), and that infinite slope times the zero cotangent of the
+    unselected lane is a nan gradient: TruncatedGamma(3) on [1000, 1001]
+    had a finite log_prob and a nan shape gradient (review, 2026-10-26)."""
+    a = jnp.where(upper, upper_pair[0], lower_pair[0])
+    b = jnp.where(upper, upper_pair[1], lower_pair[1])
+    return _logdiffexp(a, b)
+
+
 def _pick(mask, when_true, when_false):
     """Take one tail branch or the other. Batched bounds need a select, but
     the usual scalar case takes a real branch, and a concrete one does not
@@ -173,7 +186,7 @@ class _Truncated(dist.Distribution):
         # a constant. A straddling interval takes the lower form; it has
         # O(1) mass on at least one side.
         upper = lo_f >= -_LN2
-        lnz = jnp.where(upper, _logdiffexp(lo_s, hi_s), _logdiffexp(hi_f, lo_f))
+        lnz = _tail_logdiffexp(upper, (lo_s, hi_s), (hi_f, lo_f))
         return _Norm(lnz, lo_f, lo_s, hi_f, hi_s, upper)
 
     def rsample(self, key, sample_shape=()):
@@ -209,7 +222,7 @@ class _Truncated(dist.Distribution):
         n = self._norm()
         v = jnp.clip(jnp.asarray(value), self.low, self.high)
         f, s = self._log_cdf_sf(v)
-        num = jnp.where(n.upper, _logdiffexp(n.lo_s, s), _logdiffexp(f, n.lo_f))
+        num = _tail_logdiffexp(n.upper, (n.lo_s, s), (f, n.lo_f))
         return jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
 
     def _validate_sample(self, value):

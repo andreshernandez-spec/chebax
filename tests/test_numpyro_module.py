@@ -286,14 +286,76 @@ def test_deep_tail_truncations_against_mpmath():
     assert worst <= 7e-13, worst
 
 
+# Intervals where both endpoints' log-probabilities in the OTHER tail round
+# to the same float (0.0 here), so that tail's log difference is log(0).
+# (kind, params, low, high, value)
+SAME_FLOAT = [
+    ("gamma", (3.0, 1.0), 1000.0, 1001.0, 1000.5),
+    ("gamma", (3.0, 1.0), 1e-200, 2e-200, 1.5e-200),
+    ("beta", (2.0, 100.0), 0.9995, 0.9999, 0.9997),
+    ("t", (200.0,), 1e3, 2e3, 1.5e3),
+]
+
+
+def _mp_interval_logprob(kind, p, lo, hi, v):
+    """log_prob of the truncation, with the mass taken as one integral in
+    the tail that holds it, so F(hi) - F(lo) is never formed."""
+    lo, hi, v = mp.mpf(lo), mp.mpf(hi), mp.mpf(v)
+    _, lpdf = _law(kind, p)
+    a = mp.mpf(p[0])
+    if kind == "gamma":
+        z = mp.gammainc(a, p[1] * lo, p[1] * hi, regularized=True)
+    elif kind == "beta":
+        # 1 - X is Beta(b, a); mpmath's own I(hi) - I(lo) cancels near 1
+        z = mp.betainc(mp.mpf(p[1]), a, 1 - hi, 1 - lo, regularized=True)
+    else:
+        def sf(t):
+            return mp.betainc(a / 2, mp.mpf(0.5), 0, a / (a + t * t),
+                              regularized=True) / 2
+        z = sf(lo) - sf(hi)
+    return lpdf(v) - mp.log(z)
+
+
+def test_shape_gradient_where_the_other_tail_rounds_to_one_float():
+    # The unused tail's log difference is log(0) here, and its infinite
+    # slope times the zero cotangent of the unselected lane was a nan
+    # shape gradient under a finite log_prob (review, 2026-10-26). Metric
+    # absolute below 1 and relative above, since these gradients are small
+    # differences of O(1) terms. Measured worst 4.9e-11 (the beta, whose
+    # betainc shape derivative carries it), bar 2e-10.
+    worst = 0.0
+    for kind, p, lo, hi, v in SAME_FLOAT:
+        def lp(s, kind=kind, p=p, lo=lo, hi=hi):
+            return _build(kind, (s,) + p[1:], lo, hi).log_prob(v)
+
+        def cdf(s, kind=kind, p=p, lo=lo, hi=hi):
+            return _build(kind, (s,) + p[1:], lo, hi).cdf(v)
+
+        got = [float(jax.grad(lp)(p[0]))]
+        if kind == "gamma":           # forward mode was never affected
+            got.append(float(jax.jacfwd(lp)(p[0])))
+        assert np.isfinite(got).all(), (kind, p, lo, hi, got)
+        ref = mp.diff(lambda s: _mp_interval_logprob(kind, (s,) + p[1:], lo,
+                                                     hi, v), mp.mpf(p[0]))
+        for g in got:
+            worst = max(worst, float(abs(g - ref) / max(1, abs(ref))))
+        # cdf takes the same select; the beta's costs 100 s of eager AD
+        if lo in (1000.0, 1e3):
+            gc = float(jax.grad(cdf)(p[0]))
+            assert np.isfinite(gc), (kind, p, lo, hi, gc)
+    assert worst <= 2e-10, worst
+
+
 def test_ordinary_truncations_unchanged_against_mpmath():
     # the non-tail path has to stay at eps: measured worst 1.3e-14, bar 5e-14
     worst = 0.0
     for kind, p, lo, hi, v, q, span in ORDINARY:
         d = _build(kind, p, lo, hi)
         rlp, rc, ri = _trunc_ref(kind, p, lo, hi, v, q, span)
-        worst = max(worst, _rel(float(d.log_prob(v)), rlp),
-                    _rel(float(d.cdf(v)), rc), _rel(float(d.icdf(q)), ri))
+        got = [float(d.log_prob(v)), float(d.cdf(v)), float(d.icdf(q))]
+        assert np.isfinite(got).all(), (kind, p, lo, hi, got)
+        worst = max(worst, _rel(got[0], rlp), _rel(got[1], rc),
+                    _rel(got[2], ri))
     assert worst <= 5e-14, worst
 
 
@@ -308,8 +370,9 @@ def test_icdf_round_trips_through_cdf_in_the_tail():
         d = _build(kind, p, lo, hi)
         x = np.asarray(d.icdf(qs))
         assert np.all((x >= lo) & (x <= hi)), (kind, p, x)
-        worst = max(worst,
-                    np.max(np.abs(np.asarray(d.cdf(x)) - np.asarray(qs))))
+        c = np.asarray(d.cdf(x))
+        assert np.isfinite(c).all(), (kind, p, c)
+        worst = max(worst, np.max(np.abs(c - np.asarray(qs))))
     assert worst <= 5e-10, worst
 
 
@@ -327,6 +390,7 @@ def test_gamma_qinv_survives_a_collapsed_asymptotic_init():
     worst = 0.0
     for a, s in cases:
         x = float(chebax.gammainccinv(a, s))
+        assert np.isfinite(x), (a, s, x)
         q = mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True)
         worst = max(worst, abs(float((q - mp.mpf(s)) / mp.mpf(s))))
     assert worst <= 1e-13, worst

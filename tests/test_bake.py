@@ -428,11 +428,11 @@ class _StaticTag(Recipe):
         return self.s(jnp.asarray(x))
 
 
-def test_bake_rejects_bad_static_field_name(tmp_path):
-    # the C++ name (and its guard macro) is built from the static fields
+def test_bake_spells_static_values_as_identifiers(tmp_path):
+    # the C++ name (and its guard macro) is built from the static fields,
+    # whose values need not be identifiers themselves
     inst = _StaticTag("a b", _exp_series())
-    with pytest.raises(ValueError, match="static field lab='a b'"):
-        bake.xsf_header(inst, tmp_path / "x.h")
+    assert bake.xsf_header(inst, tmp_path / "x.h") == "statictag_laba_b"
     name = bake.xsf_header(inst, tmp_path / "ok.h", name="tagged")
     assert name == "tagged"
     assert "#define CHEBAX_BAKED_TAGGED_H" in (tmp_path / "ok.h").read_text()
@@ -442,6 +442,76 @@ def test_bake_rejects_bad_static_field_name(tmp_path):
     m = _load(mod, "quoted_mod")
     np.testing.assert_allclose(np.asarray(m.quoted(np.linspace(0.0, 3.0, 5))),
                                np.exp(np.linspace(0.0, 3.0, 5)), rtol=1e-13)
+
+
+def _run_header(tmp_path, hdr, name, xs):
+    main = tmp_path / "main.cpp"
+    main.write_text(
+        f'#include "{hdr.name}"\n#include <cstdio>\n'
+        'int main() { double x; while (std::scanf("%lf", &x) == 1) '
+        'std::printf("%.17e\\n", chebax_baked::' + name + "(x)); return 0; }\n")
+    exe = tmp_path / "exe"
+    subprocess.run(["g++", "-O2", "-std=c++17", "-o", str(exe), str(main)],
+                   check=True, cwd=tmp_path)
+    out = subprocess.run([str(exe)], input="\n".join(repr(float(x)) for x in xs),
+                         capture_output=True, text=True, check=True)
+    return np.array([float(t) for t in out.stdout.split()])
+
+
+def test_bake_extreme_domain_uses_the_runtime_map(tmp_path):
+    # The emitter wrote (2x - (b+a))/(b-a), which overflows on a legal
+    # domain the runtime evaluates fine: here b + a is inf, so the python
+    # artifact divided by a bare inf (NameError) and the header named an
+    # undeclared inf (review, 2026-10-26). A user Recipe is the generic
+    # extension point. The runtime divides by a folded reciprocal under
+    # XLA and the artifacts by the half-width itself, hence 1 ulp of room.
+    inst = _StaticTag("edge", ChebSeries([0.0, 1.0], (1e308, 1.5e308)))
+    xs = np.array([1e308, 1.1e308, 1.25e308, 1.4e308, 1.5e308])
+    ref = np.asarray(inst(xs))
+    np.testing.assert_allclose(ref, [-1.0, -0.6, 0.0, 0.6, 1.0], rtol=4e-16,
+                               atol=1e-16)
+    mod = tmp_path / "edge.py"
+    name = bake.jax_module(inst, mod, name="edge")
+    got = np.asarray(getattr(_load(mod, "edge_mod"), name)(xs))
+    np.testing.assert_allclose(got, ref, rtol=2.3e-16, atol=1e-16)
+    if shutil.which("g++") is None:
+        pytest.skip("g++ not available")
+    hdr = tmp_path / "edge.h"
+    name = bake.xsf_header(inst, hdr, name="edge")
+    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, xs), ref,
+                               rtol=2.3e-16, atol=1e-16)
+
+
+@pytest.mark.parametrize("taken", ["jnp", "jax", "_clenshaw",
+                                   "TypeError", "C_LTIL"])
+def test_bake_rejects_names_the_artifact_uses(tmp_path, taken):
+    # valid identifiers that the emitted module already binds: name="jnp"
+    # replaced the import, "_clenshaw" the helper, and the artifact failed
+    # when called (review, 2026-10-26)
+    with pytest.raises(ValueError, match="used by the emitted source"):
+        bake.jax_module(chebax.besselk(1.5), tmp_path / "x.py", name=taken)
+    assert not (tmp_path / "x.py").exists()
+
+
+def test_bake_rejects_the_header_macro_as_a_name(tmp_path):
+    with pytest.raises(ValueError, match="used by the emitted source"):
+        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h",
+                        name="XSF_HOST_DEVICE")
+
+
+def test_default_header_name_encodes_a_tuple_static(tmp_path):
+    # besselj's domain static is a tuple, and its parentheses and comma
+    # went straight into the default name, which the identifier check
+    # then rejected (review, 2026-10-26)
+    inst = chebax.besselj(2.5, domain=(0, 8))
+    hdr = tmp_path / "jd.h"
+    name = bake.xsf_header(inst, hdr)
+    assert name == "besselj_v2p5_domain0p0_8p0", name
+    if shutil.which("g++") is None:
+        pytest.skip("g++ not available")
+    xs = np.linspace(0.1, 7.9, 9)
+    np.testing.assert_allclose(_run_header(tmp_path, hdr, name, xs),
+                               np.asarray(inst(xs)), rtol=1e-12)
 
 
 @pytest.mark.parametrize("bad", [np.inf, -np.inf, np.nan], ids=["inf", "-inf", "nan"])

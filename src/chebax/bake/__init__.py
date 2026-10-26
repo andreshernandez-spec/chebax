@@ -75,6 +75,19 @@ xor_eq
 """.split())
 
 
+# Names the emitted module itself defines or calls. A valid identifier is
+# not enough: name="jnp" replaced the import and name="_clenshaw" the
+# helper, and both artifacts failed when called (review, 2026-10-26).
+_PY_RESERVED = frozenset({"jax", "jnp", "_clenshaw", "TypeError"})
+_CPP_RESERVED = frozenset({"XSF_HOST_DEVICE"})
+
+
+def _check_free(name, reserved, coefs=()):
+    if name in reserved or name in coefs:
+        raise ValueError(
+            f"name {name!r} is used by the emitted source itself; pick another")
+
+
 def _ident(value, what):
     """Names go straight into emitted source (and into the C++ guard macro
     as name.upper()), so reject anything but a plain identifier that is
@@ -142,9 +155,13 @@ def _family(inst):
 
 
 def _tag(inst):
+    """Statics spelled as an identifier: 2.5 -> 2p5, -1 -> m1, and a tuple
+    such as besselj's domain (0.0, 8.0) -> 0p0_8p0, whose parentheses and
+    comma used to reach the identifier check and fail it."""
     parts = []
     for k, v in _statics(inst).items():
-        part = f"{k}{str(v).replace('.', 'p').replace('-', 'm')}"
+        text = str(v).replace(".", "p").replace("-", "m").replace("+", "")
+        part = k + re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")
         _ident(part, f"the name built from static field {k}={v!r}")
         parts.append(part)
     return "_".join(parts)
@@ -194,6 +211,7 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
     body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False)
+    _check_free(name, _PY_RESERVED, coefs)
     statics = _statics_text(inst)
     dtype_note = (
         ["Baked for float64 input, the dtype of the trace; anything else raises."]
@@ -263,6 +281,7 @@ def xsf_header(inst, path, name=None, dtype="double", truncate_tol=None):
         raise ValueError(f"dtype must be 'double' or 'float', got {dtype!r}")
     _check(inst)
     name = _ident(f"{_family(inst)}_{_tag(inst)}" if name is None else name, "name")
+    _check_free(name, _CPP_RESERVED)
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
     body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=True, ctype=dtype)

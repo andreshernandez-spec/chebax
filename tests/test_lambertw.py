@@ -2,7 +2,8 @@
 point the bar is 5e-15 * (1 + |W|); within 1e-4 of x = -1/e any double
 routine is conditioning-limited by the cancellation in 1 + e x, so the bar
 there is 4 sqrt(eps e / (x + 1/e)). Gradients are the implicit identity,
-checked against mp.diff. Measured worst: 8.6e-16 (k=0), 6.4e-16 (k=-1)."""
+checked against mp.diff. Measured worst: 8.6e-16 (k=0), 6.4e-16 (k=-1),
+1.6e-16 for k=0 from 1e299 to max float."""
 
 import jax
 import numpy as np
@@ -31,6 +32,18 @@ def test_branch0():
                          [-0.3, -0.1, -0.01, 0.0, 0.3, 1.0, 2.0, np.e, 5.0],
                          np.logspace(1, 300, 20)])
     _check(xs, 0)
+
+
+def test_branch0_top_of_the_range():
+    # at max float the Halley denominator e^w (w + 1) overflowed and w
+    # stalled at its initializer, 3e-8 off (review, 2026-10-26); above 1e300
+    # k = 0 now iterates on w + ln w - ln x
+    xs = np.array([1e299, 1e301, 1e305, 1e307, 1e308, 1.5e308,
+                   np.nextafter(np.finfo(float).max, 0), np.finfo(float).max])
+    _check(xs, 0)
+    g = float(jax.grad(chebax.lambertw)(1e305))
+    w = float(mp.lambertw(mp.mpf(1e305)).real)
+    assert abs(g / (w / (1e305 * (1 + w))) - 1) <= 1e-12, g
 
 
 def test_branch_m1():

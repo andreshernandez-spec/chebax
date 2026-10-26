@@ -309,6 +309,82 @@ def test_x64_off():
     assert out.returncode == 0, out.stderr[-1500:]
 
 
+def _ref_p15(mu, phi, y):
+    """ln f at p = 1.5 from Phi(1, 0; z) = sqrt(z) I1(2 sqrt(z)), 30 digits
+    above the working precision (70 at the module's 40): the density's
+    large terms cancel, and here they reach 1e16. Relative, so mp.diff's
+    own extra precision still reaches it."""
+    with mp.extradps(30):
+        mu, phi, y = map(mp.mpf, (mu, phi, y))
+        lam = 2 * mp.sqrt(mu) / phi
+        y_theta = 2 * y / (phi * mp.sqrt(mu))
+        z = lam * y_theta
+        return (-lam - y_theta - mp.log(y)
+                + mp.log(mp.sqrt(z) * mp.besseli(1, 2 * mp.sqrt(z))))
+
+
+# (mu, phi, y) at p = 1.5, saddle scale Z from 4e3 to 4e15
+CONCENTRATED = [(1e6, 1e-8, 1000010.0), (1e6, 1e-12, 1000000.125),
+                (1.0, 1e-10, 1.0 + 2.0 ** -20), (5.0, 1e-9, 4.0),
+                (2.0, 1e-7, 2.0), (1e-3, 1e-9, 1.2e-3), (1.0, 1e-6, 1.001)]
+
+
+def test_concentrated_densities():
+    # Far past what the series reference reaches. The deviance near the
+    # mean came from ln y - ln mu and a difference of two expm1 terms, which
+    # lost the relative displacement: float32 gave 2.53 for -5.28 at the
+    # second case (review, 2026-10-26). Metric as above; measured worst
+    # 2.7e-16 in values and 1.6e-13 in d/dmu, d/dphi, d/dy, bars 1e-15 and
+    # 6e-13.
+    worst_v = worst_g = 0.0
+    for c in CONCENTRATED:
+        got = float(chebax.tweedie_logpdf(1.5, *c))
+        g = jax.grad(chebax.tweedie_logpdf, argnums=(1, 2, 3))(1.5, *c)
+        assert np.isfinite([got, *map(float, g)]).all(), (c, got, g)
+        worst_v = max(worst_v, _rel(got, float(_ref_p15(*c))))
+        for k in range(3):
+            ref = mp.diff(lambda v: _ref_p15(*(c[:k] + (v,) + c[k + 1:])),
+                          mp.mpf(c[k]))
+            worst_g = max(worst_g, _rel(float(g[k]), float(ref)))
+    assert worst_v <= 1e-15 and worst_g <= 6e-13, (worst_v, worst_g)
+
+
+def test_concentrated_x64_off():
+    # float32 inputs exact except phi; 1.001 is left out, since rounding it
+    # moves this density by 8e-6. Measured worst 1.9e-7, bar 1e-6.
+    cases = CONCENTRATED[:-1]
+    refs = [float(_ref_p15(*c)) for c in cases]
+    code = (
+        "import jax.numpy as jnp, chebax\n"
+        "assert jnp.empty(()).dtype == jnp.float32\n"
+        f"for c, ref in zip({cases!r}, {refs!r}):\n"
+        "    got = float(chebax.tweedie_logpdf(1.5, *c))\n"
+        "    assert abs(got - ref) / max(1.0, abs(ref)) <= 1e-6, (c, got, ref)\n")
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    env.pop("JAX_ENABLE_X64", None)
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, env=env)
+    assert out.returncode == 0, out.stderr[-1500:]
+
+
+def test_extreme_deviance_scales():
+    # y/mu overflowed at y = 1e10, mu = 1e-300 under a finite density; at
+    # p = 1.5 the half-deviance is 2y/sqrt(mu) - 4 sqrt(y) + 2 sqrt(mu),
+    # and the rest of ln f is below its last digit
+    got = float(chebax.tweedie_logpdf(1.5, 1e-300, 1.0, 1e10))
+    assert abs(got / -2e160 - 1) <= 1e-15, got
+    # phi = 1e-200 at the mean: ln f = -ln(2 pi phi)/2 + O(1/Z), and the
+    # p and phi gradients were nan, from unselected branches whose partials
+    # overflow there and from jax squaring phi in d(d/phi)/dphi
+    gp, gmu, gphi, gy = map(float, jax.grad(chebax.tweedie_logpdf,
+                                            argnums=(0, 1, 2, 3))(1.5, 1.0, 1e-200, 1.0))
+    assert abs(gp) <= 1e-150 and gmu == 0.0, (gp, gmu)
+    assert gphi == pytest.approx(-0.5e200, rel=1e-15)
+    assert gy == pytest.approx(-0.75, rel=1e-15)
+    v = float(chebax.tweedie_logpdf(1.5, 1.0, 1e-200, 1.0))
+    assert v == pytest.approx(-0.5 * np.log(2 * np.pi * 1e-200), rel=1e-15)
+
+
 @pytest.mark.slow
 def test_table_regenerates_bit_for_bit(tmp_path):
     tweedie_gen.main(tmp_path)

@@ -19,6 +19,7 @@ import pytensor.tensor as pt  # noqa: E402
 from pytensor.graph.fg import FunctionGraph  # noqa: E402
 from pytensor.link.jax.dispatch import jax_funcify  # noqa: E402
 from scipy import special as sps  # noqa: E402
+from scipy import stats  # noqa: E402
 
 import chebax  # noqa: E402
 import chebax.pytensor  # noqa: E402,F401  (importing registers the dispatches)
@@ -111,6 +112,35 @@ def test_betainc_out_of_box_values_fine_grads_nan():
     np.testing.assert_allclose(got, sps.betainc(150.0, 3.5, xv), rtol=1e-12)
     ga = jax.grad(lambda av: jnp.sum(f(av, 3.5, jnp.asarray(xv))))(150.0)
     assert np.isnan(float(ga))
+
+
+def test_betainc_x_derivative_in_both_modes():
+    # Out of the box the shape partials are nan, and an x-only forward
+    # derivative multiplied them by zero shape tangents: nan, where
+    # reverse mode gave the density (review, 2026-10-26).
+    a, b = pt.dscalar("a"), pt.dscalar("b")
+    x = pt.dvector("x")
+    f = jaxify([a, b, x], pt.betainc(a, b, x))
+
+    def modes(av, bv, xv):
+        g = lambda t: f(av, bv, t)
+        xv = jnp.asarray(xv)
+        rev = jax.grad(lambda t: jnp.sum(g(t)))(xv)
+        fwd = jax.jvp(g, (xv,), (jnp.ones_like(xv),))[1]
+        return np.asarray(rev), np.asarray(fwd)
+
+    for got in modes(150.0, 3.5, [0.4]):
+        np.testing.assert_allclose(got, stats.beta.pdf(0.4, 150.0, 3.5),
+                                   rtol=1e-9)
+    # The rule clipped x before forming the density, so endpoint limits
+    # came back finite (5e153 for an infinite one). Against the core
+    # recipe, whose endpoint slopes are set explicitly.
+    for av, bv in ((0.5, 2.0), (2.0, 0.5), (1.0, 3.0), (3.0, 1.0),
+                   (2.5, 3.5)):
+        xv = [0.0, 0.4, 1.0]
+        ref = [float(jax.grad(chebax.betainc_fn, 2)(av, bv, t)) for t in xv]
+        for got in modes(av, bv, xv):
+            np.testing.assert_allclose(got, ref, rtol=1e-13)
 
 
 def test_betainc_batched_shapes_keep_plain_jax():

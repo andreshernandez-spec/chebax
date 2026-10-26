@@ -263,10 +263,26 @@ def _betainc_scalar_ab(a, b, x):
         lambda: _jax_betainc(a, b, x, dt))
 
 
-@_betainc_scalar_ab.defjvp
+def _beta_density(a, b, x, dt):
+    """d/dx I_x(a, b): the Beta density inside (0, 1), and at the
+    endpoints the core recipe's one-sided limits: at x = 0, inf for a < 1,
+    b for a = 1 (1/B(1, b) = b), 0 above, and mirrored at x = 1. Clipping
+    x into the interior first gave a finite 5e153 at (a, b, x) = (.5, 2, 0)
+    where the limit is inf (review, 2026-10-26)."""
+    inside = (x > 0.0) & (x < 1.0)
+    xs = jnp.where(inside, x, 0.5)
+    core = jnp.exp((a - 1.0) * jnp.log(xs) + (b - 1.0) * jnp.log1p(-xs)
+                   - jax.scipy.special.betaln(a, b))
+    at0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a == 1.0, b, 0.0))
+    at1 = jnp.where(b < 1.0, jnp.inf, jnp.where(b == 1.0, a, 0.0))
+    edge = jnp.where(x == 0.0, at0, jnp.where(x == 1.0, at1, 0.0))
+    return jnp.where(inside, core, edge).astype(dt)
+
+
 def _betainc_scalar_ab_jvp(primals, tangents):
     a, b, x = primals
     da, db, dx = tangents
+    zero = jax.custom_derivatives.SymbolicZero
     dt = _out_dtype(a, b, x)
 
     def in_box():
@@ -283,14 +299,25 @@ def _betainc_scalar_ab_jvp(primals, tangents):
         nan = jnp.full(jnp.shape(p), jnp.nan, dt)
         return p, nan, nan
 
-    p, ga, gb = jax.lax.cond(_in_box(a, b), in_box, out_of_box)
-    # d/dx is the Beta density, exact and valid for all a, b > 0
-    fi = jnp.finfo(dt)
-    xs = jnp.clip(x, fi.tiny, 1.0 - fi.eps)
-    log_pdf = ((a - 1.0) * jnp.log(xs) + (b - 1.0) * jnp.log1p(-xs)
-               - jax.scipy.special.betaln(a, b))
-    d_dx = jnp.exp(log_pdf).astype(dt)
-    return p, ga * da + gb * db + d_dx * dx
+    # Only active directions enter the tangent. Out of the box the shape
+    # partials are nan, and nan times the zero tangent of an undifferentiated
+    # shape made the x derivative nan in forward mode (review, 2026-10-26).
+    if isinstance(da, zero) and isinstance(db, zero):
+        p = _betainc_scalar_ab(a, b, x)
+        dp = jnp.zeros_like(p)
+    else:
+        p, ga, gb = jax.lax.cond(_in_box(a, b), in_box, out_of_box)
+        dp = jnp.zeros_like(p)
+        if not isinstance(da, zero):
+            dp = dp + ga * da
+        if not isinstance(db, zero):
+            dp = dp + gb * db
+    if not isinstance(dx, zero):
+        dp = dp + _beta_density(a, b, x, dt) * dx
+    return p, dp
+
+
+_betainc_scalar_ab.defjvp(_betainc_scalar_ab_jvp, symbolic_zeros=True)
 
 
 @jax_funcify.register(BetaInc)

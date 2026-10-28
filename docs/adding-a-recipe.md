@@ -137,6 +137,12 @@ bit-for-bit regeneration test (mandatory for every new table).
 
 ## 5. Docs
 
+Register the public names in `chebax/__init__.py` (the `_LAZY` map, the
+`TYPE_CHECKING` imports and `__all__`; a test keeps them equal), a bound in
+`chebax.domains` as a builder that imports only its own table, and the
+module's tables in `tests/test_lazy_imports.py`. Using the new family must
+load its tables and no other family's.
+
 Update the README export list and the increment log (`docs/increments.md`),
 add the regen command to CLAUDE.md, and if the recipe taught a new numerics
 lesson, make sure it lives in the generator or runtime docstring where the

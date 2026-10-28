@@ -63,13 +63,29 @@ from jax.scipy.special import betaln, gammaln
 import chebax
 from chebax import domains as _dom
 from chebax._src.recipes._common import canon_float
-from chebax._src.recipes.stdtr import _t_logpdf, log_stdtr, log_stdtr_sf
+from chebax._src.recipes.betainc_kernel import t_logpdf
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT", "Tweedie"]
 
 _LN2 = math.log(2.0)
-_DF_LO, _DF_HI = _dom.STUDENT_T_DF.lo, _dom.STUDENT_T_DF.hi
 _REAL_OR_INF = constraints.interval(-jnp.inf, jnp.inf)
+
+
+class _ArgConstraints:
+    """arg_constraints built on first access, from the class or an
+    instance (numpyro reads both). The bounds come from chebax.domains,
+    and each entry there loads its family's tables: built at class
+    definition, importing this module loaded betainc's 15 MB tensor for a
+    TruncatedGamma user."""
+
+    def __init__(self, build):
+        self._build = build
+        self._value = None
+
+    def __get__(self, obj, owner=None):
+        if self._value is None:
+            self._value = self._build()
+        return self._value
 
 
 def _logdiffexp(a, b):
@@ -338,12 +354,14 @@ class TruncatedBeta(_Truncated):
     CDF); low, high broadcast freely.
     """
 
-    arg_constraints = {
-        "concentration1": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
-        "concentration0": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
-        "low": constraints.unit_interval,
-        "high": constraints.unit_interval,
-    }
+    arg_constraints = _ArgConstraints(
+        lambda: {
+            "concentration1": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
+            "concentration0": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
+            "low": constraints.unit_interval,
+            "high": constraints.unit_interval,
+        }
+    )
     reparametrized_params = ["concentration1", "concentration0", "low", "high"]
 
     def __init__(
@@ -419,16 +437,19 @@ class TruncatedStudentT(_Truncated):
 
     # constraints.real rejects inf, so it would reject the untruncated
     # default bounds; interval's own test is inclusive
-    arg_constraints = {
-        "df": constraints.interval(_DF_LO, _DF_HI),
-        "low": _REAL_OR_INF,
-        "high": _REAL_OR_INF,
-    }
+    arg_constraints = _ArgConstraints(
+        lambda: {
+            "df": constraints.interval(_dom.STUDENT_T_DF.lo, _dom.STUDENT_T_DF.hi),
+            "low": _REAL_OR_INF,
+            "high": _REAL_OR_INF,
+        }
+    )
     reparametrized_params = ["df", "low", "high"]
 
     def __init__(self, df, *, low=-jnp.inf, high=jnp.inf, validate_args=None):
         _check_scalar("TruncatedStudentT", "df", df)
-        _check_shape_range("TruncatedStudentT", "df", df, _DF_LO, _DF_HI)
+        df_box = _dom.STUDENT_T_DF
+        _check_shape_range("TruncatedStudentT", "df", df, df_box.lo, df_box.hi)
         self.df = jnp.asarray(df)
         self.low, self.high = promote_shapes(jnp.asarray(low), jnp.asarray(high))
         _check_bounds_eagerly(self.low, self.high)
@@ -442,12 +463,16 @@ class TruncatedStudentT(_Truncated):
         v = jnp.where(fin, value, 0.0)
         below = value < 0.0
         return (
-            jnp.where(fin, log_stdtr(self.df, v), jnp.where(below, -jnp.inf, 0.0)),
-            jnp.where(fin, log_stdtr_sf(self.df, v), jnp.where(below, 0.0, -jnp.inf)),
+            jnp.where(
+                fin, chebax.log_stdtr(self.df, v), jnp.where(below, -jnp.inf, 0.0)
+            ),
+            jnp.where(
+                fin, chebax.log_stdtr_sf(self.df, v), jnp.where(below, 0.0, -jnp.inf)
+            ),
         )
 
     def _log_density(self, value):
-        return _t_logpdf(self.df, value)
+        return t_logpdf(self.df, value)
 
     def _icdf_lower(self, p):
         return chebax.stdtrit(self.df, p)
@@ -473,11 +498,13 @@ class Tweedie(dist.Distribution):
     reparameterized (the count is discrete).
     """
 
-    arg_constraints = {
-        "mu": constraints.positive,
-        "phi": constraints.positive,
-        "power": constraints.interval(_dom.TWEEDIE_P.lo, _dom.TWEEDIE_P.hi),
-    }
+    arg_constraints = _ArgConstraints(
+        lambda: {
+            "mu": constraints.positive,
+            "phi": constraints.positive,
+            "power": constraints.interval(_dom.TWEEDIE_P.lo, _dom.TWEEDIE_P.hi),
+        }
+    )
     support = constraints.nonnegative
 
     def __init__(self, mu, phi, power, *, validate_args=None):

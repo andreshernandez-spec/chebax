@@ -16,15 +16,16 @@ This document owns the dependency and numerical contracts. See
 | `_src/series.py` | JAX series evaluation, coefficient calculus, series pytrees | JAX, NumPy, reference algorithms |
 | `_src/generate.py` | Generic finite-interval `fit` | Core series and algorithms; mpmath only for the requested high-precision build path |
 | `_src/pytree.py` | Recipe field layout, immutability, pytree reconstruction | Generic object protocol; no family mathematics |
-| `_src/recipes/_common.py` | Shared normalization, reconstruction, endpoint slopes, safeguarded Newton | Core and JAX; no individual recipe or integration |
+| `_src/recipes/_common.py` | Shared normalization, reconstruction, endpoint slopes, safeguarded Newton and its per-dtype constants | Core and JAX; no individual recipe or integration |
 | `_src/recipes/<family>_gen.py`, `_gen_common.py` | High-precision sampling, fitting, deterministic emission | Build dependencies and shared generator helpers |
 | `_src/recipes/*_table.py` | Coefficients and their provenance | NumPy; no runtime reconstruction |
 | `_src/recipes/<family>.py` | Family transformations, evaluation, derivatives, factories | Core, shared helpers, tables, and explicitly needed related families |
+| `_src/recipes/<family>_kernel.py` | A family's evaluation and solves without its tables, where other families run them on tables of their own | Core and shared helpers; no table module |
 | `_src/pergroup.py` | Static grouping around a uniform-parameter function | JAX and NumPy; no family dispatch |
-| `domains.py` | Public parameter intervals | Table metadata only |
+| `domains.py` | Public parameter intervals, each built on first access | Its own table's metadata only |
 | `bake/` | Emit supported recipe computations as JAX or C++ | Recipe/series protocol and traced JAX operations |
 | `numpyro.py`, `pytensor.py` | Optional distribution and compiler adapters | Public numerical functions and domains; their respective optional dependency |
-| `__init__.py` | Curated public exports and package version | Library entry points; no optional integration |
+| `__init__.py` | Curated public exports, imported on first access, and package version | Nothing at import; a name's defining module when it is first used; no optional integration |
 
 Lower layers must not import optional adapters. Runtime evaluation must not
 import generators or mpmath. JAX and NumPy are the only direct third-party
@@ -32,13 +33,26 @@ runtime requirements; standard-library imports are allowed. Build dependencies
 belong behind `[gen]`, and each adapter must name its extra when unavailable.
 Importing chebax must not construct JAX arrays or initialize a backend.
 
+The expected program uses one to three families, so importing chebax loads
+nothing and each public name loads only the tables its own computation
+reads. Tables are the cost: betainc's are 15 MB of source, which without a
+bytecode cache take over a second and hundreds of MB to compile. `__init__.py`
+imports a name on first access (a module `__getattr__`, PEP 562), `domains.py`
+builds each bound on first access from its own table, and the adapters read
+domains when they validate, not when they are imported. Code that several
+families share must not import any family's tables: a family whose kernel
+also runs on another family's tables keeps it in `<family>_kernel.py`, as
+stdtr runs betainc's kernel on its own slices. `tests/test_lazy_imports.py`
+records which tables each public module loads.
+
 `domains.py` reads its bounds from table modules only, so runtime modules and
-adapters import it at module level without a cycle. A bound that is not a
+adapters import it at module level without a cycle, and since each entry is
+built on first access, importing it loads no table. A bound that is not a
 table axis is derived from the table's own metadata, as gammainc's infinite
 upper end is from the Temme-zone axis v = 10/a reaching 0.
 
 Related families may share mathematical building blocks: Matérn uses Bessel K,
-spherical Bessel functions wrap cylindrical ones, and quantiles use their
+spherical Bessel functions wrap cylindrical ones, and the inverses use their
 forward distributions. Such dependencies stay within the numerical layer.
 Adapters own framework wiring, constraints, sampling, and broadcasting; shared
 root solvers and special-function identities belong in the numerical layer.

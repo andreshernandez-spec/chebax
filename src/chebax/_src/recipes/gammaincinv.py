@@ -1,44 +1,40 @@
-"""Differentiable quantile functions: betaincinv, gammaincinv, gammainccinv,
-chi2inv.
+"""Differentiable Gamma quantiles: gammaincinv, gammainccinv, chi2inv
+(jax#5350). The Beta quantile is in betaincinv.py, on the same solver
+design and the same per-dtype constants (_common.solver_limits).
 
-These answer jax#2399 and jax#5350: inverse regularized incomplete beta
-and gamma (the Beta and Gamma quantile functions). The Student-t family
-(jax#20358) is in stdtr.py and reuses the beta solve here. All parameters
-are traceable (uniform per call), so jax.grad works with respect to every
-argument, which is what implicit-reparameterization gradients and copula
-models need.
+All parameters are traceable (uniform per call), so jax.grad works with
+respect to every argument, which is what implicit-reparameterization
+gradients and copula models need.
 
-The beta and gamma solvers are fixed-count safeguarded Newton (bisection
-fallback keeps a bracket, so the iteration is branchless and jittable),
-initialized in the deep lower tail from the exact leading asymptotics
-(I_x ~ x^a / (a B(a,b)), P(a,x) ~ x^a / Gamma(a+1)); Newton from those
-starts converges quadratically, where the generic start needs O(|log p|/a)
-additive steps and used to saturate silently. gammaincinv iterates on the
-LOG probability, which is nearly linear in log x wherever the probability
-is exponentially small, so a large shape in a deep tail converges in a
-couple of steps instead of one e-fold per step. Gradients do NOT
-differentiate through the iteration: each inverse carries a custom_jvp
-from the implicit function theorem,
+The solver is fixed-count safeguarded Newton (bisection fallback keeps a
+bracket, so the iteration is branchless and jittable), initialized in the
+deep lower tail from the exact leading asymptotic
+P(a,x) ~ x^a / Gamma(a+1); Newton from there converges quadratically,
+where the generic start needs O(|log p|/a) additive steps and used to
+saturate silently. gammaincinv iterates on the LOG probability, which is
+nearly linear in log x wherever the probability is exponentially small,
+so a large shape in a deep tail converges in a couple of steps instead of
+one e-fold per step. Gradients do NOT differentiate through the
+iteration: each inverse carries a custom_jvp from the implicit function
+theorem,
 
-    dx*/dp = 1 / pdf(x*),    dx*/dtheta = -(dCDF/dtheta)(x*) / pdf(x*),
+    dx*/dp = 1 / pdf(x*),    dx*/da = -(dP/da)(x*) / pdf(x*),
 
-with dCDF/da, dCDF/db coming from betainc_fn's traced gradients (or jax's
-igamma_grad_a primitive for gamma), all evaluated at the solution.
+with dP/da from the chebax recipe (or jax's igamma_grad_a primitive
+outside it), evaluated at the solution.
 
 Both inverses solve the half that carries the tail mass, never the half
-that rounds against 1: betaincinv mirrors on p > 1/2, gammaincinv targets
-Q(a, x) there. 1 - p is exact for p >= 1/2, so the mirrored target costs
-nothing.
+that rounds against 1: gammaincinv targets Q(a, x) for p > 1/2. 1 - p is
+exact for p >= 1/2, so the mirrored target costs nothing.
 
 Guarantees instead of silent saturation: every solve checks its final CDF
 residual, relative to min(p, 1-p) (the mass actually being resolved). A
 quantile that underflows the canonical dtype returns 0.0 (the scipy
 convention); anything else that failed to converge returns nan. NaN inputs
-propagate to nan; p outside [0, 1] returns nan; a shape parameter that is
-not finite and positive returns nan for every p; the p = 0 and 1 endpoints
-return the exact distribution endpoints.
+propagate to nan; p outside [0, 1] returns nan; a shape that is not finite
+and positive returns nan for every p; the p = 0 and 1 endpoints return the
+exact distribution endpoints.
 
-betaincinv needs (a, b) inside the betainc table domain [0.1, 100].
 gammaincinv has no table domain: its Newton residual
 evaluates the chebax gammainc recipe when a is at least 0.1
 (above 10 via the Temme-zone tables; fixed-degree polynomials where
@@ -47,17 +43,15 @@ while_loop per Newton iteration) and falls back to jax's gammainc
 outside, picked by nested lax.conds on the scalar a. Inputs are
 computed in the canonical float dtype (float64 under x64), so explicit
 float32 arguments are promoted, not crashed on, and the solver constants
-follow that dtype (see _limits): float64's log-space brackets reach to
-+-708, which is meaningless in float32, where exp saturates at +-88.
+follow that dtype (see _common.solver_limits): float64's log-space
+brackets reach to +-708, which is meaningless in float32, where exp
+saturates at +-88.
 """
 
-import functools
 import math
-from collections import namedtuple
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
@@ -66,60 +60,13 @@ from chebax._src.recipes._common import (
     canon_tag,
     float_params,
     newton_bisect,
+    solver_limits,
 )
-from chebax._src.recipes.betainc import betainc_fn, eval_betainc, with_panel_series
 from chebax._src.recipes.gammainc import _eval_logs as _gi_logs
 from chebax._src.recipes.gammainc import _traced_series as _gi_series
 from chebax._src.recipes.gammainc import eval_gammainc
 
 _LN_SMALL = math.log(0.01)  # below this the lower-tail asymptotic beats WH
-
-_Limits = namedtuple("_Limits", "lo hi v_hi n_beta n_gamma rtol")
-
-
-@functools.lru_cache(maxsize=4)
-def _limits(_tag):
-    """Solver constants for the canonical float dtype, keyed per x64 mode.
-
-    The log-space bracket is that dtype's own NORMAL exponent range. Below
-    log(tiny) exp and sigmoid both flush to zero, so nothing there is
-    reachable, and putting the floor at the last reachable point is what
-    makes the sign of the residual there decide "root below the floor"
-    instead of always reading as "not reached yet". float64's 709 ceiling
-    falls out of the same rule; its old -745 floor sat 37 e-folds inside
-    the flushed region, and both were 700 decades outside float32's range,
-    which left every float32 solve unbracketed. The ends are ln(tiny) and
-    ln(max) themselves, moved 4 ulps inward so XLA's exp stays normal and
-    finite there: rounding them to whole e-folds (-708, 709) put roots
-    in [tiny, e^-708] out of reach. Iteration counts and the residual bar
-    are measured per dtype (tests/test_quantiles.py)."""
-    dt = np.dtype(_tag).type
-    f = np.finfo(dt)
-
-    def inward(v):
-        v = dt(v)
-        for _ in range(4):
-            v = np.nextafter(v, dt(0))
-        return float(v)
-
-    lo = inward(math.log(float(f.tiny)))
-    wide = dt == np.float64
-    return _Limits(
-        lo,
-        -lo,
-        inward(math.log(float(f.max))),
-        64 if wide else 48,
-        40 if wide else 24,
-        1e-6 if wide else 1e-3,
-    )
-
-
-def _ln_beta(a, b):
-    return (
-        jax.scipy.special.gammaln(a)
-        + jax.scipy.special.gammaln(b)
-        - jax.scipy.special.gammaln(a + b)
-    )
 
 
 def _dPda_recipe(a, x):
@@ -191,96 +138,6 @@ def _dPda_dispatch(a, x):
             in_large, lambda: _dPda_recipe_large(a, x), lambda: _dPda(a, x)
         ),
     )
-
-
-def _betaincinv_core(a, b, p, cab, cba):
-    """The betaincinv solve, series-agnostic: cab/cba are the x-series of
-    the betainc kernel at (a, b) and (b, a), from the 3-D tensor (public
-    betaincinv) or the stdtr slice tables (stdtrit). Not differentiable
-    on its own; callers wrap it in a custom_jvp."""
-    lim = _limits(canon_tag())
-    interior = (p > 0.0) & (p < 1.0)
-    pc = jnp.where(interior, p, 0.5)
-    ln_b = _ln_beta(a, b)
-
-    # Solve every element as a LOWER-tail problem of the mirrored orientation
-    # (1 - p is exact for p >= 1/2), in logit space so tail quantiles resolve
-    # down to the dtype's floor; df/du = pdf * x * (1-x) is a stable exp.
-    swap = pc > 0.5
-    ps2 = jnp.where(swap, 1.0 - pc, pc)
-    aa = jnp.where(swap, b, a)
-
-    def f_and_df(u):
-        x = jax.nn.sigmoid(u)
-        f = (
-            jnp.where(
-                swap, eval_betainc(b, a, x, cba, cab), eval_betainc(a, b, x, cab, cba)
-            )
-            - ps2
-        )
-        ls, l1s = -jax.nn.softplus(-u), -jax.nn.softplus(u)
-        dfdu = jnp.exp(jnp.where(swap, b, a) * ls + jnp.where(swap, a, b) * l1s - ln_b)
-        return f, dfdu
-
-    # Initialization: the generic start converges at ~1/a additive steps in
-    # u, which cannot reach deep tails in a fixed count (measured: a = 1,
-    # p = 1e-50 stalled at e^-64). In the tail the exact leading asymptotic
-    # I_x(a,b) = x^a / (a B(a,b)) (1 + O(x)) inverts to a start within
-    # O(x) relatively, and Newton converges quadratically from there.
-    u_generic = jnp.where(swap, jnp.log(b / a), jnp.log(a / b)) + jnp.zeros_like(pc)
-    u_asym = (jnp.log(ps2) + jnp.log(aa) + ln_b) / aa
-    u0 = jnp.clip(jnp.where(ps2 < 0.01, u_asym, u_generic), lim.lo, lim.hi)
-    u = newton_bisect(
-        f_and_df, u0, jnp.full_like(pc, lim.lo), jnp.full_like(pc, lim.hi), lim.n_beta
-    )
-
-    # Convergence is checked, never assumed. A root at or below the bracket
-    # floor underflows the dtype: return the mirrored endpoint. That is
-    # read off the residual AT the floor, which is the smallest normal x;
-    # a half-unit band above it in u zeroed normal quantiles, as in
-    # betaincinv(1, 1, 4e-308) (review, 2026-10-26). Any other unconverged
-    # element returns nan. The bar stays relative to the mass being
-    # resolved: past the kernel's x = 1/2 split I comes back as
-    # 1 - (the reflected orientation) and is only absolutely accurate, so
-    # a target far below that absolute error is genuinely unresolvable and
-    # nan is the answer (float32 hits this through stdtrit at large nu).
-    f_fin, _ = f_and_df(u)
-    f_lo, _ = f_and_df(jnp.full_like(u, lim.lo))
-    at_floor = f_lo > 0.0
-    x_low = jnp.where(at_floor, 0.0, jax.nn.sigmoid(u))
-    bad = ~at_floor & (jnp.abs(f_fin) > lim.rtol * ps2)
-    x = jnp.where(swap, 1.0 - x_low, x_low)
-    x = jnp.where(bad, jnp.nan, x)
-    x = jnp.where(p <= 0.0, 0.0, jnp.where(p >= 1.0, 1.0, x))
-    oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(a) | jnp.isnan(b)
-    return jnp.where(oob, jnp.nan, x)
-
-
-@jax.custom_jvp
-def _betaincinv_cj(a, b, p):
-    """Inverse of betainc in x: the Beta(a, b) quantile function.
-
-    a, b are (traceable) scalars in [0.1, 100], uniform per call; p any
-    shape (the wide panels of increment 23 dispatch by one lax.switch).
-    Quantiles below the smallest normal float of the canonical dtype return
-    0.0 (and, mirrored, quantiles within eps of 1 return 1.0, the
-    scipy-shared representation limit; use betaincinv(b, a, 1-p) for the
-    distance from 1). A solve that fails its CDF-residual check returns nan
-    instead of a wrong value."""
-    return with_panel_series(a, b, lambda cab, cba: _betaincinv_core(a, b, p, cab, cba))
-
-
-@_betaincinv_cj.defjvp
-def _betaincinv_jvp(primals, tangents):
-    a, b, p = primals
-    da, db, dp = tangents
-    x = _betaincinv_cj(a, b, p)
-    interior = (x > 0.0) & (x < 1.0)
-    xs = jnp.where(interior, x, 0.5)
-    pdf = jnp.exp((a - 1) * jnp.log(xs) + (b - 1) * jnp.log1p(-xs) - _ln_beta(a, b))
-    _, d_cdf = jax.jvp(lambda aa, bb: betainc_fn(aa, bb, xs), (a, b), (da, db))
-    dx = (dp - d_cdf) / pdf
-    return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 
 
 def _gamma_log_density(a, x):
@@ -409,7 +266,7 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
         x, rel, _ = _huge_solve(a, ltp, ltq, z, upper)
         none = jnp.zeros(x.shape, bool)
         return x, rel, none, (x == jnp.inf) if ceiling else none
-    lim = _limits(canon_tag())
+    lim = solver_limits(canon_tag())
     lga = jax.scipy.special.gammaln(a)
     if use_recipe == "small":
         lser, ltail = _gi_series(a)
@@ -570,12 +427,12 @@ def _gammaincinv_cj(a, p):
     needs d2P/da2, which is unavailable and raises with a clear message.
     Above a = 1e10 first derivatives come from the implicit rule in
     Temme's variable and higher ones differentiate its fixed iteration."""
-    lim = _limits(canon_tag())
+    lim = solver_limits(canon_tag())
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
 
     # the root's place against the floor comes from the residual's sign
-    # there, not a band in v (see _betaincinv_core)
+    # there, not a band in v (see betainc_kernel.betaincinv_core)
     x, rel, at_floor, _ = _dispatch_solve(_gammaincinv_solve, a, pc)
     x = jnp.where(at_floor, 0.0, x)
     x = jnp.where(~at_floor & (rel > lim.rtol), jnp.nan, x)
@@ -634,7 +491,7 @@ def _gammainccinv_cj(a, y):
     a is a (traceable) scalar, uniform per call; y any shape. Derivatives
     in both arguments, from the same implicit-function rule as
     gammaincinv's with dQ/dx = -pdf and dQ/da = -dP/da."""
-    lim = _limits(canon_tag())
+    lim = solver_limits(canon_tag())
     interior = (y > 0.0) & (y < 1.0)
     yc = jnp.where(interior, y, 0.5)
 
@@ -683,7 +540,6 @@ _gammainccinv_cj.defjvp(_gammainccinv_jvp, symbolic_zeros=True)
 # above and float_params normalizes every argument first, so an integer,
 # keyword or size-one parameter is a float scalar before any tangent
 # exists (see its docstring).
-betaincinv = float_params(_betaincinv_cj)
 gammaincinv = float_params(_gammaincinv_cj)
 gammainccinv = float_params(_gammainccinv_cj)
 

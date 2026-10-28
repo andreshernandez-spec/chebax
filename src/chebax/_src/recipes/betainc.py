@@ -31,8 +31,9 @@ Endpoints are handled by hard selects (I(0) = 0, I(1) = 1 exactly, interior
 lanes see raw x); gradients at exactly 0 and 1 are masked to the interior
 formula's limits and can be infinite in exact math anyway (a < 1 or b < 1).
 
-eval_betainc and tensor_coefs_traced are internal-but-shared: the quantile
-toolkit builds betaincinv on them.
+This module owns the tables. The kernel that runs on them (evaluation from
+x-series, the inverse solve) is in betainc_kernel.py, shared with
+betaincinv and stdtr, which have tables of their own.
 """
 
 import functools
@@ -47,6 +48,7 @@ from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import betainc_wide_table as _bw
 from chebax._src.recipes._common import canon_param, canon_tag, check_range, edge_slope
+from chebax._src.recipes.betainc_kernel import eval_betainc, log_direct
 from chebax._src.series import ChebSeries, _chebval
 
 # panel registry: (a-high?, b-high?) -> (tensor, a-box, b-box). The
@@ -132,29 +134,6 @@ def with_panel_series(a, b, make):
 
     idx = (a > _bw.ASPLIT).astype(jnp.int32) * 2 + (b > _bw.ASPLIT).astype(jnp.int32)
     return jax.lax.switch(idx, [branch(0, 0), branch(0, 1), branch(1, 0), branch(1, 1)])
-
-
-def _log_direct(a, b, x, lser):
-    """ln I_x(a,b) for x in (0, 1/2], from the direct series."""
-    lnB = (
-        jax.scipy.special.gammaln(a)
-        + jax.scipy.special.gammaln(b)
-        - jax.scipy.special.gammaln(a + b)
-    )
-    return a * jnp.log(x) + b * jnp.log1p(-x) - jnp.log(a) - lnB + lser(x)
-
-
-def eval_betainc(a, b, x, cab, cba):
-    x = jnp.asarray(x)
-    interior = (x > 0.0) & (x < 1.0)
-    xi = jnp.where(interior, x, 0.25)  # masked lanes get a safe dummy
-    xd = jnp.where(xi <= _bt.XSPLIT, xi, 0.25)
-    yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)  # exact for x in [1/2, 1]
-    direct = jnp.exp(_log_direct(a, b, xd, cab))
-    reflected = 1.0 - jnp.exp(_log_direct(b, a, yd, cba))
-    core = jnp.where(xi <= _bt.XSPLIT, direct, reflected)
-    out = jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
 def with_edge_slopes(a, b, x, out):
@@ -244,8 +223,8 @@ def _log_eval(a, b, x, cab, cba):
     xi = jnp.where(interior, x, 0.25)
     xd = jnp.where(xi <= _bt.XSPLIT, xi, 0.25)
     yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)
-    direct = _log_direct(a, b, xd, cab)
-    refl = jnp.log1p(-jnp.exp(_log_direct(b, a, yd, cba)))
+    direct = log_direct(a, b, xd, cab)
+    refl = jnp.log1p(-jnp.exp(log_direct(b, a, yd, cba)))
     core = jnp.where(xi <= _bt.XSPLIT, direct, refl)
     out = jnp.where(x <= 0.0, -jnp.inf, jnp.where(x >= 1.0, 0.0, core))
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)

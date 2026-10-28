@@ -2,21 +2,21 @@ jax 0.11.0 on cuda:0, N = 1048576, reps = 15 (medians), 40 Newton iterations per
 
 case                        jax-resid    recipe  ratio  max rel diff (x)
 ------------------------------------------------------------------------
-a=0.5,  p~U(1e-6,1-..)      4693.97ms  122.83ms  38.2x  1.8e-12
-a=3.5,  p~U(1e-6,1-..)      1717.18ms  123.15ms  13.9x  1.1e-14
-a=9.9,  p~U(1e-6,1-..)      1263.75ms  123.07ms  10.3x  6.9e-15
-a=3.5,  p~U(1e-12,1e-2)      282.58ms  114.29ms   2.5x  2.8e-15
-a=50,   p~U(1e-6,1-..)      2319.63ms  390.90ms   5.9x  7.6e-15
-a=500,  p~U(1e-6,1-..)      5809.06ms  395.37ms  14.7x  2.8e-14
-a=500,  p~U(1e-12,1e-2)     1991.35ms  375.72ms   5.3x  8.9e-15
+a=0.5,  p~U(1e-6,1-..)      4634.70ms  123.01ms  37.7x  1.8e-12
+a=3.5,  p~U(1e-6,1-..)      1727.56ms  123.10ms  14.0x  1.1e-14
+a=9.9,  p~U(1e-6,1-..)      1273.79ms  123.25ms  10.3x  6.9e-15
+a=3.5,  p~U(1e-12,1e-2)      284.31ms  114.20ms   2.5x  2.8e-15
+a=50,   p~U(1e-6,1-..)      2308.70ms  391.03ms   5.9x  7.6e-15
+a=500,  p~U(1e-6,1-..)      5774.17ms  395.09ms  14.6x  2.8e-14
+a=500,  p~U(1e-12,1e-2)     1974.26ms  373.32ms   5.3x  8.9e-15
 
 dP/da term                 igamma_grad_a    recipe  ratio  max|diff|
 --------------------------------------------------------------------
-a=  0.5, x~Gamma(a)               77.85ms    4.99ms  15.6x  1.7e-14
-a=  3.5, x~Gamma(a)               26.83ms    5.03ms   5.3x  4.2e-15
-a=  9.9, x~Gamma(a)               20.28ms    5.06ms   4.0x  1.1e-15
-a= 50.0, x~Gamma(a)               36.07ms    7.21ms   5.0x  1.0e-14
-a=500.0, x~Gamma(a)               89.54ms    7.36ms  12.2x  1.3e-14
+a=  0.5, x~Gamma(a)               78.22ms    4.92ms  15.9x  1.7e-14
+a=  3.5, x~Gamma(a)               26.73ms    4.99ms   5.4x  4.2e-15
+a=  9.9, x~Gamma(a)               20.10ms    4.95ms   4.1x  1.1e-15
+a= 50.0, x~Gamma(a)               36.42ms    7.21ms   5.1x  1.0e-14
+a=500.0, x~Gamma(a)               89.97ms    7.24ms  12.4x  1.3e-14
 
 Both columns run the SAME solver; only the residual CDF differs.
 chebax.gammaincinv end-to-end takes the recipe column for every

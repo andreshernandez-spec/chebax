@@ -103,3 +103,19 @@ def test_shared_helpers_import_no_family():
     assert not fam, fam
     mods = _imports(SRC / "_src" / "pergroup.py")
     assert not {m for m in mods if m.startswith("chebax")}, mods
+
+
+def test_kernels_import_no_table():
+    # a family's table-free kernel is what other families run on their own
+    # tables (stdtr on betainc's); importing a table here would load it for
+    # every one of them
+    kernels = sorted((SRC / "_src" / "recipes").glob("*_kernel.py"))
+    assert kernels
+    for path in kernels:
+        rec = {
+            m
+            for m in _imports(path)
+            if m.startswith("chebax._src.recipes.")
+            and not m.startswith("chebax._src.recipes._common")
+        }
+        assert not rec, (_rel(path), rec)

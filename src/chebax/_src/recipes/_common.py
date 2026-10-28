@@ -1,5 +1,6 @@
 """Shared runtime machinery for recipes: parameter-table reconstruction,
-domain checks, the safeguarded root solver, and a float64 digamma.
+domain checks, the safeguarded root solver and its per-dtype constants,
+and a float64 digamma.
 
 Reconstruction convention (matches _gen_common's emitted axis note): for a
 2-D table, TABLE[k, j] is the j-th parameter-direction coefficient of the
@@ -12,6 +13,7 @@ variants (differentiable in the parameter through the series custom_jvp).
 import functools
 import inspect
 import math
+from collections import namedtuple
 
 import numpy as np
 
@@ -167,6 +169,47 @@ def newton_bisect(f_and_df, x0, lo0, hi0, iters):
 
     x, _, _ = jax.lax.fori_loop(0, iters, step, (x0, lo0, hi0))
     return x
+
+
+Limits = namedtuple("Limits", "lo hi v_hi n_beta n_gamma rtol")
+
+
+@functools.lru_cache(maxsize=4)
+def solver_limits(_tag):
+    """Solver constants for the canonical float dtype, keyed per x64 mode.
+
+    The log-space bracket is that dtype's own NORMAL exponent range. Below
+    log(tiny) exp and sigmoid both flush to zero, so nothing there is
+    reachable, and putting the floor at the last reachable point is what
+    makes the sign of the residual there decide "root below the floor"
+    instead of always reading as "not reached yet". float64's 709 ceiling
+    falls out of the same rule; its old -745 floor sat 37 e-folds inside
+    the flushed region, and both were 700 decades outside float32's range,
+    which left every float32 solve unbracketed. The ends are ln(tiny) and
+    ln(max) themselves, moved 4 ulps inward so XLA's exp stays normal and
+    finite there: rounding them to whole e-folds (-708, 709) put roots
+    in [tiny, e^-708] out of reach. Iteration counts and the residual bar
+    are measured per dtype (tests/test_quantiles.py); the beta and gamma
+    inverses share them."""
+    dt = np.dtype(_tag).type
+    f = np.finfo(dt)
+
+    def inward(v):
+        v = dt(v)
+        for _ in range(4):
+            v = np.nextafter(v, dt(0))
+        return float(v)
+
+    lo = inward(math.log(float(f.tiny)))
+    wide = dt == np.float64
+    return Limits(
+        lo,
+        -lo,
+        inward(math.log(float(f.max))),
+        64 if wide else 48,
+        40 if wide else 24,
+        1e-6 if wide else 1e-3,
+    )
 
 
 def digamma64(z):

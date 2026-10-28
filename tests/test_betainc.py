@@ -63,6 +63,16 @@ def test_values_and_traced():
         assert np.max(np.abs(gott - ref)) <= 2e-14, (a, b)
 
 
+def test_kernel_split_matches_every_table():
+    # betainc_kernel evaluates at its own XSPLIT so stdtr can run on it
+    # without loading this family's tables; every table of the kernel must
+    # be fitted on (0, XSPLIT]
+    from chebax._src.recipes import betainc_kernel, betainc_wide_table, stdtr_table
+
+    tables = (bt, betainc_wide_table, stdtr_table)
+    assert {t.XSPLIT for t in tables} == {betainc_kernel.XSPLIT} == {0.5}
+
+
 def test_endpoints_exact():
     f = chebax.betainc(2.5, 0.7)
     assert float(f(0.0)) == 0.0

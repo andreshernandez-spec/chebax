@@ -15,22 +15,15 @@ integrations, and the constraint objects now all consume this module.
 `hi` is math.inf where a family has no upper end (gammainc's Temme-zone
 tables run to a = inf). `contains` is written for concrete floats: the
 runtime checks are elsewhere and stay traceable.
+
+Each one is built on first access (a module __getattr__, PEP 562) and
+imports its own table and no other, so a program that uses one family
+never loads the rest; betainc's alone are 15 MB of source.
 """
 
 import math
 from collections import namedtuple
-
-from chebax._src.recipes import besseli_table as _it
-from chebax._src.recipes import besselj_table as _jt
-from chebax._src.recipes import besselk_table as _kt
-from chebax._src.recipes import bessely_table as _yt
-from chebax._src.recipes import betainc_wide_table as _bw
-from chebax._src.recipes import gammainc_large_table as _glt
-from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes import hyp1f1_table as _ht
-from chebax._src.recipes import stdtr_table as _st
-from chebax._src.recipes import tweedie_table as _tw
-from chebax._src.recipes import vonmises_table as _vt
+from typing import TYPE_CHECKING
 
 __all__ = [
     "Domain",
@@ -61,18 +54,113 @@ class Domain(namedtuple("Domain", "lo hi what")):
         return f"[{self.lo:g}, {hi}]"
 
 
-BETAINC = Domain(_bw.ALO, _bw.AHI, "betainc a and b")
-# the Temme-zone tables run in v = ASPLIT / a down to VLO, and VLO = 0
-# is a = inf
-GAMMAINC = Domain(
-    _gt.ALO, math.inf if _glt.VLO == 0.0 else _glt.ASPLIT / _glt.VLO, "gammainc a"
-)
-HYP1F1 = Domain(_ht.ALO, _ht.AHI, "hyp1f1 a and b")
-STUDENT_T_DF = Domain(2.0 * _st.BLO, 2.0 * _st.BHI, "Student-t df")
-TWEEDIE_P = Domain(_tw.P_LO, _tw.P_HI, "Tweedie power p")
-WRIGHT_RHO = Domain(_tw.RHO_MIN, _tw.RHO_MAX, "log_wright_bessel0 rho")
-VONMISES_KAPPA = Domain(0.0, _vt.KMAX, "von Mises kappa")
-BESSELI = Domain(0.0, _it.VMAX, "besseli order")
-BESSELJ = Domain(0.0, _jt.VMAX, "besselj order")
-BESSELK = Domain(0.0, _kt.VMAX, "besselk order")
-BESSELY = Domain(0.0, _yt.VMAX, "bessely order")
+def _betainc():
+    from chebax._src.recipes import betainc_wide_table as t
+
+    return Domain(t.ALO, t.AHI, "betainc a and b")
+
+
+def _gammainc():
+    from chebax._src.recipes import gammainc_large_table as glt
+    from chebax._src.recipes import gammainc_table as gt
+
+    # the Temme-zone tables run in v = ASPLIT / a down to VLO, and VLO = 0
+    # is a = inf
+    hi = math.inf if glt.VLO == 0.0 else glt.ASPLIT / glt.VLO
+    return Domain(gt.ALO, hi, "gammainc a")
+
+
+def _hyp1f1():
+    from chebax._src.recipes import hyp1f1_table as t
+
+    return Domain(t.ALO, t.AHI, "hyp1f1 a and b")
+
+
+def _student_t_df():
+    from chebax._src.recipes import stdtr_table as t
+
+    return Domain(2.0 * t.BLO, 2.0 * t.BHI, "Student-t df")
+
+
+def _tweedie_p():
+    from chebax._src.recipes import tweedie_table as t
+
+    return Domain(t.P_LO, t.P_HI, "Tweedie power p")
+
+
+def _wright_rho():
+    from chebax._src.recipes import tweedie_table as t
+
+    return Domain(t.RHO_MIN, t.RHO_MAX, "log_wright_bessel0 rho")
+
+
+def _vonmises_kappa():
+    from chebax._src.recipes import vonmises_table as t
+
+    return Domain(0.0, t.KMAX, "von Mises kappa")
+
+
+def _besseli():
+    from chebax._src.recipes import besseli_table as t
+
+    return Domain(0.0, t.VMAX, "besseli order")
+
+
+def _besselj():
+    from chebax._src.recipes import besselj_table as t
+
+    return Domain(0.0, t.VMAX, "besselj order")
+
+
+def _besselk():
+    from chebax._src.recipes import besselk_table as t
+
+    return Domain(0.0, t.VMAX, "besselk order")
+
+
+def _bessely():
+    from chebax._src.recipes import bessely_table as t
+
+    return Domain(0.0, t.VMAX, "bessely order")
+
+
+_BUILD = {
+    "BETAINC": _betainc,
+    "GAMMAINC": _gammainc,
+    "HYP1F1": _hyp1f1,
+    "STUDENT_T_DF": _student_t_df,
+    "TWEEDIE_P": _tweedie_p,
+    "WRIGHT_RHO": _wright_rho,
+    "VONMISES_KAPPA": _vonmises_kappa,
+    "BESSELI": _besseli,
+    "BESSELJ": _besselj,
+    "BESSELK": _besselk,
+    "BESSELY": _bessely,
+}
+
+
+def __getattr__(name):
+    build = _BUILD.get(name)
+    if build is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    # cached as a plain global, so __getattr__ runs once per name
+    value = globals()[name] = build()
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_BUILD))
+
+
+if TYPE_CHECKING:
+    BESSELI: Domain
+    BESSELJ: Domain
+    BESSELK: Domain
+    BESSELY: Domain
+    BETAINC: Domain
+    GAMMAINC: Domain
+    HYP1F1: Domain
+    STUDENT_T_DF: Domain
+    TWEEDIE_P: Domain
+    VONMISES_KAPPA: Domain
+    WRIGHT_RHO: Domain

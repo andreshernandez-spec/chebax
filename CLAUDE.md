@@ -134,6 +134,22 @@ device-independent. Run the suite on the CPU anyway: it is bound by XLA
 compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
 (measured 2026-10-26).
 
+## Releasing
+
+1. A PR sets `version` in `pyproject.toml`, the one place it is written
+   (`chebax.__version__` reads the installed metadata).
+2. Before tagging: the tests run on main is green for the merge commit, and
+   so is the full regeneration CI skips, `CHEBAX_FULL_REGEN=1 python -m pytest
+   -m slow tests/test_betainc.py tests/test_hyp1f1.py` (~35 min).
+3. `git tag -a vX.Y.Z <merge commit>` and push the tag; that push is the
+   release, so it is Andres's. `.github/workflows/release.yml` checks the tag
+   against the version and the tests run, builds, checks what the sdist and
+   wheel hold, installs the wheel in a clean venv, and publishes through PyPI
+   trusted publishing (workflow `release.yml`, environment `pypi`, no token
+   anywhere). A PyPI version can never be reused: a broken upload is a new
+   patch version.
+4. The GitHub release notes go on the tag; they are drafted in `drafts/`.
+
 ## Layout
 
 ```

@@ -33,7 +33,7 @@ behind both constants and the reason the split is in Z):
 
 The f64 floor is lgamma's rounding in the direct sum: lgamma(rho n) reaches
 ~4000 near the split at p = 1.05, and eps |lgamma| survives into ln f
-(2.4e-13 measured there). ln W elsewhere sits at ~1e-15.
+(1.1e-12 measured just below the split). ln W elsewhere sits at ~1e-15.
 
 Each branch sees the raw arguments in its own region and 1.0 elsewhere, so
 neither poisons the other's gradient. p is traceable
@@ -141,6 +141,13 @@ _NEAR = 0.25
 _N_NEAR = 26
 
 
+def _deviance_lanes(mu, y):
+    """|y/mu - 1| <= _NEAR, and |ln(y/mu)| <= 1 otherwise, without y/mu."""
+    near = jnp.abs(y - mu) <= _NEAR * mu
+    mid = ~near & (y <= math.e * mu) & (math.e * y >= mu)
+    return near, mid
+
+
 def _half_deviance_impl(a, mu, y):
     """d(y, mu)/2 for power p = 2 - a, a in (0, 1), y > 0, mu > 0.
 
@@ -153,23 +160,29 @@ def _half_deviance_impl(a, mu, y):
     (p, mu, phi, y) = (1.5, 1e6, 1e-12, 1e6 + 1/8) gave 2.53 for a log
     density of -5.28 (review, 2026-10-26).
 
-    Away from it, y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, which
-    never forms y/mu: that ratio overflowed at y = 1e10, mu = 1e-300 under
-    a finite density. Its cancellation costs eps a |delta| relative to Z,
-    the same as one ulp of y."""
-    near = jnp.abs(y - mu) <= _NEAR * mu
-    d = (jnp.where(near, y, mu) - mu) / mu
+    Up to |ln(y/mu)| = 1, mu^a (expm1(a x) - a delta) / (a (a-1)) with
+    x = log1p(delta), which cancels only first-order terms: about
+    9 eps / (1 - a) at |delta| = 1/4.
+
+    Beyond, y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, which never
+    forms y/mu: that ratio overflowed at y = 1e10, mu = 1e-300 under a
+    finite density. Its terms are O(mu^a / (a (1-a))) and cancel to
+    O(delta^2): 32 eps / (a (1-a)) at |delta| = 1/4, 670 eps at the box
+    edges, but ~50 eps past |ln(y/mu)| = 1."""
+    near, mid = _deviance_lanes(mu, y)
+    d = (jnp.where(near | mid, y, mu) - mu) / mu
+    dn = jnp.where(near, d, 0.0)
     c = [0.5]
     for k in range(2, _N_NEAR + 1):
         c.append(c[-1] * (a - k) / (k + 1.0))
     acc = c[-1]
     for ck in c[-2::-1]:
-        acc = acc * d + ck
-    series = jnp.power(mu, a) * d * d * acc
-    far = (jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0) + jnp.power(
-        mu, a
-    ) / a
-    return jnp.where(near, series, far)
+        acc = acc * dn + ck
+    ma = jnp.power(mu, a)
+    series = ma * dn * dn * acc
+    mid_form = ma * (jnp.expm1(a * jnp.log1p(d)) - a * d) / (a * (a - 1.0))
+    far = (jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0) + ma / a
+    return jnp.where(near, series, jnp.where(mid, mid_form, far))
 
 
 @jax.custom_jvp
@@ -180,21 +193,21 @@ def _half_deviance(a, mu, y):
 @_half_deviance.defjvp
 def _half_deviance_jvp(primals, tangents):
     """The mu and y partials in closed form, -mu^(a-1) delta and
-    (y^(a-1) - mu^(a-1))/(a-1), the latter through expm1 near the mean.
-    AD of the forms above squares mu, in mu^(a-2) and in delta's own
-    derivative, and that overflowed at mu = 1e-220: the mean gradient at
-    y = mu, exactly 0, came out 0 * inf (review follow-up, 2026-10-26).
-    The a partial is AD of the value with mu and y held."""
+    (y^(a-1) - mu^(a-1))/(a-1), the latter through expm1 up to
+    |ln(y/mu)| = 1. AD of the forms above squares mu, in mu^(a-2) and in
+    delta's own derivative, and that overflowed at mu = 1e-220: the mean
+    gradient at y = mu, exactly 0, came out 0 * inf (review follow-up,
+    2026-10-26). The a partial is AD of the value with mu and y held."""
     a, mu, y = primals
     da, dmu, dy = tangents
     h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
-    near = jnp.abs(y - mu) <= _NEAR * mu
+    near, mid = _deviance_lanes(mu, y)
     delta = (y - mu) / mu
     m1 = jnp.power(mu, a - 1.0)
     h_mu = -m1 * delta
-    lr = jnp.log1p(jnp.where(near, delta, 0.0))
+    lr = jnp.log1p(jnp.where(near | mid, delta, 0.0))
     h_y = jnp.where(
-        near, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
+        near | mid, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
     ) / (a - 1.0)
     return h, h_a + h_mu * dmu + h_y * dy
 

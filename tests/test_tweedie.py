@@ -30,11 +30,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax.test_util import check_grads
 
 import chebax
 from chebax._src.recipes import tweedie_gen
 from chebax._src.recipes import tweedie_table as tt
-from chebax._src.recipes.tweedie import _log_series, _split
+from chebax._src.recipes.tweedie import _half_deviance, _log_series, _over, _split
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
@@ -251,6 +252,19 @@ def test_tweedie_gradients(arg, bar):
         )
         worst = max(worst, _rel(got, ref))
     assert worst <= bar, worst
+
+
+def test_deviance_partials_match_finite_differences():
+    # the mu and y partials of the half-deviance are written by hand, and so
+    # is _over's in phi: each against central differences to second order,
+    # in each of the deviance's forms (near, mid and far, both sides)
+    hd, over = jax.jit(_half_deviance), jax.jit(_over)
+    for a in (0.05, 0.5, 0.95):
+        for y in (2.3, 1.6, 4.5, 0.9, 30.0, 0.1):
+            args = tuple(map(jnp.asarray, (a, 2.0, y)))
+            check_grads(hd, args, order=2, modes=("fwd", "rev"))
+    for h, phi in ((0.0, 0.3), (2.5, 0.05), (-1.0, 40.0)):
+        check_grads(over, tuple(map(jnp.asarray, (h, phi))), order=2)
 
 
 def test_tweedie_normalizes_with_its_moments():

@@ -74,6 +74,13 @@ from the latest review are in `docs/review-2026-10-26.md`.
   extra. If a runtime module imports mpmath, that is a bug.
 - **Coefficient conventions follow `numpy.polynomial`** (plain c0, lowest-first,
   domain mapped affinely to [-1,1]). No private conventions.
+- **chebtorch ports chebax** (`../chebtorch`, andreshernandez-spec/chebtorch;
+  Tweedie so far). What a function computes is decided here: tables, regions
+  and splits, formulas, references, test points. chebtorch exports the tables
+  and ports the code, so a change to a ported family's numerics lands here
+  first and is ported after. What chebtorch had to do first is listed in its
+  `docs/divergences.md` until a PR here takes it, with the test points that
+  found it and the floors measured again.
 - **Don't re-derive the bessel evidence.** Degree tables, roofline, seam behavior,
   dead ends: measured in `../bessel/`, linked from `PROJECT.md` §2. Re-run their
   scripts if staleness is suspected; don't rebuild them here.

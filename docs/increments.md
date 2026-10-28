@@ -895,3 +895,13 @@ to 5.3e-6 and d/dp from 4.8e-5 to 2.7e-5, but the density stays at 5.6e-6:
 XLA's float32 lgamma dominates it (chebtorch, on torch's lgamma, reaches
 1.5e-6). The deviance's hand-written partials in mu and y, and _over's in
 phi, are checked against finite differences in each form.
+
+The middle form as first taken from chebtorch used x = log1p(delta), and XLA's
+float64 log1p is up to 128 ulp off for delta in (-0.63, -0.25) (jax 0.11 on
+CPU; torch's and numpy's are within an ulp): the form was 1.5e-12 off at
+a = 0.95 below the mean, against 8.9e-14 for the three-term form it replaced,
+and the density 1.0e-12 against 3.7e-13 there at p = 1.05. The density tests
+did not move, since their worst is the direct sum's, below the split. Below
+the mean it is log(y/mu) now (the ratio is within [1/e, 3/4]): 7.6e-14, and
+3.9e-13 for that density. A test of the half-deviance and its y-partial
+against mpmath in each form catches it directly.

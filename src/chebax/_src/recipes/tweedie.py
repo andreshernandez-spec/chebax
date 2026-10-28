@@ -148,6 +148,17 @@ def _deviance_lanes(mu, y):
     return near, mid
 
 
+def _log_ratio(near, mid, mu, y):
+    """ln(y/mu) in the near and mid lanes, 0 elsewhere: log1p(delta), but
+    log(y/mu) in the mid lanes below the mean, where the ratio is within
+    [1/e, 3/4]. There XLA's float64 log1p is up to 128 ulp off (delta in
+    (-0.63, -0.25), jax 0.11 on CPU) and log is within an ulp; elsewhere
+    log1p is, and delta has one rounding fewer than y/mu's log."""
+    low = mid & (y < mu)
+    d = (jnp.where((near | mid) & ~low, y, mu) - mu) / mu
+    return jnp.where(low, jnp.log(jnp.where(low, y, mu) / mu), jnp.log1p(d))
+
+
 def _half_deviance_impl(a, mu, y):
     """d(y, mu)/2 for power p = 2 - a, a in (0, 1), y > 0, mu > 0.
 
@@ -161,7 +172,7 @@ def _half_deviance_impl(a, mu, y):
     density of -5.28 (review, 2026-10-26).
 
     Up to |ln(y/mu)| = 1, mu^a (expm1(a x) - a delta) / (a (a-1)) with
-    x = log1p(delta), which cancels only first-order terms: about
+    x = ln(y/mu), which cancels only first-order terms: about
     9 eps / (1 - a) at |delta| = 1/4.
 
     Beyond, y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, which never
@@ -180,7 +191,8 @@ def _half_deviance_impl(a, mu, y):
         acc = acc * dn + ck
     ma = jnp.power(mu, a)
     series = ma * dn * dn * acc
-    mid_form = ma * (jnp.expm1(a * jnp.log1p(d)) - a * d) / (a * (a - 1.0))
+    x = _log_ratio(near, mid, mu, y)
+    mid_form = ma * (jnp.expm1(a * x) - a * d) / (a * (a - 1.0))
     far = (jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0) + ma / a
     return jnp.where(near, series, jnp.where(mid, mid_form, far))
 
@@ -205,7 +217,7 @@ def _half_deviance_jvp(primals, tangents):
     delta = (y - mu) / mu
     m1 = jnp.power(mu, a - 1.0)
     h_mu = -m1 * delta
-    lr = jnp.log1p(jnp.where(near | mid, delta, 0.0))
+    lr = _log_ratio(near, mid, mu, y)
     h_y = jnp.where(
         near | mid, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
     ) / (a - 1.0)

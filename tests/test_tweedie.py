@@ -395,6 +395,42 @@ def test_tweedie_below_the_split_x64_off(tmp_path):
         assert (worst <= bars).all(), (lo, hi, worst)
 
 
+def test_half_deviance_against_mpmath():
+    # d/2 and its y-partial in each form, relative error. The density's
+    # tests cannot see a form's error under the direct sum's: XLA's float64
+    # log1p, up to 128 ulp off below the mean, put 1.5e-12 into the mid form
+    # at a = 0.95 and no density test moved. Measured worst (value,
+    # y-partial): near 4.0e-16, 9.0e-16; mid 7.6e-14 (a = 0.95), 9.7e-16;
+    # far 1.3e-14, 2.7e-15.
+    val = jax.jit(jax.vmap(_half_deviance, in_axes=(None, 0, 0)))
+    grad = jax.jit(jax.vmap(jax.grad(_half_deviance, argnums=2), in_axes=(None, 0, 0)))
+    bars = {"near": (1.6e-15, 4e-15), "mid": (3e-13, 4e-15), "far": (5e-14, 1.1e-14)}
+    worst = {lane: [0.0, 0.0] for lane in bars}
+    rng = np.random.default_rng(3)
+    for a in (0.05, 0.5, 0.95):
+        for lane, lo, hi in (
+            ("near", -0.25, 0.25),
+            ("mid", math.exp(-1) - 1, -0.25),
+            ("mid", 0.25, math.e - 1),
+            ("far", -0.999, math.exp(-1) - 1),
+            ("far", math.e - 1, 50.0),
+        ):
+            mu = np.exp(rng.uniform(-10, 10, 400))
+            y = mu * (1 + rng.uniform(lo, hi, 400))
+            h, h_y = np.asarray(val(a, mu, y)), np.asarray(grad(a, mu, y))
+            s = mp.mpf(a)
+            for m, v, hv, gv in zip(mu, y, h, h_y):
+                m, v = mp.mpf(m), mp.mpf(v)
+                d = (v - m) / m
+                ref = m**s * ((1 + d) ** s - 1 - s * d) / (s * (s - 1))
+                ref_y = (v ** (s - 1) - m ** (s - 1)) / (s - 1)
+                w = worst[lane]
+                w[0] = max(w[0], float(abs(hv - ref) / abs(ref)))
+                w[1] = max(w[1], float(abs(gv - ref_y) / abs(ref_y)))
+    for lane, (bar_h, bar_y) in bars.items():
+        assert worst[lane][0] <= bar_h and worst[lane][1] <= bar_y, (lane, worst)
+
+
 def test_deviance_partials_match_finite_differences():
     # the mu and y partials of the half-deviance are written by hand, and so
     # is _over's in phi: each against central differences to second order,

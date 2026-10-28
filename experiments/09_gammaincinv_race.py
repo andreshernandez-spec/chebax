@@ -57,7 +57,7 @@ def main():
     jax.config.update("jax_enable_x64", True)
     import jax.numpy as jnp
 
-    from chebax._src.recipes.quantiles import _gammaincinv_solve
+    from chebax._src.recipes.gammaincinv import _gammaincinv_solve
 
     dev = jax.devices()[0]
     print(f"jax {jax.__version__} on {dev}, N = {N}, reps = {REPS} (medians), "
@@ -102,7 +102,7 @@ def main():
     # the JVP's dP/da term: jax's looped igamma_grad_a series vs the
     # recipe's a-directional polynomial (the in-box dispatch added with
     # the solver rewire's follow-up)
-    from chebax._src.recipes.quantiles import (_dPda, _dPda_recipe,
+    from chebax._src.recipes.gammaincinv import (_dPda, _dPda_recipe,
                                                 _dPda_recipe_large)
 
     hdr2 = f"{'dP/da term':26s} {'igamma_grad_a':>13s} {'recipe':>9s} {'ratio':>6s}  max|diff|"

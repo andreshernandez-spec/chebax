@@ -63,7 +63,8 @@ from jax.scipy.special import betaln, gammaln
 import chebax
 from chebax import domains as _dom
 from chebax._src.recipes._common import canon_float
-from chebax._src.recipes.stdtr import _t_logpdf, log_stdtr, log_stdtr_sf
+from chebax._src.recipes.betainc_kernel import t_logpdf
+from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT", "Tweedie"]
 
@@ -447,7 +448,7 @@ class TruncatedStudentT(_Truncated):
         )
 
     def _log_density(self, value):
-        return _t_logpdf(self.df, value)
+        return t_logpdf(self.df, value)
 
     def _icdf_lower(self, p):
         return chebax.stdtrit(self.df, p)

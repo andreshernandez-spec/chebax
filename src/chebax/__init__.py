@@ -22,7 +22,8 @@ from chebax._src.recipes.gammainc import (
     log_gammaincc_fn,
 )
 from chebax._src.recipes.hyp1f1 import hyp1f1, hyp1f1_fn, log_hyp1f1_fn
-from chebax._src.recipes.quantiles import betaincinv, chi2inv, gammainccinv, gammaincinv
+from chebax._src.recipes.betaincinv import betaincinv
+from chebax._src.recipes.gammaincinv import chi2inv, gammainccinv, gammaincinv
 from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf, stdtr, stdtrit
 from chebax._src.recipes.tweedie import log_wright_bessel0, tweedie_logpdf
 from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf

@@ -12,9 +12,9 @@ function, accurate where the probability itself underflows.
 
 All four run on the 2-D slice tables of the betainc kernel at a = 1/2
 (b-panels to 100, stdtr_gen), so they cover nu in [0.2, 200] without the
-3-D tensor; stdtrit inverts through the shared beta solve in
-quantiles.py. nu is traceable and uniform per call, so jax.grad works in
-both arguments.
+3-D tensor, and load none of its tables: the kernel and the beta solve
+they share with betainc and betaincinv are in betainc_kernel.py. nu is
+traceable and uniform per call, so jax.grad works in both arguments.
 """
 
 import math
@@ -24,31 +24,15 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import stdtr_table as _st
 from chebax._src.recipes._common import float_params, traced_coefs
-from chebax._src.recipes.betainc import _log_direct as _log_betainc_direct
-from chebax._src.recipes.quantiles import _betaincinv_core, _ln_beta
+from chebax._src.recipes.betainc_kernel import (
+    betaincinv_core,
+    ln_beta,
+    log_direct,
+    t_logpdf,
+)
 from chebax._src.series import ChebSeries
 
 _LN2 = math.log(2.0)
-
-
-def _t_logpdf(nu, t):
-    # ln(1 + t^2/nu) from log|t| where t^2 would overflow (|t| ~ 1.3e154 in
-    # float64, 1.8e19 in float32), where it is 2 ln|t| - ln nu to hundreds
-    # of digits. The direct form is kept elsewhere: it is the one with the
-    # exact zero t-derivative at t = 0, which second derivatives need.
-    t2 = t * t
-    ok = jnp.isfinite(t2)
-    l1 = jnp.where(
-        ok,
-        jnp.log1p(jnp.where(ok, t2, 0.0) / nu),
-        2.0 * jnp.log(jnp.where(ok, 1.0, jnp.abs(t))) - jnp.log(nu),
-    )
-    return (
-        jax.scipy.special.gammaln(0.5 * (nu + 1.0))
-        - jax.scipy.special.gammaln(0.5 * nu)
-        - 0.5 * jnp.log(nu * jnp.pi)
-        - 0.5 * (nu + 1.0) * l1
-    )
 
 
 def _half_series(hb):
@@ -96,11 +80,11 @@ def _stdtr_parts(nu, t):
     w = jnp.where(central, tc * tc / (nu + tc * tc), 0.25)
     # I <= 1, so clamping its log at 0 is exact and keeps 1 - I_w >= 0 when
     # the evaluation error swamps it (large nu just inside the seam)
-    l_mid = jnp.minimum(_log_betainc_direct(half, hb, w, ca), 0.0)
+    l_mid = jnp.minimum(log_direct(half, hb, w, ca), 0.0)
     tt = jnp.where(central, jnp.sqrt(nu), jnp.abs(t))
     z = 2.0 * jnp.log(tt) - jnp.log(nu)
     lx, l1x = -jax.nn.softplus(z), -jax.nn.softplus(-z)
-    l_tail = hb * lx + 0.5 * l1x - jnp.log(hb) - _ln_beta(hb, half) + cb(jnp.exp(lx))
+    l_tail = hb * lx + 0.5 * l1x - jnp.log(hb) - ln_beta(hb, half) + cb(jnp.exp(lx))
     return central, l_mid, jnp.minimum(l_tail, 0.0)
 
 
@@ -141,7 +125,7 @@ def _stdtr_jvp(primals, tangents):
     F = _stdtr_impl(nu_c, t_c)
     # t-direction: the exact density (AD through the w = t^2/(nu+t^2)
     # branch hits a 0 * inf at t = 0; the density is finite there)
-    dF_dt = jnp.exp(_t_logpdf(nu_c, jnp.where(jnp.isfinite(t_c), t_c, 0.0)))
+    dF_dt = jnp.exp(t_logpdf(nu_c, jnp.where(jnp.isfinite(t_c), t_c, 0.0)))
     dF_dt = jnp.where(jnp.isfinite(t_c), dF_dt, 0.0)
     # nu-direction: AD of the implementation, at a safe t (t = 0 and
     # t = +-inf have exactly zero nu-sensitivity)
@@ -189,7 +173,7 @@ def _log_stdtr_jvp(primals, tangents):
     ts = jnp.where(fin, t_c, 0.0)
     # d/dt ln F = pdf / F, taken as a difference of logs so it survives
     # where F underflows (there it tends to nu/|t|, not to 0/0)
-    dL_dt = jnp.where(fin, jnp.exp(_t_logpdf(nu_c, ts) - L), 0.0)
+    dL_dt = jnp.where(fin, jnp.exp(t_logpdf(nu_c, ts) - L), 0.0)
     t_safe = jnp.where(fin & (ts != 0.0), ts, 1.0)
     _, dL_dnu = jax.jvp(lambda n: _log_stdtr_impl(n, t_safe), (nu_c,), (dnu,))
     dL_dnu = jnp.where(fin & (ts != 0.0), dL_dnu, 0.0)
@@ -221,10 +205,10 @@ def _stdtrit_impl(nu, p):
     aq = jnp.abs(2.0 * pc - 1.0)
     central = ptail >= 0.5
     ca, cb = _half_series(0.5 * nu)
-    w = _betaincinv_core(
+    w = betaincinv_core(
         jnp.asarray(0.5), 0.5 * nu, jnp.where(central, aq, 0.25), ca, cb
     )
-    x = _betaincinv_core(
+    x = betaincinv_core(
         0.5 * nu, jnp.asarray(0.5), jnp.where(central, 0.5, ptail), cb, ca
     )
     # sqrt(nu (1-x)) / sqrt(x), not sqrt(nu (1-x)/x): the ratio overflows
@@ -260,7 +244,7 @@ def _stdtrit_jvp(primals, tangents):
     t = _stdtrit_impl(nu_c, p)
     finite = jnp.isfinite(t)
     ts = jnp.where(finite, t, 0.0)
-    pdf = jnp.exp(_t_logpdf(nu_c, ts))
+    pdf = jnp.exp(t_logpdf(nu_c, ts))
     # IFT: dt/dp = 1/pdf, which may legitimately overflow where the
     # density underflows; dt/dnu = -(dF/dnu)/pdf, which may NOT, since the
     # ratio stays finite where both parts vanish. At nu = 4, p = 1e-300
@@ -273,7 +257,7 @@ def _stdtrit_jvp(primals, tangents):
     lnF, dlnF_dnu = jax.jvp(
         lambda n: _log_stdtr_impl(n, t_safe), (nu_c,), (jnp.asarray(1.0),)
     )
-    dt_dnu = -jnp.exp(lnF - _t_logpdf(nu_c, t_safe)) * dlnF_dnu
+    dt_dnu = -jnp.exp(lnF - t_logpdf(nu_c, t_safe)) * dlnF_dnu
     dt_dnu = jnp.where(live, dt_dnu, 0.0)
     dt = dp / pdf + dt_dnu * dnu
     dt = jnp.where(finite, dt, 0.0)

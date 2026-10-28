@@ -26,8 +26,9 @@ R = np.concatenate([np.logspace(-5, 0, 10), np.linspace(0.2, 8.0, 12)])
 
 def _ref(nu, r, ell=1.0):
     z = mp.sqrt(2 * mp.mpf(nu)) * mp.mpf(r) / mp.mpf(ell)
-    return float(2 ** (1 - mp.mpf(nu)) / mp.gamma(nu)
-                 * z ** mp.mpf(nu) * mp.besselk(nu, z))
+    return float(
+        2 ** (1 - mp.mpf(nu)) / mp.gamma(nu) * z ** mp.mpf(nu) * mp.besselk(nu, z)
+    )
 
 
 def test_values_and_half_integer_closed_forms():
@@ -40,8 +41,7 @@ def test_values_and_half_integer_closed_forms():
     closed = {
         0.5: np.exp(-s),
         1.5: (1.0 + np.sqrt(3.0) * s) * np.exp(-np.sqrt(3.0) * s),
-        2.5: (1.0 + np.sqrt(5.0) * s + 5.0 * s * s / 3.0)
-             * np.exp(-np.sqrt(5.0) * s),
+        2.5: (1.0 + np.sqrt(5.0) * s + 5.0 * s * s / 3.0) * np.exp(-np.sqrt(5.0) * s),
     }
     for nu, ref in closed.items():
         got = np.asarray(chebax.matern(nu, jnp.asarray(R), ell))
@@ -59,17 +59,25 @@ def _ref_mp(nu, r):
     # full-precision variant for differentiation: a float64-truncating
     # reference under mp.diff produces eps/h quantization noise
     z = mp.sqrt(2 * nu) * mp.mpf(r)
-    return 2 ** (1 - nu) / mp.gamma(nu) * z ** nu * mp.besselk(nu, z)
+    return 2 ** (1 - nu) / mp.gamma(nu) * z**nu * mp.besselk(nu, z)
 
 
 def test_dnu_against_mp_diff():
     rg = np.array([0.05, 0.5, 2.0])
     for nu in [0.05, 0.5, 1.7, 5.5, 9.97]:
-        ref = np.array([float(mp.diff(lambda v: _ref_mp(v, r), mp.mpf(nu),
-                                      h=1e-7, method="step")) for r in rg])
-        g = np.asarray(jax.vmap(jax.grad(chebax.matern, argnums=0),
-                                in_axes=(None, 0))(jnp.asarray(nu),
-                                                   jnp.asarray(rg)))
+        ref = np.array(
+            [
+                float(
+                    mp.diff(lambda v: _ref_mp(v, r), mp.mpf(nu), h=1e-7, method="step")
+                )
+                for r in rg
+            ]
+        )
+        g = np.asarray(
+            jax.vmap(jax.grad(chebax.matern, argnums=0), in_axes=(None, 0))(
+                jnp.asarray(nu), jnp.asarray(rg)
+            )
+        )
         assert np.max(np.abs(g - ref) / (1.0 + np.abs(ref))) <= 4e-12, nu
 
 
@@ -88,12 +96,12 @@ def test_pergroup_and_jit():
     r = rng.uniform(0.01, 4.0, 20)
     f = chebax.pergroup(chebax.matern, idx)
     got = np.asarray(f(jnp.asarray(nus), jnp.asarray(r)))
-    ref = np.array([float(chebax.matern(nus[g], r[i]))
-                    for i, g in enumerate(idx)])
+    ref = np.array([float(chebax.matern(nus[g], r[i])) for i, g in enumerate(idx)])
     np.testing.assert_allclose(got, ref, rtol=5e-15)
     jitted = jax.jit(chebax.matern)
-    np.testing.assert_allclose(float(jitted(1.7, 0.8)),
-                               float(chebax.matern(1.7, 0.8)), rtol=1e-14)
+    np.testing.assert_allclose(
+        float(jitted(1.7, 0.8)), float(chebax.matern(1.7, 0.8)), rtol=1e-14
+    )
 
 
 def test_tiny_nonzero_distance_reads_as_clamp():

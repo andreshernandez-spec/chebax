@@ -51,14 +51,20 @@ from tjax.dataclasses import dataclass  # noqa: E402
 
 import optimistix as optx  # noqa: E402
 
-from efax._src.expectation_parametrization import ExpectationParametrization  # noqa: E402
+from efax._src.expectation_parametrization import (
+    ExpectationParametrization,
+)  # noqa: E402
 from efax._src.mixins.exp_to_nat.exp_to_nat import ExpToNat  # noqa: E402
 from efax._src.mixins.exp_to_nat.optimistix import OptimistixRootFinder  # noqa: E402
 from efax._src.mixins.has_entropy import HasEntropyEP, HasEntropyNP  # noqa: E402
 from efax._src.natural_parametrization import NaturalParametrization  # noqa: E402
-from efax._src.parameter import (RealField, ScalarSupport,  # noqa: E402
-                                 distribution_parameter, negative_support,
-                                 positive_support)
+from efax._src.parameter import (
+    RealField,
+    ScalarSupport,  # noqa: E402
+    distribution_parameter,
+    negative_support,
+    positive_support,
+)
 from efax._src.parametrization import SimpleDistribution  # noqa: E402
 
 import chebax  # noqa: E402
@@ -70,9 +76,11 @@ def _log_k(order, z):
 
 
 @dataclass
-class GigNP(HasEntropyNP["GigEP"],
-            NaturalParametrization["GigEP", JaxRealArray],
-            SimpleDistribution):
+class GigNP(
+    HasEntropyNP["GigEP"],
+    NaturalParametrization["GigEP", JaxRealArray],
+    SimpleDistribution,
+):
     """Natural parametrization of the GIG distribution.
 
     Args:
@@ -82,11 +90,14 @@ class GigNP(HasEntropyNP["GigEP"],
     """
 
     p_minus_one: JaxRealArray = distribution_parameter(
-        ScalarSupport(ring=RealField(minimum=-9.0, maximum=8.0)))
+        ScalarSupport(ring=RealField(minimum=-9.0, maximum=8.0))
+    )
     negative_a_over_two: JaxRealArray = distribution_parameter(
-        ScalarSupport(ring=negative_support))
+        ScalarSupport(ring=negative_support)
+    )
     negative_b_over_two: JaxRealArray = distribution_parameter(
-        ScalarSupport(ring=negative_support))
+        ScalarSupport(ring=negative_support)
+    )
 
     @property
     @override
@@ -99,9 +110,11 @@ class GigNP(HasEntropyNP["GigEP"],
         return ScalarSupport(ring=RealField(minimum=0.0))
 
     def _pab(self):
-        return (self.p_minus_one + 1.0,
-                -2.0 * self.negative_a_over_two,
-                -2.0 * self.negative_b_over_two)
+        return (
+            self.p_minus_one + 1.0,
+            -2.0 * self.negative_a_over_two,
+            -2.0 * self.negative_b_over_two,
+        )
 
     @override
     def log_normalizer(self) -> JaxRealArray:
@@ -131,8 +144,9 @@ class GigNP(HasEntropyNP["GigEP"],
 
     @override
     @classmethod
-    def sufficient_statistics(cls, x: JaxRealArray,
-                              **fixed_parameters: JaxArray) -> GigEP:
+    def sufficient_statistics(
+        cls, x: JaxRealArray, **fixed_parameters: JaxArray
+    ) -> GigEP:
         return GigEP(jnp.log(x), x, 1.0 / x)
 
 
@@ -149,7 +163,8 @@ class GigEP(HasEntropyEP[GigNP], ExpToNat[GigNP], SimpleDistribution):
     mean_log: JaxRealArray = distribution_parameter(ScalarSupport())
     mean: JaxRealArray = distribution_parameter(ScalarSupport(ring=positive_support))
     mean_reciprocal: JaxRealArray = distribution_parameter(
-        ScalarSupport(ring=positive_support))
+        ScalarSupport(ring=positive_support)
+    )
 
     @property
     @override
@@ -176,9 +191,14 @@ class GigEP(HasEntropyEP[GigNP], ExpToNat[GigNP], SimpleDistribution):
         # Newton (Levenberg-Marquardt) converges from the default start; set
         # it before the mixin default kicks in, unless the caller chose one.
         if self.minimizer is None:
-            object.__setattr__(self, "minimizer", OptimistixRootFinder(
-                solver=optx.LevenbergMarquardt(rtol=1e-14, atol=1e-14),
-                max_steps=200))
+            object.__setattr__(
+                self,
+                "minimizer",
+                OptimistixRootFinder(
+                    solver=optx.LevenbergMarquardt(rtol=1e-14, atol=1e-14),
+                    max_steps=200,
+                ),
+            )
         super().__post_init__()
 
 
@@ -201,8 +221,10 @@ def main():
 
     exp = nat.to_exp()
     ent = float(exp.entropy())
-    print(f"entropy: efax {ent:.12f}  scipy {sp.entropy():.12f}  "
-          f"err {abs(ent - sp.entropy()):.2e}")
+    print(
+        f"entropy: efax {ent:.12f}  scipy {sp.entropy():.12f}  "
+        f"err {abs(ent - sp.entropy()):.2e}"
+    )
 
     # efax's test_conversion: exact NP -> EP -> NP roundtrip through the stock
     # ExpToNat machinery (optimistix Newton; zero custom solver code here)
@@ -218,14 +240,18 @@ def main():
     # the same conversion from sampled sufficient statistics
     rng = np.random.default_rng(0)
     draws = sp.rvs(size=200_000, random_state=rng)
-    ep_hat = GigEP(jnp.asarray(np.mean(np.log(draws))),
-                   jnp.asarray(np.mean(draws)),
-                   jnp.asarray(np.mean(1.0 / draws)))
+    ep_hat = GigEP(
+        jnp.asarray(np.mean(np.log(draws))),
+        jnp.asarray(np.mean(draws)),
+        jnp.asarray(np.mean(1.0 / draws)),
+    )
     nat_hat = ep_hat.to_nat()
     print("from 200k sampled sufficient statistics:")
-    print(f"  recovered: p={float(nat_hat.p_minus_one) + 1.0:.4f}, "
-          f"a={-2.0 * float(nat_hat.negative_a_over_two):.4f}, "
-          f"b={-2.0 * float(nat_hat.negative_b_over_two):.4f}")
+    print(
+        f"  recovered: p={float(nat_hat.p_minus_one) + 1.0:.4f}, "
+        f"a={-2.0 * float(nat_hat.negative_a_over_two):.4f}, "
+        f"b={-2.0 * float(nat_hat.negative_b_over_two):.4f}"
+    )
 
     # efax's test_entropy_gradient: finite, and matches finite differences
     def entropy_of(p, a, b):
@@ -233,11 +259,14 @@ def main():
 
     g = jax.grad(entropy_of, (0, 1, 2))(p_t, a_t, b_t)
     eps = 1e-6
-    fd = (float(entropy_of(p_t + eps, a_t, b_t))
-          - float(entropy_of(p_t - eps, a_t, b_t))) / (2 * eps)
-    print(f"entropy gradient: ({float(g[0]):+.8f}, {float(g[1]):+.8f}, "
-          f"{float(g[2]):+.8f}); dH/dp vs finite diff err "
-          f"{abs(float(g[0]) - fd):.2e}")
+    fd = (
+        float(entropy_of(p_t + eps, a_t, b_t)) - float(entropy_of(p_t - eps, a_t, b_t))
+    ) / (2 * eps)
+    print(
+        f"entropy gradient: ({float(g[0]):+.8f}, {float(g[1]):+.8f}, "
+        f"{float(g[2]):+.8f}); dH/dp vs finite diff err "
+        f"{abs(float(g[0]) - fd):.2e}"
+    )
     assert all(bool(jnp.isfinite(gi)) for gi in g)
     return p_r, a_r, b_r
 

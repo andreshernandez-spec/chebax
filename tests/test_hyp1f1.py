@@ -25,12 +25,21 @@ from chebax._src.recipes import hyp1f1_table as ht
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-PAIRS = [(0.1, 0.1), (0.15, 9.9), (9.9, 0.15), (9.9, 9.9), (1.0, 1.0),
-         (2.0, 3.0), (5.5, 0.2), (0.2, 5.5), (10.0, 10.0), (0.1, 10.0)]
+PAIRS = [
+    (0.1, 0.1),
+    (0.15, 9.9),
+    (9.9, 0.15),
+    (9.9, 9.9),
+    (1.0, 1.0),
+    (2.0, 3.0),
+    (5.5, 0.2),
+    (0.2, 5.5),
+    (10.0, 10.0),
+    (0.1, 10.0),
+]
 # capped at 300: past x ~ 400 the (9.9, 0.15) corner's M leaves f64
 # (ln M ~ x + (a-b) ln x); the log form owns that range (test below)
-XG = np.array([1e-6, 1e-3, 0.05, 0.5, 2.0, 8.0, 15.0, 29.9, 30.1, 45.0,
-               100.0, 300.0])
+XG = np.array([1e-6, 1e-3, 0.05, 0.5, 2.0, 8.0, 15.0, 29.9, 30.1, 45.0, 100.0, 300.0])
 
 
 def _ref(a, b, xs):
@@ -40,8 +49,7 @@ def _ref(a, b, xs):
 def _rel(got, ref):
     ref = np.array(ref)
     lnm = np.array([float(abs(mp.log(r))) for r in ref])
-    err = np.array([float(abs((mp.mpf(float(g)) - r) / r))
-                    for g, r in zip(got, ref)])
+    err = np.array([float(abs((mp.mpf(float(g)) - r) / r)) for g, r in zip(got, ref)])
     return err / np.maximum(1.0, lnm)
 
 
@@ -57,11 +65,14 @@ def test_values_and_traced():
 def test_log_form_no_overflow():
     xs = np.array([1e-6, 0.5, 29.0, 31.0, 700.0, 5000.0])
     for a, b in [(0.15, 9.9), (9.9, 0.15), (2.0, 3.0)]:
-        ref = np.array([float(mp.log(mp.hyp1f1(mp.mpf(a), mp.mpf(b),
-                                               mp.mpf(x)))) for x in xs])
+        ref = np.array(
+            [float(mp.log(mp.hyp1f1(mp.mpf(a), mp.mpf(b), mp.mpf(x)))) for x in xs]
+        )
         got = np.asarray(chebax.log_hyp1f1_fn(a, b, jnp.asarray(xs)))
-        assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) \
-            <= 1.5e-12, (a, b)
+        assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) <= 1.5e-12, (
+            a,
+            b,
+        )
         # agreement with the linear form where it lives
         lin = np.asarray(chebax.hyp1f1_fn(a, b, jnp.asarray(xs[:4])))
         np.testing.assert_allclose(np.exp(got[:4]), lin, rtol=1e-13)
@@ -80,27 +91,44 @@ def test_dx_against_contiguous_oracle():
     # parameters stay inside the box
     xs = np.array([0.1, 1.0, 7.0, 20.0, 40.0])
     for a, b in [(0.5, 0.5), (2.0, 3.0), (8.9, 0.2), (0.2, 8.9)]:
-        ref = np.array([float(mp.mpf(a) / mp.mpf(b)
-                              * mp.hyp1f1(mp.mpf(a) + 1, mp.mpf(b) + 1,
-                                          mp.mpf(x))) for x in xs])
-        g = np.asarray(jax.vmap(jax.grad(
-            lambda x: chebax.hyp1f1_fn(a, b, x)))(jnp.asarray(xs)))
-        lnm = np.array([max(1.0, float(abs(mp.log(mp.hyp1f1(
-            mp.mpf(a), mp.mpf(b), mp.mpf(x)))))) for x in xs])
+        ref = np.array(
+            [
+                float(
+                    mp.mpf(a)
+                    / mp.mpf(b)
+                    * mp.hyp1f1(mp.mpf(a) + 1, mp.mpf(b) + 1, mp.mpf(x))
+                )
+                for x in xs
+            ]
+        )
+        g = np.asarray(
+            jax.vmap(jax.grad(lambda x: chebax.hyp1f1_fn(a, b, x)))(jnp.asarray(xs))
+        )
+        lnm = np.array(
+            [
+                max(1.0, float(abs(mp.log(mp.hyp1f1(mp.mpf(a), mp.mpf(b), mp.mpf(x))))))
+                for x in xs
+            ]
+        )
         assert np.max(np.abs(g - ref) / (np.abs(ref) * lnm)) <= 4e-13, (a, b)
 
 
 def test_da_db_traced():
-    for a, b, x in [(0.5, 0.5, 2.0), (2.0, 3.0, 10.0), (7.7, 1.3, 0.5),
-                    (0.15, 9.9, 40.0)]:
-        da_ref = float(mp.diff(lambda t: mp.log(mp.hyp1f1(t, mp.mpf(b),
-                                                          mp.mpf(x))),
-                               mp.mpf(a)))
-        db_ref = float(mp.diff(lambda t: mp.log(mp.hyp1f1(mp.mpf(a), t,
-                                                          mp.mpf(x))),
-                               mp.mpf(b)))
+    for a, b, x in [
+        (0.5, 0.5, 2.0),
+        (2.0, 3.0, 10.0),
+        (7.7, 1.3, 0.5),
+        (0.15, 9.9, 40.0),
+    ]:
+        da_ref = float(
+            mp.diff(lambda t: mp.log(mp.hyp1f1(t, mp.mpf(b), mp.mpf(x))), mp.mpf(a))
+        )
+        db_ref = float(
+            mp.diff(lambda t: mp.log(mp.hyp1f1(mp.mpf(a), t, mp.mpf(x))), mp.mpf(b))
+        )
         da, db = jax.grad(chebax.log_hyp1f1_fn, argnums=(0, 1))(
-            jnp.asarray(a), jnp.asarray(b), jnp.asarray(x))
+            jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
+        )
         scale = max(abs(da_ref), abs(db_ref), 1.0)
         assert abs(float(da) - da_ref) / scale <= 1e-13, (a, b, x)
         assert abs(float(db) - db_ref) / scale <= 1e-13, (a, b, x)
@@ -119,8 +147,7 @@ def test_jit_and_pytree():
     xs = jnp.asarray(XG[:6])
     y = jax.jit(lambda q, x: q(x))(f, xs)
     # a few ulp: jit fusion may reassociate the Clenshaw arithmetic
-    np.testing.assert_allclose(np.asarray(y), np.asarray(f(xs)),
-                               rtol=5e-15)
+    np.testing.assert_allclose(np.asarray(y), np.asarray(f(xs)), rtol=5e-15)
 
 
 def test_param_out_of_range():
@@ -138,22 +165,30 @@ def test_tail_table_regenerates_exact():
     # (test below); policy in CLAUDE.md.
     import mpmath as mpm
     from chebax._src.recipes._gen_common import DPS
+
     with mpm.workdps(DPS):
-        t = hyp1f1_gen.generate_table(mpm, hyp1f1_gen.tail_rows,
-                                      hyp1f1_gen.NT_TAIL,
-                                      hyp1f1_gen.NA_TAIL,
-                                      hyp1f1_gen.NB_TAIL)
+        t = hyp1f1_gen.generate_table(
+            mpm,
+            hyp1f1_gen.tail_rows,
+            hyp1f1_gen.NT_TAIL,
+            hyp1f1_gen.NA_TAIL,
+            hyp1f1_gen.NB_TAIL,
+        )
     assert np.array_equal(t, ht.TABLE_TAIL)
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not __import__("os").environ.get("CHEBAX_FULL_REGEN"),
-                    reason="~11 min; set CHEBAX_FULL_REGEN=1 (pre-release)")
+@pytest.mark.skipif(
+    not __import__("os").environ.get("CHEBAX_FULL_REGEN"),
+    reason="~11 min; set CHEBAX_FULL_REGEN=1 (pre-release)",
+)
 def test_table_regenerates_bit_for_bit(tmp_path):
     import pathlib
+
     hyp1f1_gen.main(tmp_path)
-    assert ((tmp_path / "hyp1f1_table.py").read_text()
-            == pathlib.Path(ht.__file__).read_text())
+    assert (tmp_path / "hyp1f1_table.py").read_text() == pathlib.Path(
+        ht.__file__
+    ).read_text()
     assert ht.META["dps"] == hyp1f1_gen.DPS
 
 

@@ -50,8 +50,10 @@ def main():
 
     a, b, lo, hi = 2.0, 3.0, 0.2, 0.7
     x = truncated_beta_sample(a, b, lo, hi, u)
-    print(f"truncated Beta({a},{b}) on [{lo},{hi}]: mean {float(x.mean()):.6f}, "
-          f"all inside: {bool(((x > lo) & (x < hi)).all())}")
+    print(
+        f"truncated Beta({a},{b}) on [{lo},{hi}]: mean {float(x.mean()):.6f}, "
+        f"all inside: {bool(((x > lo) & (x < hi)).all())}"
+    )
 
     grad_a = jax.grad(lambda aa: truncated_beta_sample(aa, b, lo, hi, u).mean())(a)
     print(f"d E[x] / da via reparameterization: {float(grad_a):+.6f}")
@@ -59,15 +61,19 @@ def main():
     nu, tlo, thi = 4.0, -1.0, 2.5
     t = truncated_t_sample(nu, tlo, thi, u)
     grad_nu = jax.grad(lambda n: truncated_t_sample(n, tlo, thi, u).mean())(nu)
-    print(f"truncated StudentT(nu={nu}) on [{tlo},{thi}]: mean {float(t.mean()):.6f}, "
-          f"d E[t]/d nu: {float(grad_nu):+.6f}")
+    print(
+        f"truncated StudentT(nu={nu}) on [{tlo},{thi}]: mean {float(t.mean()):.6f}, "
+        f"d E[t]/d nu: {float(grad_nu):+.6f}"
+    )
 
     a, glo, ghi = 3.5, 1.0, 4.0
     g = truncated_gamma_sample(a, glo, ghi, u)
     grad_a = jax.grad(lambda aa: truncated_gamma_sample(aa, glo, ghi, u).mean())(a)
-    print(f"truncated Gamma(a={a}) on [{glo},{ghi}]: mean {float(g.mean()):.6f}, "
-          f"all inside: {bool(((g > glo) & (g < ghi)).all())}, "
-          f"d E[x]/da: {float(grad_a):+.6f}")
+    print(
+        f"truncated Gamma(a={a}) on [{glo},{ghi}]: mean {float(g.mean()):.6f}, "
+        f"all inside: {bool(((g > glo) & (g < ghi)).all())}, "
+        f"d E[x]/da: {float(grad_a):+.6f}"
+    )
 
 
 if __name__ == "__main__":

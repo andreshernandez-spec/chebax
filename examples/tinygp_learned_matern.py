@@ -39,18 +39,16 @@ class Matern(tinygp.kernels.Kernel):
     lengthscale: jax.Array
 
     def evaluate(self, X1, X2):
-        tau = jnp.sqrt(jnp.sum(jnp.square(jnp.atleast_1d(X1)
-                                          - jnp.atleast_1d(X2))))
+        tau = jnp.sqrt(jnp.sum(jnp.square(jnp.atleast_1d(X1) - jnp.atleast_1d(X2))))
         tau = jnp.where(tau < 1e-12, 0.0, tau)  # exact diagonal
         return chebax.matern(self.nu, tau, self.lengthscale)
 
 
 def build_gp(params, x):
     kernel = jnp.exp(params["log_sig2"]) * Matern(
-        nu=jnp.exp(params["log_nu"]),
-        lengthscale=jnp.exp(params["log_ell"]))
-    return tinygp.GaussianProcess(kernel, x,
-                                  diag=jnp.exp(2 * params["log_noise"]))
+        nu=jnp.exp(params["log_nu"]), lengthscale=jnp.exp(params["log_ell"])
+    )
+    return tinygp.GaussianProcess(kernel, x, diag=jnp.exp(2 * params["log_noise"]))
 
 
 def main():
@@ -58,15 +56,24 @@ def main():
     nu_true, ell_true, sig2_true, noise = 2.5, 0.4, 2.0, 0.1
 
     base = jax.random.uniform(key, (150, 1), dtype=jnp.float64) * 6.0
-    close = base + 0.02 * jax.random.normal(jax.random.PRNGKey(9),
-                                            (150, 1), dtype=jnp.float64)
+    close = base + 0.02 * jax.random.normal(
+        jax.random.PRNGKey(9), (150, 1), dtype=jnp.float64
+    )
     x = jnp.sort(jnp.concatenate([base, close]), axis=0)
-    truth = {"log_nu": jnp.log(nu_true), "log_ell": jnp.log(ell_true),
-             "log_sig2": jnp.log(sig2_true), "log_noise": jnp.log(noise)}
+    truth = {
+        "log_nu": jnp.log(nu_true),
+        "log_ell": jnp.log(ell_true),
+        "log_sig2": jnp.log(sig2_true),
+        "log_noise": jnp.log(noise),
+    }
     y = build_gp(truth, x).sample(jax.random.PRNGKey(1))
 
-    params = {"log_nu": jnp.asarray(0.0), "log_ell": jnp.asarray(0.0),
-              "log_sig2": jnp.asarray(0.0), "log_noise": jnp.asarray(-1.0)}
+    params = {
+        "log_nu": jnp.asarray(0.0),
+        "log_ell": jnp.asarray(0.0),
+        "log_sig2": jnp.asarray(0.0),
+        "log_noise": jnp.asarray(-1.0),
+    }
 
     @jax.jit
     def loss(p):
@@ -88,8 +95,10 @@ def main():
             first = val
     nu = float(jnp.exp(params["log_nu"]))
     print(f"true:    nu={nu_true}, ell={ell_true}, sig2={sig2_true}")
-    print(f"learned: nu={nu:.3f}, ell={float(jnp.exp(params['log_ell'])):.3f}, "
-          f"sig2={float(jnp.exp(params['log_sig2'])):.3f}")
+    print(
+        f"learned: nu={nu:.3f}, ell={float(jnp.exp(params['log_ell'])):.3f}, "
+        f"sig2={float(jnp.exp(params['log_sig2'])):.3f}"
+    )
     print(f"nmll: {float(first):.2f} -> {float(val):.2f}")
     assert jnp.isfinite(val)
     assert 1.8 < nu < 3.5

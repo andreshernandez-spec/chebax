@@ -28,14 +28,15 @@ behind both constants and the reason the split is in Z):
       ln f = -d(y, mu)/(2 phi) - ln(2 pi phi y^p)/2 + T/Z,
   the classical saddlepoint approximation (d the unit deviance) with its
   exact correction. Written that way the cancelling terms are never
-  computed, so a concentrated density (small phi, Z ~ 1e4) keeps its digits.
+  computed, so a concentrated density (small phi, Z up to 1e16 and beyond)
+  keeps its digits, provided d itself does (see _half_deviance).
 
 The f64 floor is lgamma's rounding in the direct sum: lgamma(rho n) reaches
 ~4000 near the split at p = 1.05, and eps |lgamma| survives into ln f
 (2.4e-13 measured there). ln W elsewhere sits at ~1e-15.
 
-Each branch sees the raw argument in its own region and a finite dummy (the
-split) elsewhere, so neither poisons the other's gradient. p is traceable
+Each branch sees the raw arguments in its own region and 1.0 elsewhere, so
+neither poisons the other's gradient. p is traceable
 and uniform per call; jax.grad works in p, mu, phi and y. The box is p in
 [1.05, 1.95] (rho in [1/19, 19]); outside it, and for mu <= 0, phi <= 0 or
 y < 0, the result is nan (not checked eagerly: p may be a tracer).
@@ -64,7 +65,7 @@ def _log_series_parts(rho, u):
     on CPU."""
     n = jnp.arange(1, _tt.N_TERMS + 1, dtype=u.dtype)
     c = jax.lax.lgamma(n + 1.0) + jax.lax.lgamma(rho * n)
-    g = n * jax.lax.digamma(rho * n)            # -d/drho of term n's exponent
+    g = n * jax.lax.digamma(rho * n)  # -d/drho of term n's exponent
     m = u - c[0]
     for k in range(1, _tt.N_TERMS):
         m = jnp.maximum(m, (k + 1) * u - c[k])
@@ -128,27 +129,89 @@ def log_wright_bessel0(rho, z):
     w_in = _log_series(r, jnp.where(inner, u, u1))
     zt = jnp.where(inner, z1, big_z)
     lt0 = jnp.log(r * zt / (1.0 + r))
-    w_tail = (zt + 0.5 * lt0 - _HALF_LOG_2PI - 0.5 * jnp.log1p(r)
-              + tail(z1 / zt) / zt)
+    w_tail = zt + 0.5 * lt0 - _HALF_LOG_2PI - 0.5 * jnp.log1p(r) + tail(z1 / zt) / zt
     out = jnp.where(inner, w_in, w_tail)
     out = jnp.where(pos, out, jnp.where(z == 0, -jnp.inf, jnp.nan))
     return jnp.where(ok, out, jnp.nan)
 
 
-def _half_deviance(a, mu, y):
+# |y/mu - 1| up to which d/2 is summed as a series, and the term count:
+# 26 terms leave under 3e-17 relative at |delta| = 1/4 for every a in (0, 1)
+_NEAR = 0.25
+_N_NEAR = 26
+
+
+def _half_deviance_impl(a, mu, y):
     """d(y, mu)/2 for power p = 2 - a, a in (0, 1), y > 0, mu > 0.
 
-    mu^a [(r^a - 1) - a (r - 1)] / (a (a - 1)) with r = y/mu. Near y = mu
-    the bracket is O((r-1)^2), so it goes through expm1 there and leaves a
-    cancellation of eps a |ln r| relative to Z, below the eps Z every term
-    here carries; away from it pow keeps r^a to an ulp."""
-    x = jnp.log(y) - jnp.log(mu)
-    near = jnp.abs(x) < 1.0
-    xn = jnp.where(near, x, 0.0)
-    r = y / mu
-    num = jnp.where(near, jnp.expm1(a * xn) - a * jnp.expm1(xn),
-                    (jnp.power(r, a) - 1.0) - a * (r - 1.0))
-    return jnp.power(mu, a) * num / (a * (a - 1.0))
+    Near the mean, in delta = (y - mu)/mu, whose subtraction is exact there:
+        d/2 = mu^a sum_{k>=2} c_k delta^k,  c_2 = 1/2,  c_{k+1} = c_k (a-k)/(k+1),
+    the binomial series of ((1+delta)^a - 1 - a delta) / (a (a-1)). The
+    closed forms lose this on concentrated data: ln y - ln mu carries
+    eps |ln y| where only delta matters, and expm1(a x) - a expm1(x)
+    cancels two first-order terms down to a quadratic one. In float32,
+    (p, mu, phi, y) = (1.5, 1e6, 1e-12, 1e6 + 1/8) gave 2.53 for a log
+    density of -5.28 (review, 2026-10-26).
+
+    Away from it, y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, which
+    never forms y/mu: that ratio overflowed at y = 1e10, mu = 1e-300 under
+    a finite density. Its cancellation costs eps a |delta| relative to Z,
+    the same as one ulp of y."""
+    near = jnp.abs(y - mu) <= _NEAR * mu
+    d = (jnp.where(near, y, mu) - mu) / mu
+    c = [0.5]
+    for k in range(2, _N_NEAR + 1):
+        c.append(c[-1] * (a - k) / (k + 1.0))
+    acc = c[-1]
+    for ck in c[-2::-1]:
+        acc = acc * d + ck
+    series = jnp.power(mu, a) * d * d * acc
+    far = (jnp.power(y, a) / a - y * jnp.power(mu, a - 1.0)) / (a - 1.0) + jnp.power(
+        mu, a
+    ) / a
+    return jnp.where(near, series, far)
+
+
+@jax.custom_jvp
+def _half_deviance(a, mu, y):
+    return _half_deviance_impl(a, mu, y)
+
+
+@_half_deviance.defjvp
+def _half_deviance_jvp(primals, tangents):
+    """The mu and y partials in closed form, -mu^(a-1) delta and
+    (y^(a-1) - mu^(a-1))/(a-1), the latter through expm1 near the mean.
+    AD of the forms above squares mu, in mu^(a-2) and in delta's own
+    derivative, and that overflowed at mu = 1e-220: the mean gradient at
+    y = mu, exactly 0, came out 0 * inf (review follow-up, 2026-10-26).
+    The a partial is AD of the value with mu and y held."""
+    a, mu, y = primals
+    da, dmu, dy = tangents
+    h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
+    near = jnp.abs(y - mu) <= _NEAR * mu
+    delta = (y - mu) / mu
+    m1 = jnp.power(mu, a - 1.0)
+    h_mu = -m1 * delta
+    lr = jnp.log1p(jnp.where(near, delta, 0.0))
+    h_y = jnp.where(
+        near, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
+    ) / (a - 1.0)
+    return h, h_a + h_mu * dmu + h_y * dy
+
+
+@jax.custom_jvp
+def _over(h, phi):
+    """h / phi, whose phi-derivative is formed as -(h/phi)/phi. jax's own
+    rule squares phi first, which underflows at phi = 1e-200 and turned
+    a zero deviance into a nan dispersion gradient."""
+    return h / phi
+
+
+@_over.defjvp
+def _over_jvp(primals, tangents):
+    (h, phi), (dh, dphi) = primals, tangents
+    q = h / phi
+    return q, (dh - q * dphi) / phi
 
 
 def tweedie_logpdf(p, mu, phi, y):
@@ -174,22 +237,47 @@ def tweedie_logpdf(p, mu, phi, y):
     phi_s = jnp.where(valid, phi, 1.0)
     pos = valid & (y > 0)
     y_s = jnp.where(pos, y, mu_s)
-    lam = jnp.power(mu_s, a) / (phi_s * a)
     z1, tail = _split(r)
     big_z = jnp.power(y_s, a) / (phi_s * a * (pp - 1.0))
-    inner = big_z <= z1
-    # inner: the density as defined, ln W on u = ln z
-    ltheta = jnp.log(phi_s * (pp - 1.0)) + (pp - 1.0) * jnp.log(mu_s)
-    u = jnp.log(lam) + r * (jnp.log(y_s) - ltheta)
-    u1 = (1.0 + r) * jnp.log(r * z1 / (1.0 + r)) - jnp.log(r)
-    f_in = (-lam - jnp.exp(jnp.log(y_s) - ltheta) - jnp.log(y_s)
-            + _log_series(r, jnp.where(inner, u, u1)))
-    # tail: saddlepoint form plus the tabulated correction
-    zt = jnp.where(inner, z1, big_z)
-    f_tail = (-_half_deviance(a, mu_s, y_s) / phi_s
-              - 0.5 * (jnp.log(phi_s) + pp * jnp.log(y_s)) - _HALF_LOG_2PI
-              + tail(z1 / zt) / zt)
-    out = jnp.where(inner, f_in, f_tail)
-    out = jnp.where(pos, out, -lam)
+    inner = pos & (big_z <= z1)
+    outer = pos & ~inner
+
+    # Each of the three forms sees its own lanes' arguments and 1.0 in the
+    # others. An unselected form's partials meet a zero cotangent, so one
+    # inf among them is a nan gradient: at phi = 1e-200, lambda / phi alone
+    # overflows (review, 2026-10-26).
+    def own(lanes, *vs):
+        return [jnp.where(lanes, v, 1.0) for v in vs]
+
+    m0, f0 = own(~pos, mu_s, phi_s)
+    f_zero = -jnp.power(m0, a) / (f0 * a)
+    # inner: the density as defined, ln W on u = ln z. mu enters only
+    # through -lambda - y/theta = -d/(2 phi) + y^a / (a (a-1) phi), so the
+    # mean gradient is the deviance's exact (y - mu) / (phi mu^p). As two
+    # separate terms their mu-derivatives cancelled only to rounding at
+    # y = mu, ~1e286 at mu = 1e-300, and y/theta underflowed at phi = 1e200
+    # and took its share of the gradient with it. Likewise
+    # z = y^rho / (a (p-1)^rho phi^(1+rho)) holds no mu: built from lambda
+    # and theta, the residue of its mu terms had derivative eps/mu
+    # (review follow-up, 2026-10-26).
+    mi, fi, yi = own(inner, mu_s, phi_s, y_s)
+    u = r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi) - jnp.log(a)
+    f_in = (
+        -_over(_half_deviance(a, mi, yi), fi)
+        + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
+        - jnp.log(yi)
+        + _log_series(r, u)
+    )
+    # outer: saddlepoint form plus the tabulated correction T(Z1/Z)/Z, with
+    # 1/Z built from phi directly rather than as a reciprocal of Z ~ 1/phi
+    mt, ft, yt = own(outer, mu_s, phi_s, y_s)
+    w = jnp.where(outer, ft * a * (pp - 1.0) / jnp.power(yt, a), 1.0 / z1)
+    f_tail = (
+        -_over(_half_deviance(a, mt, yt), ft)
+        - 0.5 * (jnp.log(ft) + pp * jnp.log(yt))
+        - _HALF_LOG_2PI
+        + tail(z1 * w) * w
+    )
+    out = jnp.where(inner, f_in, jnp.where(outer, f_tail, f_zero))
     out = jnp.where(valid, out, jnp.nan)
     return jnp.where(ok, out, jnp.nan)

@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th ln-rho coefficient of the k-th s coefficient; ln rho in [-A
 
 import numpy as np
 
-META = {'ns': 32, 'na': 64, 'za': 12.0, 's1': 2.0, 'n_terms': 64, 'p_lo': 1.05, 'p_hi': 1.95, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '8b8388699b0e0802'}
+META = {'ns': 32, 'na': 64, 'za': 12.0, 's1': 2.0, 'n_terms': 64, 'p_lo': 1.05, 'p_hi': 1.95, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': 'af36e5a7e8ae53f3'}
 P_LO = 1.05
 P_HI = 1.95
 RHO_MIN = 0.05263157894736842

@@ -33,8 +33,12 @@ import jax.numpy as jnp
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes import bessely_table as _yt
-from chebax._src.recipes._common import (canon_tag, check_range, param_coefs,
-                                         param_coefs_der)
+from chebax._src.recipes._common import (
+    canon_tag,
+    check_range,
+    param_coefs,
+    param_coefs_der,
+)
 from chebax._src.series import ChebSeries
 
 
@@ -93,7 +97,9 @@ class BesselY(_YBase):
         xo, P, Q = self._outer_pq(x)
         a = P * self._cphi + Q * self._sphi
         b = P * self._sphi - Q * self._cphi
-        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.sin(xo) * a - jnp.cos(xo) * b)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (
+            jnp.sin(xo) * a - jnp.cos(xo) * b
+        )
         return self._select(x, inner, mid, outer)
 
 
@@ -106,8 +112,18 @@ class BesselYdnu(_YBase):
     dY_{k+1} = (2/x) Y_k + (2k/x) dY_k - dY_{k-1}."""
 
     _static_fields = ("v",)
-    _series_fields = ("ta", "tb", "ymid", "p", "q",
-                      "ta_mu", "tb_mu", "ymid_nu", "p_nu", "q_nu")
+    _series_fields = (
+        "ta",
+        "tb",
+        "ymid",
+        "p",
+        "q",
+        "ta_mu",
+        "tb_mu",
+        "ymid_nu",
+        "p_nu",
+        "q_nu",
+    )
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -137,7 +153,9 @@ class BesselYdnu(_YBase):
         b = P * self._sphi - Q * self._cphi
         an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
         bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
-        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (jnp.sin(xo) * an - jnp.cos(xo) * bn)
+        outer = (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (
+            jnp.sin(xo) * an - jnp.cos(xo) * bn
+        )
         return self._select(x, inner, mid, outer)
 
 
@@ -163,7 +181,8 @@ def _bessely_dnu_cached(v, _tag):
     v = check_range("bessely", "v", v, 0.0, _yt.VMAX)
     n, mu = _split_order(v)
     return BesselYdnu(
-        v, *_base_series(v),
+        v,
+        *_base_series(v),
         ChebSeries(param_coefs_der(_yt.TABLE_A, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
         ChebSeries(param_coefs_der(_yt.TABLE_B, 0.0, 1.0, mu), (_yt.U0, _yt.U1)),
         ChebSeries(param_coefs_der(_yt.TABLE_MID, 0.0, _yt.VMAX, v), (_yt.X0, _yt.X1)),

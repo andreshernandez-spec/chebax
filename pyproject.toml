@@ -24,6 +24,7 @@ test = ["pytest", "pytest-xdist", "scipy"]
 examples = ["matplotlib", "numpyro"]
 numpyro = ["numpyro>=0.15"]
 pytensor = ["pytensor>=3.2"]
+lint = ["black==26.10.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,3 +34,12 @@ testpaths = ["tests"]
 markers = [
     "slow: table regeneration and other multi-minute tests",
 ]
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312", "py313"]
+# Generated tables follow _gen_common.write_table_module and are never edited
+# by hand; experiments are re-run whenever their source changes, and the
+# notebooks are executed outputs. Generators are formatted, which changes
+# their recorded source hash: regenerate their tables in the same change.
+extend-exclude = '^/(src/chebax/_src/recipes/\w+_table(_ext)?\.py|experiments/|notebooks/)'

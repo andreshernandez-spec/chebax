@@ -25,10 +25,15 @@ mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
 NUS = [0.03, 0.5, 1.0, 1.7, 2.0, 3.0, 5.5, 7.77, 9.97]
-XI = np.sort(np.concatenate([
-    np.logspace(-3, np.log10(8.0), 16), [8.0, 8.0001],
-    np.logspace(np.log10(8.2), np.log10(600.0), 10),
-]))
+XI = np.sort(
+    np.concatenate(
+        [
+            np.logspace(-3, np.log10(8.0), 16),
+            [8.0, 8.0001],
+            np.logspace(np.log10(8.2), np.log10(600.0), 10),
+        ]
+    )
+)
 
 
 def _iref(v):
@@ -44,16 +49,18 @@ def test_values_and_traced():
 
 def test_dx():
     for v in [0.03, 1.0, 1.7, 5.5, 9.97]:
-        Ip = np.array([float(mp.diff(lambda t: mp.besseli(mp.mpf(v), t), mp.mpf(x)))
-                       for x in XI])
+        Ip = np.array(
+            [float(mp.diff(lambda t: mp.besseli(mp.mpf(v), t), mp.mpf(x))) for x in XI]
+        )
         g = np.asarray(jax.vmap(jax.grad(chebax.besseli(v)))(jnp.asarray(XI)))
         assert np.max(np.abs(g - Ip) / np.abs(Ip)) <= 2e-14, v
 
 
 def test_dnu():
     for v in [0.5, 1.0, 1.7, 7.77]:
-        In = np.array([float(mp.diff(lambda t: mp.besseli(t, mp.mpf(x)), mp.mpf(v)))
-                       for x in XI])
+        In = np.array(
+            [float(mp.diff(lambda t: mp.besseli(t, mp.mpf(x)), mp.mpf(v))) for x in XI]
+        )
         got = np.asarray(chebax.besseli_dnu(v)(XI))
         assert np.max(np.abs(got - In) / np.abs(In)) <= 5e-12, v
 
@@ -93,11 +100,15 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     besseli_gen.main(tmp_path)
-    assert (tmp_path / "besseli_table.py").read_text() == pathlib.Path(it.__file__).read_text()
+    assert (tmp_path / "besseli_table.py").read_text() == pathlib.Path(
+        it.__file__
+    ).read_text()
 
 
 # ---- review 2026-07-30 regressions ------------------------------------------
+
 
 def test_dnu_zero_order_is_neg_k0():
     # dI_v/dv|_{v=0} = -K_0(x): exponentially small, while the generic
@@ -142,8 +153,15 @@ def test_besseli_ratio():
     # x in [1e-8, 5000]; bar 4x. Endpoint: exact 0 at x = 0.
     xs = np.concatenate([np.logspace(-8, 2, 20), [500.0, 5000.0]])
     for nu in [0.0, 0.5, 1.0, 4.5, 8.99]:
-        ref = np.array([float(mp.besseli(mp.mpf(nu) + 1, mp.mpf(x))
-                              / mp.besseli(mp.mpf(nu), mp.mpf(x))) for x in xs])
+        ref = np.array(
+            [
+                float(
+                    mp.besseli(mp.mpf(nu) + 1, mp.mpf(x))
+                    / mp.besseli(mp.mpf(nu), mp.mpf(x))
+                )
+                for x in xs
+            ]
+        )
         got = np.asarray(chebax.besseli_ratio(nu, jnp.asarray(xs)))
         assert np.max(np.abs(got - ref) / ref) <= 1.5e-14, nu
     assert float(chebax.besseli_ratio(2.0, 0.0)) == 0.0
@@ -151,14 +169,15 @@ def test_besseli_ratio():
     # gradients in both arguments against mp.diff
     g_nu = float(jax.grad(chebax.besseli_ratio, argnums=0)(2.0, 3.0))
     g_x = float(jax.grad(chebax.besseli_ratio, argnums=1)(2.0, 3.0))
-    r_nu = float(mp.diff(lambda v: mp.besseli(v + 1, 3.0) / mp.besseli(v, 3.0),
-                         mp.mpf(2)))
-    r_x = float(mp.diff(lambda x: mp.besseli(3, x) / mp.besseli(2, x),
-                        mp.mpf(3)))
+    r_nu = float(
+        mp.diff(lambda v: mp.besseli(v + 1, 3.0) / mp.besseli(v, 3.0), mp.mpf(2))
+    )
+    r_x = float(mp.diff(lambda x: mp.besseli(3, x) / mp.besseli(2, x), mp.mpf(3)))
     assert abs(g_nu - r_nu) <= 1e-13 and abs(g_x - r_x) <= 1e-13
 
 
 # ---- review 2026-08-01 regressions ------------------------------------------
+
 
 def test_besseli_ratio_small_x():
     # below x = 2 the ratio is the ascending series with (x/2)^nu and
@@ -169,8 +188,15 @@ def test_besseli_ratio_small_x():
     # relative 5.8e-16 measured over the grid below, bar 2.5e-15.
     xs = np.concatenate([np.logspace(-38, -3, 24), np.logspace(-3, np.log10(2.0), 16)])
     for nu in [0.0, 0.5, 2.0, 4.5, 8.99, 9.0]:
-        ref = np.array([float(mp.besseli(mp.mpf(nu) + 1, mp.mpf(float(x)))
-                              / mp.besseli(mp.mpf(nu), mp.mpf(float(x)))) for x in xs])
+        ref = np.array(
+            [
+                float(
+                    mp.besseli(mp.mpf(nu) + 1, mp.mpf(float(x)))
+                    / mp.besseli(mp.mpf(nu), mp.mpf(float(x)))
+                )
+                for x in xs
+            ]
+        )
         got = np.asarray(chebax.besseli_ratio(nu, jnp.asarray(xs)))
         assert np.max(np.abs(got - ref) / ref) <= 2.5e-15, nu
     # the two branches meet at the crossover (measured jump 1.6e-15, bar 4x)
@@ -186,7 +212,9 @@ def test_besseli_ratio_endpoints():
     # used to mask that gradient to 0.
     for nu in [0.0, 1.0, 2.0, 5.0, 9.0]:
         assert float(chebax.besseli_ratio(nu, jnp.inf)) == 1.0, nu
-        assert float(jax.grad(chebax.besseli_ratio, argnums=1)(nu, 0.0)) == 0.5 / (nu + 1.0)
+        assert float(jax.grad(chebax.besseli_ratio, argnums=1)(nu, 0.0)) == 0.5 / (
+            nu + 1.0
+        )
     assert abs(float(chebax.besseli_ratio(0.0, 1e308)) - 1.0) <= 1e-15
     assert np.isnan(float(chebax.besseli_ratio(np.nan, 3.0)))
 
@@ -230,7 +258,9 @@ def test_scaled_tail_to_max_double():
     for x in [1e4, 1e40, 1e150, 1e308, 1.7e308]:
         ref = float(mp.besseli(0, mp.mpf(x)) * mp.exp(mp.mpf(-x)))
         assert abs(float(chebax.besseli(0.0, scaled=True)(x)) - ref) / ref <= 1.6e-15, x
-        assert abs(float(chebax.besseli_fn(0.0, x, scaled=True)) - ref) / ref <= 1.6e-15, x
+        assert (
+            abs(float(chebax.besseli_fn(0.0, x, scaled=True)) - ref) / ref <= 1.6e-15
+        ), x
     assert float(chebax.besseli(0.0)(1e308)) == np.inf
     assert float(chebax.besseli_fn(0.0, 1e308)) == np.inf
 
@@ -282,11 +312,14 @@ def test_x64_off():
         "for x, r in {1.0: -1.4452143424810813, 20.0: -2235578.6187629785}.items():\n"
         "    g = float(jax.grad(jax.grad(lambda v: chebax.besseli_fn(v, f(x))))(f(0.0)))\n"
         "    assert abs(g - r) / abs(r) <= 3e-6, (x, g, r)\n"
-        "print('ok')\n")
+        "print('ok')\n"
+    )
     import os
     import subprocess
     import sys
+
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-1500:]

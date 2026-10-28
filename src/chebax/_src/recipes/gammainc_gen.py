@@ -32,14 +32,20 @@ Regenerate with:
     python -m chebax._src.recipes.gammainc_gen
 """
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 
 XS_G = 8.0
 ALO, AHI = 0.1, 10.0
-NX_IN = 32   # x-nodes (degree 31; worst measured tail at 23)
-NA_IN = 68   # a-nodes (degree 67; worst measured 53, the x -> 0 edge)
+NX_IN = 32  # x-nodes (degree 31; worst measured tail at 23)
+NA_IN = 68  # a-nodes (degree 67; worst measured 53, the x -> 0 edge)
 NT_TAIL = 26  # t-nodes (worst measured 20)
 NA_TAIL = 30  # a-nodes (worst measured 20)
 
@@ -62,8 +68,7 @@ def generate_inner_table():
         rows = []
         for ta in nodes(mp, NA_IN):
             a = lo + (ta + 1) / 2 * (hi - lo)
-            rows.append(dct(mp, [_lser(mp, a, (t + 1) / 2 * mp.mpf(XS_G))
-                                 for t in tx]))
+            rows.append(dct(mp, [_lser(mp, a, (t + 1) / 2 * mp.mpf(XS_G)) for t in tx]))
         return to_f64(param_fit(mp, rows))
 
 
@@ -89,10 +94,18 @@ def main(out_dir=None):
         "T[k, j] = j-th a-coefficient of the k-th argument coefficient; "
         "TABLE_IN has argument x in [0, XS], TABLE_TAIL argument t = XS/x "
         "in [0, 1]; a in [ALO, AHI] for both",
-        {"nx_in": NX_IN, "na_in": NA_IN, "nt_tail": NT_TAIL,
-         "na_tail": NA_TAIL, "xs": XS_G, "alo": ALO, "ahi": AHI},
+        {
+            "nx_in": NX_IN,
+            "na_in": NA_IN,
+            "nt_tail": NT_TAIL,
+            "na_tail": NA_TAIL,
+            "xs": XS_G,
+            "alo": ALO,
+            "ahi": AHI,
+        },
         {"XS": XS_G, "ALO": ALO, "AHI": AHI},
-        {"TABLE_IN": inner, "TABLE_TAIL": tail})
+        {"TABLE_IN": inner, "TABLE_TAIL": tail},
+    )
 
 
 if __name__ == "__main__":

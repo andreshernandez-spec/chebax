@@ -28,13 +28,11 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import vonmises_table as _vt
-from chebax._src.recipes._common import canon_float as _canon
 from chebax._src.recipes._common import float_params
-from chebax._src.recipes._common import newton_bisect as _newton_bisect
+from chebax._src.recipes._common import newton_bisect
 from chebax._src.recipes._common import traced_coefs
 from chebax._src.recipes.besseli import besseli_fn
 from chebax._src.series import ChebSeries
-
 
 # a solve is accepted when its CDF residual is this small relative to
 # min(p, 1-p); healthy solves land at the eps floor below instead
@@ -72,25 +70,26 @@ def _vonmises_cdf_cj(kappa, theta):
 
     The kappa gradient is finite on the whole documented domain including
     kappa = 0, where it is the exact Fourier limit sin(theta)/(2 pi)."""
-    return _cdf_impl(_canon(kappa), _canon(theta))
+    return _cdf_impl(kappa, theta)
 
 
 @_vonmises_cdf_cj.defjvp
 def _vonmises_cdf_jvp(primals, tangents):
-    kappa, theta = primals
+    k, th = primals
     dkappa, dtheta = tangents
-    k, th = _canon(kappa), _canon(theta)
     F = _cdf_impl(k, th)
-    _, d_th = jax.jvp(lambda t: _cdf_impl(k, t), (th,), (_canon(dtheta),))
+    _, d_th = jax.jvp(lambda t: _cdf_impl(k, t), (th,), (dtheta,))
     # kappa direction: the table lives on r = sqrt(kappa), so AD divides
     # the (noisy, unconstrained) slope at r = 0 by 2 sqrt(kappa) -> inf at
     # the documented boundary. Below 1e-8 use the exact Fourier limit
     # dF/dkappa|_0 = sin(theta)/(2 pi) (the neglected terms are O(kappa)).
     ks = jnp.maximum(k, 1e-8)
-    _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (_canon(dkappa),))
+    _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (dkappa,))
     interior = (th > -jnp.pi) & (th < jnp.pi)
-    lead = jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi))
-                     / (2 * jnp.pi), 0.0) * _canon(dkappa)
+    lead = (
+        jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi)) / (2 * jnp.pi), 0.0)
+        * dkappa
+    )
     dF = d_th + jnp.where(k < 1e-8, lead, d_k_ad)
     # nan has to survive reverse mode too: a where whose nan branch is a
     # constant is linear in nothing and transposes to a zero cotangent.
@@ -121,8 +120,6 @@ def _vonmises_icdf_cj(kappa, p):
 
     NaN inputs and p outside [0, 1] return nan; the endpoints return
     -pi and pi exactly."""
-    kappa = _canon(kappa)
-    p = _canon(p)
     iters, resid_atol, pmin_floor = _solver_consts()
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
@@ -139,18 +136,23 @@ def _vonmises_icdf_cj(kappa, p):
     # concentrates and Newton then creeps additively: measured, it needed
     # 25 iterations where this one is converged by 15.
     tiny = jnp.finfo(pc.dtype).tiny
-    th0 = jnp.clip(jax.scipy.special.ndtri(pc)
-                   / jnp.sqrt(jnp.maximum(kappa, tiny)), -jnp.pi, jnp.pi)
+    th0 = jnp.clip(
+        jax.scipy.special.ndtri(pc) / jnp.sqrt(jnp.maximum(kappa, tiny)),
+        -jnp.pi,
+        jnp.pi,
+    )
     th0 = th0 + jnp.zeros_like(pc)
-    th = _newton_bisect(f_and_df, th0, jnp.full_like(th0, -jnp.pi),
-                        jnp.full_like(th0, jnp.pi), iters)
+    th = newton_bisect(
+        f_and_df, th0, jnp.full_like(th0, -jnp.pi), jnp.full_like(th0, jnp.pi), iters
+    )
     # Convergence is checked, never assumed, and so is resolvability: a
     # residual at the eps floor means nothing where the density is too
     # small to turn it into a theta (see the docstring).
     f_fin, _ = f_and_df(th)
     pmin = jnp.minimum(pc, 1.0 - pc)
-    bad = ((jnp.abs(f_fin) > jnp.maximum(_RESID_RTOL * pmin, resid_atol))
-           | (pmin < pmin_floor))
+    bad = (jnp.abs(f_fin) > jnp.maximum(_RESID_RTOL * pmin, resid_atol)) | (
+        pmin < pmin_floor
+    )
     th = jnp.where(bad, jnp.nan, th)
     th = jnp.where(p <= 0.0, -jnp.pi, jnp.where(p >= 1.0, jnp.pi, th))
     oob = jnp.isnan(p) | (p < 0.0) | (p > 1.0) | jnp.isnan(kappa)
@@ -164,19 +166,16 @@ def _vonmises_icdf_jvp(primals, tangents):
     th = vonmises_icdf(kappa, p)
     interior = (th > -jnp.pi) & (th < jnp.pi)
     ths = jnp.where(interior, th, 0.0)
-    pdf = jnp.exp(_log_pdf(_canon(kappa), ths))
-    _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths),
-                       (_canon(kappa),), (_canon(dkappa),))
-    dth = (_canon(dp) - d_cdf) / pdf
+    pdf = jnp.exp(_log_pdf(kappa, ths))
+    _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths), (kappa,), (dkappa,))
+    dth = (dp - d_cdf) / pdf
     # scale, not select: the endpoints are a genuine zero, and a rejected
     # solve must hand back nan in reverse mode as well as forward
-    return th, dth * jnp.where(interior, 1.0,
-                               jnp.where(jnp.isnan(th), jnp.nan, 0.0))
+    return th, dth * jnp.where(interior, 1.0, jnp.where(jnp.isnan(th), jnp.nan, 0.0))
 
 
-# Public entry points: the rules sit on the private names so an INTEGER
-# kappa (vonmises_cdf(5, theta)) is a float before any tangent exists.
-# jax gives integer primals float0 tangents, which the rules cannot do
-# arithmetic on (review, 2026-08-02).
+# Public entry points: the rules sit on the private names so an integer,
+# keyword or size-one kappa is a float scalar before any tangent exists
+# (see _common.float_params).
 vonmises_cdf = float_params(_vonmises_cdf_cj)
 vonmises_icdf = float_params(_vonmises_icdf_cj)

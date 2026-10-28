@@ -26,12 +26,16 @@ mp.mp.dps = 40
 
 _rng = np.random.default_rng(7)
 NUS = np.concatenate([[0.5, 2.5, 9.97], _rng.uniform(0.05, 9.95, 8)])
-XF = np.sort(np.concatenate([
-    np.linspace(0.05, 8.0, 16),
-    [8.0 - 1e-9, 8.0 + 1e-9, 30.0 - 1e-9, 30.0 + 1e-9],
-    np.linspace(8.01, 30.0, 18),
-    np.logspace(np.log10(30.5), 4, 16),
-]))
+XF = np.sort(
+    np.concatenate(
+        [
+            np.linspace(0.05, 8.0, 16),
+            [8.0 - 1e-9, 8.0 + 1e-9, 30.0 - 1e-9, 30.0 + 1e-9],
+            np.linspace(8.01, 30.0, 18),
+            np.logspace(np.log10(30.5), 4, 16),
+        ]
+    )
+)
 
 
 @pytest.fixture(scope="module")
@@ -45,13 +49,19 @@ def refs():
 
 
 def worst(err_fn):
-    return max(err_fn(v) for v in NUS)
+    # python's max drops a nan, so check before reducing
+    errs = [err_fn(v) for v in NUS]
+    assert np.all(np.isfinite(errs)), errs
+    return max(errs)
 
 
 def test_values_f64(refs):
     def err(v):
         J, _ = refs[v]
-        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XF)) - J)) / np.max(np.abs(J))
+        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XF)) - J)) / np.max(
+            np.abs(J)
+        )
+
     assert worst(err) <= 5e-15
 
 
@@ -60,32 +70,38 @@ def test_dx_f64(refs):
         _, Jp = refs[v]
         g = jax.vmap(jax.grad(chebax.besselj(float(v))))(jnp.asarray(XF))
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
+
     assert worst(err) <= 1e-14
 
 
 def test_values_f32(refs):
     x32 = jnp.asarray(XF, jnp.float32)
+
     def err(v):
         J, _ = refs[v]
         y = chebax.besselj(float(v)).astype(jnp.float32)(x32)
         return np.max(np.abs(np.asarray(y) - J)) / np.max(np.abs(J))
+
     assert worst(err) <= 1e-5
 
 
 def test_dx_f32(refs):
     x32 = jnp.asarray(XF, jnp.float32)
+
     def err(v):
         _, Jp = refs[v]
         g = jax.vmap(jax.grad(chebax.besselj(float(v)).astype(jnp.float32)))(x32)
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
+
     assert worst(err) <= 2e-5
 
 
 def test_dnu_full_domain():
     xd = np.array([0.3, 2.0, 6.0, 8.0, 12.0, 21.0, 29.0, 31.0, 60.0, 300.0, 4000.0])
     for v in [0.3, 2.5, 7.77, 9.6]:
-        ref = np.array([float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v)))
-                        for x in xd])
+        ref = np.array(
+            [float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v))) for x in xd]
+        )
         got = np.asarray(chebax.besselj_dnu(v)(xd))
         assert np.max(np.abs(got - ref)) / np.max(np.abs(ref)) <= 5e-15
 
@@ -133,22 +149,24 @@ def test_x_large_smoke():
 # the domain (same tables, the other regions' arithmetic simply dropped) and
 # nan outside it. Speed is measured in experiments/04, not here.
 
+
 def test_domain_matches_the_full_instance_exactly():
     for v in (0.0, 2.5, 9.97):
         full = chebax.besselj(float(v))
-        for lo, hi, regions in [(0.0, 8.0, ("in",)),
-                                (1e-6, 7.9, ("in",)),
-                                (9.0, 29.0, ("mid",)),
-                                (31.0, 1e4, ("out",)),
-                                (2.0, 20.0, ("in", "mid")),
-                                (20.0, 100.0, ("mid", "out"))]:
+        for lo, hi, regions in [
+            (0.0, 8.0, ("in",)),
+            (1e-6, 7.9, ("in",)),
+            (9.0, 29.0, ("mid",)),
+            (31.0, 1e4, ("out",)),
+            (2.0, 20.0, ("in", "mid")),
+            (20.0, 100.0, ("mid", "out")),
+        ]:
             trimmed = chebax.besselj(float(v), domain=(lo, hi))
             assert trimmed.regions == regions, (v, lo, hi, trimmed.regions)
             xs = np.linspace(lo, hi, 97)
             got = np.asarray(trimmed(xs))
             ref = np.asarray(full(xs))
-            assert np.array_equal(got, ref), (v, lo, hi,
-                                              np.max(np.abs(got - ref)))
+            assert np.array_equal(got, ref), (v, lo, hi, np.max(np.abs(got - ref)))
 
 
 def test_domain_is_nan_outside():
@@ -166,13 +184,15 @@ def test_domain_gradients_and_jit():
         assert float(jax.grad(trimmed)(x)) == float(jax.grad(full)(x)), x
     # a nan lane must not poison the gradient of a live one
     g = jax.grad(lambda xs: jnp.sum(jnp.where(xs <= 8.0, trimmed(xs), 0.0)))(
-        jnp.asarray([1.0, 4.0]))
+        jnp.asarray([1.0, 4.0])
+    )
     assert np.all(np.isfinite(np.asarray(g))), g
     # a few ulp, not equality: jit fusion may reassociate the Clenshaw
     xs = jnp.linspace(0.1, 7.9, 16)
     y = jax.jit(lambda q, z: q(z))(trimmed, xs)
-    np.testing.assert_allclose(np.asarray(y), np.asarray(trimmed(xs)),
-                               rtol=0, atol=5e-15)
+    np.testing.assert_allclose(
+        np.asarray(y), np.asarray(trimmed(xs)), rtol=0, atol=5e-15
+    )
 
 
 def test_domain_dnu_and_validation():

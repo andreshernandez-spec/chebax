@@ -55,7 +55,6 @@ from chebax import __version__
 from chebax._src.pytree import Recipe
 from chebax.bake._jaxpr_emit import trace_and_emit
 
-
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
@@ -75,6 +74,20 @@ xor_eq
 """.split())
 
 
+# Names the emitted module itself defines or calls. A valid identifier is
+# not enough: name="jnp" replaced the import and name="_clenshaw" the
+# helper, and both artifacts failed when called (review, 2026-10-26).
+_PY_RESERVED = frozenset({"jax", "jnp", "_clenshaw", "TypeError"})
+_CPP_RESERVED = frozenset({"XSF_HOST_DEVICE"})
+
+
+def _check_free(name, reserved, coefs=()):
+    if name in reserved or name in coefs:
+        raise ValueError(
+            f"name {name!r} is used by the emitted source itself; pick another"
+        )
+
+
 def _ident(value, what):
     """Names go straight into emitted source (and into the C++ guard macro
     as name.upper()), so reject anything but a plain identifier that is
@@ -84,16 +97,19 @@ def _ident(value, what):
     if not isinstance(value, str) or not _IDENT.match(value):
         raise ValueError(
             f"{what} must be an identifier matching [A-Za-z_][A-Za-z0-9_]*, "
-            f"got {value!r}")
+            f"got {value!r}"
+        )
     if keyword.iskeyword(value) or value in _CPP_KEYWORDS:
         raise ValueError(
             f"{what} must be an identifier that is neither a python nor a "
-            f"C++ keyword, got {value!r}")
+            f"C++ keyword, got {value!r}"
+        )
     if "__" in value or (value[:1] == "_" and value[1:2].isupper()):
         raise ValueError(
             f"{what} must be an identifier C++ does not reserve (no double "
             f"underscore, no leading underscore before a capital), got "
-            f"{value!r}")
+            f"{value!r}"
+        )
     return value
 
 
@@ -108,20 +124,23 @@ def _check_tables(inst, prefix=""):
             raise ValueError(
                 "bake emits double-precision artifacts, but this instance holds "
                 f"{coef.dtype} tables (jax x64 disabled?); enable "
-                "jax.config.update('jax_enable_x64', True) before constructing it")
+                "jax.config.update('jax_enable_x64', True) before constructing it"
+            )
         if not np.all(np.isfinite(coef)):
             k = int(np.argmax(~np.isfinite(coef)))
             raise ValueError(
                 f"series {prefix + f} holds a nonfinite coefficient "
                 f"({float(coef[k])!r} at index {k}); a table with nan or inf is "
-                "broken, and neither backend has a literal for it inside an array")
+                "broken, and neither backend has a literal for it inside an array"
+            )
 
 
 def _check(inst):
     if not isinstance(inst, Recipe):
         raise TypeError(
             "bake supports Recipe instances (BesselJ, BesselK, BesselI, BesselY, "
-            f"BetaInc, ...); got {type(inst).__name__}")
+            f"BetaInc, ...); got {type(inst).__name__}"
+        )
     _check_tables(inst)
     return inst
 
@@ -142,9 +161,13 @@ def _family(inst):
 
 
 def _tag(inst):
+    """Statics spelled as an identifier: 2.5 -> 2p5, -1 -> m1, and a tuple
+    such as besselj's domain (0.0, 8.0) -> 0p0_8p0, whose parentheses and
+    comma used to reach the identifier check and fail it."""
     parts = []
     for k, v in _statics(inst).items():
-        part = f"{k}{str(v).replace('.', 'p').replace('-', 'm')}"
+        text = str(v).replace(".", "p").replace("-", "m").replace("+", "")
+        part = k + re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")
         _ident(part, f"the name built from static field {k}={v!r}")
         parts.append(part)
     return "_".join(parts)
@@ -154,7 +177,7 @@ def _py_tuple(name, vals):
     lines = [f"{name} = ("]
     vals = [float(v) for v in np.asarray(vals)]
     for i in range(0, len(vals), 4):
-        lines.append("    " + ", ".join(repr(x) for x in vals[i:i + 4]) + ",")
+        lines.append("    " + ", ".join(repr(x) for x in vals[i : i + 4]) + ",")
     lines.append(")")
     return lines
 
@@ -168,11 +191,13 @@ def _slope_note(dropped):
     (review, 2026-08-02)."""
     if not dropped:
         return []
-    return ["",
-            "One exception: a one-sided slope AT a domain endpoint was folded",
-            "to 0 while baking (chebax carries those through a custom rule the",
-            "emitter cannot express). Values are unaffected; the derivative",
-            "exactly at that endpoint is 0 here and nonzero in the recipe."]
+    return [
+        "",
+        "One exception: a one-sided slope AT a domain endpoint was folded",
+        "to 0 while baking (chebax carries those through a custom rule the",
+        "emitter cannot express). Values are unaffected; the derivative",
+        "exactly at that endpoint is 0 here and nonzero in the recipe.",
+    ]
 
 
 def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
@@ -193,20 +218,24 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
     name = _ident(_family(inst) if name is None else name, "name")
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
-    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False)
+    body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=False, dtype=dtype)
+    _check_free(name, _PY_RESERVED, coefs)
     statics = _statics_text(inst)
     dtype_note = (
         ["Baked for float64 input, the dtype of the trace; anything else raises."]
-        if dtype == "float64" else
-        ["Baked for float32 input: the float64 trace carried out in float32, so",
-         "it can differ from the float32 runtime by an f32 rounding. Anything",
-         "else raises."])
+        if dtype == "float64"
+        else [
+            "Baked for float32 input: the float64 trace carried out in float32, so",
+            "it can differ from the float32 runtime by an f32 rounding. Anything",
+            "else raises.",
+        ]
+    )
     lines = [
         f'"""{type(inst).__name__} ({statics}), baked by chebax {__version__} from the',
-        'runtime jaxpr. Self-contained: imports jax only. Do not edit.',
+        "runtime jaxpr. Self-contained: imports jax only. Do not edit.",
         "",
         *dtype_note,
-        'Plain jax AD gives the derivative.',
+        "Plain jax AD gives the derivative.",
         *_slope_note(slope_dropped),
         '"""',
         "",
@@ -243,8 +272,10 @@ def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
 def _cpp_array(name, vals, ctype="double"):
     vals = [float(v) for v in np.asarray(vals)]
     suf = "f" if ctype == "float" else ""
-    body = "\n".join("    " + ", ".join(repr(x) + suf for x in vals[i:i + 4]) + ","
-                     for i in range(0, len(vals), 4))
+    body = "\n".join(
+        "    " + ", ".join(repr(x) + suf for x in vals[i : i + 4]) + ","
+        for i in range(0, len(vals), 4)
+    )
     return f"inline constexpr {ctype} {name}[{len(vals)}] = {{\n{body}\n}};"
 
 
@@ -263,6 +294,7 @@ def xsf_header(inst, path, name=None, dtype="double", truncate_tol=None):
         raise ValueError(f"dtype must be 'double' or 'float', got {dtype!r}")
     _check(inst)
     name = _ident(f"{_family(inst)}_{_tag(inst)}" if name is None else name, "name")
+    _check_free(name, _CPP_RESERVED)
     if truncate_tol is not None:
         inst = inst.truncate(truncate_tol)
     body, coefs, result, slope_dropped = trace_and_emit(inst, cpp=True, ctype=dtype)

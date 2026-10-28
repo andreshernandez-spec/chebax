@@ -23,19 +23,26 @@ Regenerate with:  python -m chebax._src.recipes.vonmises_gen  (~10 min)
 import math
 import pathlib
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path, write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 
 KMAX_VM = 50.0
-NW_VM = 112   # w-degree 111; worst measured 90 at kappa = 50
-NK_VM = 108   # r-degree 107; worst measured 87 at w = 9
+NW_VM = 112  # w-degree 111; worst measured 90 at kappa = 50
+NK_VM = 108  # r-degree 107; worst measured 87 at w = 9
 
 
 def generate_table():
     import mpmath as mp
 
     with mp.workdps(DPS):
-        W = mp.pi ** 2
+        W = mp.pi**2
         rmax = mp.sqrt(KMAX_VM)
         tw = nodes(mp, NW_VM)
         rows = []
@@ -47,7 +54,9 @@ def generate_table():
             for s in tw:
                 w = (s + 1) / 2 * W
                 th = mp.sqrt(w)
-                F = mp.quad(lambda u: mp.exp(kappa * mp.cos(u)), [-mp.pi, th]) / (2 * mp.pi * i0)
+                F = mp.quad(lambda u: mp.exp(kappa * mp.cos(u)), [-mp.pi, th]) / (
+                    2 * mp.pi * i0
+                )
                 samples.append((F - mp.mpf(1) / 2 - th / (2 * mp.pi)) / th)
             rows.append(dct(mp, samples))
         return to_f64(param_fit(mp, rows))
@@ -60,8 +69,9 @@ def main(out_dir=None):
         "TABLE[k, j] = j-th r-coefficient (r = sqrt(kappa) in [0, RMAX]) of "
         "the k-th w-coefficient (w = theta^2 in [0, WMAX])",
         {"nw": NW_VM, "nk": NK_VM, "kmax": KMAX_VM},
-        {"KMAX": KMAX_VM, "WMAX": math.pi ** 2, "RMAX": math.sqrt(KMAX_VM)},
-        {"TABLE": generate_table()})
+        {"KMAX": KMAX_VM, "WMAX": math.pi**2, "RMAX": math.sqrt(KMAX_VM)},
+        {"TABLE": generate_table()},
+    )
 
 
 if __name__ == "__main__":

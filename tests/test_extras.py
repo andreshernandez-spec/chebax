@@ -21,18 +21,22 @@ import pytest
 
 # the extras plus tfp (chebax.pytensor's batched fallback). scipy is not
 # here: jax depends on it, so it is never missing.
-_OPTIONAL = ("mpmath", "numpyro", "pytensor", "matplotlib",
-             "tensorflow_probability")
+_OPTIONAL = ("mpmath", "numpyro", "pytensor", "matplotlib", "tensorflow_probability")
 
 
 def _child(body):
     """Run body with the optional packages unimportable; return stdout."""
-    code = (f"import sys\n"
-            f"for name in {_OPTIONAL!r}:\n"
-            f"    sys.modules[name] = None\n"
-            + textwrap.dedent(body))
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env={**os.environ, "JAX_PLATFORMS": "cpu"})
+    code = (
+        f"import sys\n"
+        f"for name in {_OPTIONAL!r}:\n"
+        f"    sys.modules[name] = None\n" + textwrap.dedent(body)
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "JAX_PLATFORMS": "cpu"},
+    )
     assert out.returncode == 0, out.stderr[-3000:]
     return out.stdout
 
@@ -43,8 +47,9 @@ def test_import_needs_no_extra():
     """)
 
 
-@pytest.mark.parametrize("module, extra", [("chebax.numpyro", "numpyro"),
-                                           ("chebax.pytensor", "pytensor")])
+@pytest.mark.parametrize(
+    "module, extra", [("chebax.numpyro", "numpyro"), ("chebax.pytensor", "pytensor")]
+)
 def test_plugin_names_its_extra(module, extra):
     msg = _child(f"""
         try:

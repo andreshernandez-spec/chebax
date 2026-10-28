@@ -50,13 +50,15 @@ def _int_coefs(coef):
     and out_0 last so the antiderivative vanishes at t = 0."""
     n = coef.shape[-1]
     z = jnp.zeros(coef.shape[:-1] + (1,), coef.dtype)
-    hi = jnp.concatenate([coef[..., 2:], z, z], axis=-1)[..., :n]   # c_{k+1}, k = 1..n
+    hi = jnp.concatenate([coef[..., 2:], z, z], axis=-1)[..., :n]  # c_{k+1}, k = 1..n
     k = np.arange(1, n + 1)
     # divided term by term, like the reference, so the rounding matches
     lo_div = np.where(k == 1, 1.0, 2.0 * k).astype(coef.dtype)
     hi_div = (2.0 * k).astype(coef.dtype)
     out = coef / lo_div - hi / hi_div
-    tk = np.where(k % 2 == 1, 0.0, np.where(k % 4 == 0, 1.0, -1.0)).astype(coef.dtype)  # T_k(0)
+    tk = np.where(k % 2 == 1, 0.0, np.where(k % 4 == 0, 1.0, -1.0)).astype(
+        coef.dtype
+    )  # T_k(0)
     return jnp.concatenate([-jnp.sum(out * tk, axis=-1, keepdims=True), out], axis=-1)
 
 
@@ -71,7 +73,9 @@ def _as_float_coef(coef):
     if not traced and not isinstance(coef, jax.Array):
         coef = np.asarray(coef)  # numpy keeps the full integer width
     if jnp.issubdtype(coef.dtype, jnp.complexfloating):
-        raise ValueError(f"complex coefficients are not supported, got dtype {coef.dtype}")
+        raise ValueError(
+            f"complex coefficients are not supported, got dtype {coef.dtype}"
+        )
     if jnp.issubdtype(coef.dtype, jnp.floating):
         return jnp.asarray(coef)
     # integer coefficients truncate under integ() and break coefficient AD
@@ -82,9 +86,22 @@ def _as_float_coef(coef):
     src = np.asarray(coef)
     out = src.astype(canon)
     if not np.array_equal(out.astype(src.dtype), src):
-        raise ValueError(f"integer coefficients are not exactly representable in {canon}; "
-                         "convert them yourself if the rounding is acceptable")
+        raise ValueError(
+            f"integer coefficients are not exactly representable in {canon}; "
+            "convert them yourself if the rounding is acceptable"
+        )
     return jnp.asarray(out)
+
+
+def _as_point(x, coef):
+    """The evaluation point as a float array. An integer x reaching the
+    custom_jvp gets a float0 tangent, and the rule's arithmetic fails on
+    it even when only the coefficients are being differentiated:
+    grad of ChebSeries(c)(1) in c raised (review, 2026-10-26)."""
+    x = jnp.asarray(x)
+    if jnp.issubdtype(x.dtype, jnp.floating):
+        return x
+    return x.astype(jnp.result_type(x, coef))
 
 
 def _check_tol(tol):
@@ -124,6 +141,22 @@ def _dcoef(coef, domain):
     return (1.0 / (0.5 * b - 0.5 * a)) * _der_coefs(coef)
 
 
+def _to_unit(x, mid, half):
+    """(x - mid) / half, the affine map onto [-1, 1].
+
+    Past half = 1/tiny of x's dtype (2^1022 in float64, a domain wider than
+    about 9e307), XLA folds the division into a multiplication by the
+    reciprocal, which is subnormal, and the CPU flushes it to zero: every
+    point of a vectorized jit call evaluated at t = 0 (found fixing the
+    review of 2026-10-26). There both sides are scaled by tiny, an exact
+    power of two, and a barrier keeps XLA from folding the scaled
+    numerator back into one subnormal constant; half * tiny is O(1)."""
+    tiny = float(jnp.finfo(x.dtype).tiny)
+    if half * tiny < 1.0:
+        return (x - mid) / half
+    return jax.lax.optimization_barrier((x - mid) * tiny) / (half * tiny)
+
+
 def _chebval_impl(x, coef, domain):
     a, b = domain
     # promote before mapping: a float32 x against float64 coefficients must
@@ -137,8 +170,7 @@ def _chebval_impl(x, coef, domain):
     # 2026-08-02, which measured nan at both ends)
     mid = 0.5 * a + 0.5 * b
     half = 0.5 * b - 0.5 * a
-    t = (x - mid) / half
-    return _clenshaw(t, coef)
+    return _clenshaw(_to_unit(x, mid, half), coef)
 
 
 # The jvp rule calls the plain impl so the tangent computation is made of
@@ -152,7 +184,9 @@ def _chebval_jvp(domain, primals, tangents):
     x, coef = primals
     xdot, cdot = tangents
     y = _chebval_impl(x, coef, domain)
-    dy = _chebval_impl(x, _dcoef(coef, domain), domain) * xdot + _chebval_impl(x, cdot, domain)
+    dy = _chebval_impl(x, _dcoef(coef, domain), domain) * xdot + _chebval_impl(
+        x, cdot, domain
+    )
     return y, dy
 
 
@@ -170,7 +204,9 @@ class ChebSeries:
     def __init__(self, coef, domain=(-1.0, 1.0)):
         coef = _as_float_coef(coef)
         if coef.ndim != 1 or coef.shape[0] == 0:
-            raise ValueError(f"coef must be a nonempty 1-D array, got shape {coef.shape}")
+            raise ValueError(
+                f"coef must be a nonempty 1-D array, got shape {coef.shape}"
+            )
         self.coef = coef
         a, b = float(domain[0]), float(domain[1])
         if not (np.isfinite(a) and np.isfinite(b)) or not a < b:
@@ -181,7 +217,8 @@ class ChebSeries:
     def __setattr__(self, name, value):
         if self._frozen:
             raise AttributeError(
-                f"ChebSeries is immutable (cached instances are shared); cannot set {name!r}")
+                f"ChebSeries is immutable (cached instances are shared); cannot set {name!r}"
+            )
         object.__setattr__(self, name, value)
 
     def __delattr__(self, name):
@@ -191,7 +228,8 @@ class ChebSeries:
         if self._frozen:
             raise AttributeError(
                 f"ChebSeries is immutable (cached instances are shared); "
-                f"cannot delete {name!r}")
+                f"cannot delete {name!r}"
+            )
         object.__delattr__(self, name)
 
     @property
@@ -199,7 +237,7 @@ class ChebSeries:
         return self.coef.shape[0] - 1
 
     def __call__(self, x):
-        return _chebval(jnp.asarray(x), self.coef, self.domain)
+        return _chebval(_as_point(x, self.coef), self.coef, self.domain)
 
     def deriv(self):
         return ChebSeries(_dcoef(self.coef, self.domain), self.domain)
@@ -243,17 +281,19 @@ class ChebSeries:
 
 def _pw_dcoef(coef, breaks):
     br = np.asarray(breaks)
-    half = 0.5 * br[1:] - 0.5 * br[:-1]     # see _dcoef on the overflow
+    half = 0.5 * br[1:] - 0.5 * br[:-1]  # see _dcoef on the overflow
     return _der_coefs(coef) * jnp.asarray(1.0 / half, dtype=coef.dtype)[:, None]
 
 
 def _pw_chebval_impl(x, coef, breaks):
     dtype = jnp.result_type(x, coef)
     br = np.asarray(breaks)
-    idx = jnp.clip(jnp.searchsorted(jnp.asarray(br), x, side="right") - 1, 0, len(breaks) - 2)
+    idx = jnp.clip(
+        jnp.searchsorted(jnp.asarray(br), x, side="right") - 1, 0, len(breaks) - 2
+    )
     a = jnp.asarray(br[:-1], dtype)[idx]
     b = jnp.asarray(br[1:], dtype)[idx]
-    mid = 0.5 * a + 0.5 * b                 # see _chebval_impl on the overflow
+    mid = 0.5 * a + 0.5 * b  # see _chebval_impl on the overflow
     t = (x.astype(dtype) - mid) / (0.5 * b - 0.5 * a)
     return _clenshaw(t, coef[idx], coef_last_axis=True)
 
@@ -266,8 +306,9 @@ def _pw_chebval_jvp(breaks, primals, tangents):
     x, coef = primals
     xdot, cdot = tangents
     y = _pw_chebval_impl(x, coef, breaks)
-    dy = (_pw_chebval_impl(x, _pw_dcoef(coef, breaks), breaks) * xdot
-          + _pw_chebval_impl(x, cdot, breaks))
+    dy = _pw_chebval_impl(x, _pw_dcoef(coef, breaks), breaks) * xdot + _pw_chebval_impl(
+        x, cdot, breaks
+    )
     return y, dy
 
 
@@ -286,7 +327,11 @@ class PiecewiseCheb:
         self.breaks = tuple(float(t) for t in breaks)
         if len(self.breaks) < 2:
             raise ValueError("breaks needs at least two knots")
-        if coef.ndim != 2 or coef.shape[0] != len(self.breaks) - 1 or coef.shape[1] == 0:
+        if (
+            coef.ndim != 2
+            or coef.shape[0] != len(self.breaks) - 1
+            or coef.shape[1] == 0
+        ):
             raise ValueError("coef must have shape (len(breaks) - 1, degree + 1)")
         self.coef = coef
         if not all(np.isfinite(t) for t in self.breaks):
@@ -299,14 +344,16 @@ class PiecewiseCheb:
         if self._frozen:
             raise AttributeError(
                 f"PiecewiseCheb is immutable (cached instances are shared); "
-                f"cannot set {name!r}")
+                f"cannot set {name!r}"
+            )
         object.__setattr__(self, name, value)
 
     def __delattr__(self, name):
         if self._frozen:
             raise AttributeError(
                 f"PiecewiseCheb is immutable (cached instances are shared); "
-                f"cannot delete {name!r}")
+                f"cannot delete {name!r}"
+            )
         object.__delattr__(self, name)
 
     @property
@@ -318,7 +365,7 @@ class PiecewiseCheb:
         return (self.breaks[0], self.breaks[-1])
 
     def __call__(self, x):
-        return _pw_chebval(jnp.asarray(x), self.coef, self.breaks)
+        return _pw_chebval(_as_point(x, self.coef), self.coef, self.breaks)
 
     def deriv(self):
         return PiecewiseCheb(_pw_dcoef(self.coef, self.breaks), self.breaks)
@@ -338,8 +385,10 @@ class PiecewiseCheb:
         return PiecewiseCheb(self.coef[:, :n], self.breaks)
 
     def __repr__(self):
-        return (f"PiecewiseCheb(segments={len(self.breaks) - 1}, degree={self.degree}, "
-                f"domain={self.domain}, dtype={self.coef.dtype})")
+        return (
+            f"PiecewiseCheb(segments={len(self.breaks) - 1}, degree={self.degree}, "
+            f"domain={self.domain}, dtype={self.coef.dtype})"
+        )
 
     def tree_flatten(self):
         return (self.coef,), self.breaks

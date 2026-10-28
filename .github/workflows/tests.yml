@@ -68,6 +68,20 @@ jobs:
       - name: Per-recipe x64-off checks
         run: python -m pytest -q -k "x64_off or float32" tests/
 
+  format:
+    # black at the version pyproject's lint extra pins. Generated tables,
+    # experiments and notebooks are excluded there (see [tool.black]).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install ".[lint]"
+      - name: Check formatting
+        run: python -m black --check --diff src tests examples
+
   no-extras:
     # a plain `pip install .`, which is what users get: no extras, and not
     # editable, so it runs on what the wheel ships. Every other job

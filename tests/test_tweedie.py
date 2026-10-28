@@ -13,8 +13,8 @@ Measured worst, float64 (bar about 4x in each test):
   term, 3.2e-16. Both branches at the split agree to 4.4e-16 in value and
   3.5e-15 in d/du. The table's s -> 0 end matches
   c1(rho) = -(2 rho + 1)(rho + 2)/(24 rho) to 8.9e-16.
-- density: values 2.4e-13; d/dmu 3.4e-15, d/dy 2.4e-13, d/dphi 1.5e-12,
-  d/dp 3.7e-12. All worst near p = 1.05 in the direct sum, where
+- density: values 3.3e-13; d/dmu 3.1e-16, d/dy 1.2e-13, d/dphi 7.5e-13,
+  d/dp 3.6e-12. All worst near p = 1.05 in the direct sum, where
   lgamma(rho n) reaches ~4000 near the split and its rounding,
   eps |lgamma|, survives the cancellation down to an O(1) log-density;
   d/dp also carries drho/dp = -1/(p-1)^2 = -400 there.
@@ -76,8 +76,20 @@ def z_of(rho, big_z):
 
 def zgrid(rho):
     z1 = tt.ZA + tt.S1 * (1 + rho) ** 2
-    return [1e-6, 0.01, 0.5, 3.0, 0.9 * z1, z1 * (1 - 1e-9), z1 * (1 + 1e-9),
-            1.5 * z1, 10 * z1, 1e3, 1e4, 1e5]
+    return [
+        1e-6,
+        0.01,
+        0.5,
+        3.0,
+        0.9 * z1,
+        z1 * (1 - 1e-9),
+        z1 * (1 + 1e-9),
+        1.5 * z1,
+        10 * z1,
+        1e3,
+        1e4,
+        1e5,
+    ]
 
 
 def ref_logpdf(p, mu, phi, y):
@@ -91,11 +103,13 @@ def ref_logpdf(p, mu, phi, y):
     return -lam - y / theta - mp.log(y) + log_phi(rho, 0, mp.exp(u))
 
 
-CASES = [(p, mu, phi, y)
-         for p in (1.05, 1.08, 1.2, 1.5, 1.8, 1.95)
-         for mu, phi in ((1.0, 1.0), (50.0, 0.05), (0.2, 3.0), (3.0, 0.3), (8.0, 1.7))
-         for y in (0.0, 1e-6, 0.05, 0.9, 3.0, 20.0, 150.0)
-         if y == 0 or y ** (2 - p) / (phi * (2 - p) * (p - 1)) <= 1e5]
+CASES = [
+    (p, mu, phi, y)
+    for p in (1.05, 1.08, 1.2, 1.5, 1.8, 1.95)
+    for mu, phi in ((1.0, 1.0), (50.0, 0.05), (0.2, 3.0), (3.0, 0.3), (8.0, 1.7))
+    for y in (0.0, 1e-6, 0.05, 0.9, 3.0, 20.0, 150.0)
+    if y == 0 or y ** (2 - p) / (phi * (2 - p) * (p - 1)) <= 1e5
+]
 
 
 def _rel(got, ref):
@@ -107,8 +121,9 @@ def test_log_wright_bessel0_values():
     for rho in RHOS:
         for big_z in zgrid(rho):
             z = float(z_of(rho, big_z))
-            worst = max(worst, _rel(float(chebax.log_wright_bessel0(rho, z)),
-                                    float(log_phi(rho, 0, z))))
+            got = float(chebax.log_wright_bessel0(rho, z))
+            assert np.isfinite(got), (rho, z, got)
+            worst = max(worst, _rel(got, float(log_phi(rho, 0, z))))
     assert worst <= 3e-15, worst
 
 
@@ -120,6 +135,7 @@ def test_log_wright_bessel0_dz():
             z = float(z_of(rho, big_z))
             ref = float(mp.exp(log_phi(rho, rho, z) - log_phi(rho, 0, z)))
             got = float(jax.grad(lambda zz: chebax.log_wright_bessel0(rho, zz))(z))
+            assert np.isfinite(got), (rho, z, got)
             worst = max(worst, abs(got - ref) / abs(ref))
     assert worst <= 4e-14, worst
 
@@ -131,6 +147,7 @@ def test_log_wright_bessel0_drho():
             z = float(z_of(rho, big_z))
             ref = float(mp.diff(lambda r: log_phi(r, 0, z), mp.mpf(rho)))
             got = float(jax.grad(lambda r: chebax.log_wright_bessel0(r, z))(rho))
+            assert np.isfinite(got), (rho, z, got)
             worst = max(worst, _rel(got, ref))
     assert worst <= 3.5e-14, worst
 
@@ -146,9 +163,14 @@ def _branches(rho):
 
     def outer(u):
         big_z = (1 + rho) / rho * jnp.exp((lr + u) / (1 + rho))
-        return (big_z + 0.5 * jnp.log(rho * big_z / (1 + rho))
-                - 0.5 * jnp.log(2 * jnp.pi) - 0.5 * jnp.log1p(rho)
-                + tail(z1 / big_z) / big_z)
+        return (
+            big_z
+            + 0.5 * jnp.log(rho * big_z / (1 + rho))
+            - 0.5 * jnp.log(2 * jnp.pi)
+            - 0.5 * jnp.log1p(rho)
+            + tail(z1 / big_z) / big_z
+        )
+
     return u1, inner, outer
 
 
@@ -174,8 +196,11 @@ def test_huge_arguments_follow_the_saddle():
     # far past any reference: ln W tracks its leading term to eps relative
     for rho, z in ((1 / 19, 1e300), (1.0, 1e300), (19.0, 1e300), (0.3, 1e150)):
         got = float(chebax.log_wright_bessel0(rho, z))
-        t0 = (rho * z) ** (1 / (1 + rho)) if rho * z < 1e308 else np.exp(
-            (np.log(rho) + np.log(z)) / (1 + rho))
+        t0 = (
+            (rho * z) ** (1 / (1 + rho))
+            if rho * z < 1e308
+            else np.exp((np.log(rho) + np.log(z)) / (1 + rho))
+        )
         big_z = (1 + rho) * t0 / rho
         lead = big_z + 0.5 * np.log(t0) - 0.5 * np.log(2 * np.pi * (1 + rho))
         assert np.isfinite(got) and abs(got - lead) / lead <= 1.5e-15, (rho, got, lead)
@@ -188,18 +213,27 @@ def test_log_wright_bessel0_edges():
         assert np.isnan(float(chebax.log_wright_bessel0(rho, 2.0))), rho
     # small z: Phi ~ z / Gamma(rho)
     z = 1e-250
-    assert abs(float(chebax.log_wright_bessel0(2.5, z))
-               - (np.log(z) - float(mp.loggamma(2.5)))) <= 1e-13
+    assert (
+        abs(
+            float(chebax.log_wright_bessel0(2.5, z))
+            - (np.log(z) - float(mp.loggamma(2.5)))
+        )
+        <= 1e-13
+    )
 
 
 def test_tweedie_values():
     worst = 0.0
     for c in CASES:
-        worst = max(worst, _rel(float(chebax.tweedie_logpdf(*c)), float(ref_logpdf(*c))))
+        got = float(chebax.tweedie_logpdf(*c))
+        assert np.isfinite(got), (c, got)
+        worst = max(worst, _rel(got, float(ref_logpdf(*c))))
     assert worst <= 1e-12, worst
 
 
-@pytest.mark.parametrize("arg, bar", [(0, 1.5e-11), (1, 1.5e-14), (2, 6e-12), (3, 1e-12)])
+@pytest.mark.parametrize(
+    "arg, bar", [(0, 1.5e-11), (1, 1.5e-14), (2, 6e-12), (3, 1e-12)]
+)
 def test_tweedie_gradients(arg, bar):
     worst = 0.0
     for c in CASES:
@@ -208,8 +242,13 @@ def test_tweedie_gradients(arg, bar):
         if arg == 3 and c[3] == 0.0:
             continue
         got = float(jax.grad(chebax.tweedie_logpdf, argnums=arg)(*map(float, c)))
+        assert np.isfinite(got), (c, got)
         args = list(map(mp.mpf, c))
-        ref = float(mp.diff(lambda v: ref_logpdf(*(args[:arg] + [v] + args[arg + 1:])), args[arg]))
+        ref = float(
+            mp.diff(
+                lambda v: ref_logpdf(*(args[:arg] + [v] + args[arg + 1 :])), args[arg]
+            )
+        )
         worst = max(worst, _rel(got, ref))
     assert worst <= bar, worst
 
@@ -220,29 +259,53 @@ def test_tweedie_normalizes_with_its_moments():
     # spreads over hundreds of decades when rho is small (p near 2), and in v
     # that end is a plain exponential e^(rho v).
     from scipy import integrate
-    for p, mu, phi in ((1.1, 1.0, 1.0), (1.5, 2.0, 0.5), (1.9, 0.5, 2.0), (1.3, 5.0, 0.2)):
+
+    for p, mu, phi in (
+        (1.1, 1.0, 1.0),
+        (1.5, 2.0, 0.5),
+        (1.9, 0.5, 2.0),
+        (1.3, 5.0, 0.2),
+    ):
         logf = jax.jit(lambda y: chebax.tweedie_logpdf(p, mu, phi, y))
-        sd = np.sqrt(phi * mu ** p)
+        sd = np.sqrt(phi * mu**p)
         vhi = np.log(mu + 60 * sd)
 
         def g(v, k):
             return float(np.exp(logf(np.exp(v)) + (k + 1) * v))
+
         p0 = float(np.exp(logf(0.0)))
-        moments = [integrate.quad(g, -745.0, vhi, args=(k,), points=[np.log(mu)],
-                                  epsabs=1e-14, epsrel=1e-13, limit=400)[0]
-                   for k in (0, 1, 2)]
+        moments = [
+            integrate.quad(
+                g,
+                -745.0,
+                vhi,
+                args=(k,),
+                points=[np.log(mu)],
+                epsabs=1e-14,
+                epsrel=1e-13,
+                limit=400,
+            )[0]
+            for k in (0, 1, 2)
+        ]
         assert abs(p0 + moments[0] - 1) <= 1e-9, (p, moments)
         assert abs(moments[1] - mu) / mu <= 1e-9, (p, moments)
         var = moments[2] - moments[1] ** 2
-        assert abs(var - phi * mu ** p) / (phi * mu ** p) <= 1e-8, (p, moments)
+        assert abs(var - phi * mu**p) / (phi * mu**p) <= 1e-8, (p, moments)
 
 
 def test_tweedie_zero_mass_and_invalid():
     p, mu, phi = 1.4, 2.0, 0.7
     lam = mu ** (2 - p) / (phi * (2 - p))
-    assert float(chebax.tweedie_logpdf(p, mu, phi, 0.0)) == pytest.approx(-lam, rel=1e-15)
-    for bad in ((1.0499, mu, phi, 1.0), (1.9501, mu, phi, 1.0), (p, 0.0, phi, 1.0),
-                (p, mu, -1.0, 1.0), (p, mu, phi, -0.5)):
+    assert float(chebax.tweedie_logpdf(p, mu, phi, 0.0)) == pytest.approx(
+        -lam, rel=1e-15
+    )
+    for bad in (
+        (1.0499, mu, phi, 1.0),
+        (1.9501, mu, phi, 1.0),
+        (p, 0.0, phi, 1.0),
+        (p, mu, -1.0, 1.0),
+        (p, mu, phi, -0.5),
+    ):
         assert np.isnan(float(chebax.tweedie_logpdf(*bad))), bad
 
 
@@ -250,10 +313,20 @@ def test_tweedie_broadcast_and_parameter_shape():
     mu = jnp.asarray([0.5, 1.0, 2.0, 4.0])
     y = jnp.asarray([0.0, 0.3, 2.0, 9.0])
     got = np.asarray(chebax.tweedie_logpdf(1.6, mu, 0.8, y))
-    ref = [float(chebax.tweedie_logpdf(1.6, float(m), 0.8, float(v))) for m, v in zip(mu, y)]
-    np.testing.assert_allclose(got, ref, rtol=0, atol=1e-15)
-    np.testing.assert_allclose(np.asarray(chebax.tweedie_logpdf(jnp.asarray([1.6]), mu, 0.8, y)),
-                               got, rtol=0, atol=0)
+    ref = [
+        float(chebax.tweedie_logpdf(1.6, float(m), 0.8, float(v)))
+        for m, v in zip(mu, y)
+    ]
+    # a batch rounds its transcendentals differently from scalars (XLA
+    # vectorizes them), and the O(Z) terms that cancel here are ~7: a few
+    # of their ulps, measured 1.8e-15
+    np.testing.assert_allclose(got, ref, rtol=0, atol=5e-15)
+    np.testing.assert_allclose(
+        np.asarray(chebax.tweedie_logpdf(jnp.asarray([1.6]), mu, 0.8, y)),
+        got,
+        rtol=0,
+        atol=0,
+    )
     with pytest.raises(ValueError, match="pergroup"):
         chebax.tweedie_logpdf(jnp.asarray([1.3, 1.6]), 1.0, 1.0, 1.0)
 
@@ -273,16 +346,25 @@ def test_tweedie_traced_and_mixed_batch_gradients():
     assert np.all(np.isfinite(np.asarray(gm)))
     # the y = 0 lane is -lambda: d/dmu = -mu^(1-p)/phi exactly
     assert float(gm[0]) == pytest.approx(-(2.0 ** (1 - 1.3)) / 0.9, rel=1e-14)
-    gy = np.asarray(jax.vmap(jax.grad(lambda v: chebax.tweedie_logpdf(1.3, 2.0, 0.9, v)))(y[1:]))
+    gy = np.asarray(
+        jax.vmap(jax.grad(lambda v: chebax.tweedie_logpdf(1.3, 2.0, 0.9, v)))(y[1:])
+    )
     assert np.all(np.isfinite(gy))
 
 
 def test_x64_off():
     # float32 end to end, in a child process (conftest forces x64 on here)
-    pts_w = [(r, z) for r in (1 / 19, 0.25, 1.0, 4.0, 19.0)
-             for z in (1e-3, 0.7, 30.0, 1e4, 1e9, 1e30)]
-    pts_f = [(p, mu, phi, y) for p in (1.05, 1.2, 1.5, 1.8, 1.95)
-             for mu, phi in ((1.0, 1.0), (3.0, 0.3), (0.2, 3.0)) for y in (0.0, 0.05, 1.0, 6.0)]
+    pts_w = [
+        (r, z)
+        for r in (1 / 19, 0.25, 1.0, 4.0, 19.0)
+        for z in (1e-3, 0.7, 30.0, 1e4, 1e9, 1e30)
+    ]
+    pts_f = [
+        (p, mu, phi, y)
+        for p in (1.05, 1.2, 1.5, 1.8, 1.95)
+        for mu, phi in ((1.0, 1.0), (3.0, 0.3), (0.2, 3.0))
+        for y in (0.0, 0.05, 1.0, 6.0)
+    ]
     ref_w = [float(chebax.log_wright_bessel0(r, z)) for r, z in pts_w]
     ref_f = [float(chebax.tweedie_logpdf(*c)) for c in pts_f]
     code = (
@@ -295,15 +377,151 @@ def test_x64_off():
         f"for c, ref in zip({pts_f!r}, ref_f):\n"
         "    got = float(chebax.tweedie_logpdf(*c))\n"
         "    assert abs(got - ref) / max(1.0, abs(ref)) <= 3e-5, (c, got, ref)\n"
-        "print('ok')\n")
+        "print('ok')\n"
+    )
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
     env.pop("JAX_ENABLE_X64", None)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-1500:]
+
+
+def _ref_p15(mu, phi, y):
+    """ln f at p = 1.5 from Phi(1, 0; z) = sqrt(z) I1(2 sqrt(z)), 30 digits
+    above the working precision (70 at the module's 40): the density's
+    large terms cancel, and here they reach 1e16. Relative, so mp.diff's
+    own extra precision still reaches it."""
+    with mp.extradps(30):
+        mu, phi, y = map(mp.mpf, (mu, phi, y))
+        lam = 2 * mp.sqrt(mu) / phi
+        y_theta = 2 * y / (phi * mp.sqrt(mu))
+        z = lam * y_theta
+        return (
+            -lam
+            - y_theta
+            - mp.log(y)
+            + mp.log(mp.sqrt(z) * mp.besseli(1, 2 * mp.sqrt(z)))
+        )
+
+
+# (mu, phi, y) at p = 1.5, saddle scale Z from 4e3 to 4e15
+CONCENTRATED = [
+    (1e6, 1e-8, 1000010.0),
+    (1e6, 1e-12, 1000000.125),
+    (1.0, 1e-10, 1.0 + 2.0**-20),
+    (5.0, 1e-9, 4.0),
+    (2.0, 1e-7, 2.0),
+    (1e-3, 1e-9, 1.2e-3),
+    (1.0, 1e-6, 1.001),
+]
+
+
+def test_concentrated_densities():
+    # Far past what the series reference reaches. The deviance near the
+    # mean came from ln y - ln mu and a difference of two expm1 terms, which
+    # lost the relative displacement: float32 gave 2.53 for -5.28 at the
+    # second case (review, 2026-10-26). Metric as above; measured worst
+    # 2.7e-16 in values and 1.6e-13 in d/dmu, d/dphi, d/dy, bars 1e-15 and
+    # 6e-13.
+    worst_v = worst_g = 0.0
+    for c in CONCENTRATED:
+        got = float(chebax.tweedie_logpdf(1.5, *c))
+        g = jax.grad(chebax.tweedie_logpdf, argnums=(1, 2, 3))(1.5, *c)
+        assert np.isfinite([got, *map(float, g)]).all(), (c, got, g)
+        worst_v = max(worst_v, _rel(got, float(_ref_p15(*c))))
+        for k in range(3):
+            ref = mp.diff(
+                lambda v: _ref_p15(*(c[:k] + (v,) + c[k + 1 :])), mp.mpf(c[k])
+            )
+            worst_g = max(worst_g, _rel(float(g[k]), float(ref)))
+    assert worst_v <= 1e-15 and worst_g <= 6e-13, (worst_v, worst_g)
+
+
+def test_concentrated_x64_off():
+    # float32 inputs exact except phi; 1.001 is left out, since rounding it
+    # moves this density by 8e-6. Measured worst 1.9e-7, bar 1e-6.
+    cases = CONCENTRATED[:-1]
+    refs = [float(_ref_p15(*c)) for c in cases]
+    code = (
+        "import jax.numpy as jnp, chebax\n"
+        "assert jnp.empty(()).dtype == jnp.float32\n"
+        f"for c, ref in zip({cases!r}, {refs!r}):\n"
+        "    got = float(chebax.tweedie_logpdf(1.5, *c))\n"
+        "    assert abs(got - ref) / max(1.0, abs(ref)) <= 1e-6, (c, got, ref)\n"
+    )
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    env.pop("JAX_ENABLE_X64", None)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert out.returncode == 0, out.stderr[-1500:]
+
+
+def test_extreme_deviance_scales():
+    # y/mu overflowed at y = 1e10, mu = 1e-300 under a finite density; at
+    # p = 1.5 the half-deviance is 2y/sqrt(mu) - 4 sqrt(y) + 2 sqrt(mu),
+    # and the rest of ln f is below its last digit
+    got = float(chebax.tweedie_logpdf(1.5, 1e-300, 1.0, 1e10))
+    assert abs(got / -2e160 - 1) <= 1e-15, got
+    # phi = 1e-200 at the mean: ln f = -ln(2 pi phi)/2 + O(1/Z), and the
+    # p and phi gradients were nan, from unselected branches whose partials
+    # overflow there and from jax squaring phi in d(d/phi)/dphi
+    gp, gmu, gphi, gy = map(
+        float,
+        jax.grad(chebax.tweedie_logpdf, argnums=(0, 1, 2, 3))(1.5, 1.0, 1e-200, 1.0),
+    )
+    assert abs(gp) <= 1e-150 and gmu == 0.0, (gp, gmu)
+    assert gphi == pytest.approx(-0.5e200, rel=1e-15)
+    assert gy == pytest.approx(-0.75, rel=1e-15)
+    v = float(chebax.tweedie_logpdf(1.5, 1.0, 1e-200, 1.0))
+    assert v == pytest.approx(-0.5 * np.log(2 * np.pi * 1e-200), rel=1e-15)
+
+
+def test_mean_gradient_at_extreme_scales():
+    # Tweedie is an exponential dispersion family, so d ln f / dmu is
+    # exactly (y - mu) / (phi mu^p), zero at y = mu. AD of the deviance
+    # squared mu, which overflows at mu = 1e-220: (1.5, 1e-220, 1e-150,
+    # 1e-220) had a nan mean gradient under a finite density. The series
+    # branch cancelled two mu^(1-p)/phi terms to rounding instead (1e286 at
+    # mu = 1e-300 where the answer is 0), and lost y/theta's share to
+    # underflow at phi = 1e200 (review follow-up, 2026-10-26). Measured
+    # worst 3.2e-16 over 737 such points, bar 1.5e-15.
+    cases = [
+        (p, mu, phi, mu * ry)
+        for p in (1.05, 1.5, 1.95)
+        for mu, phi in (
+            (1e-300, 1e-150),
+            (1e-300, 1e200),
+            (1e-220, 1e-150),
+            (1e-220, 1e-200),
+            (1e100, 1e-10),
+            (1e250, 1e10),
+        )
+        for ry in (1.0, 1.001, 0.7, 20.0)
+    ]
+    grad = jax.jit(jax.grad(chebax.tweedie_logpdf, argnums=(0, 1, 2, 3)))
+    n = 0
+    for c in cases:
+        if not np.isfinite(float(chebax.tweedie_logpdf(*c))):
+            continue
+        n += 1
+        g = list(map(float, grad(*c)))
+        assert not np.isnan(g).any(), (c, g)
+        p, mu, phi, y = map(mp.mpf, c)
+        ref = (y - mu) / (phi * mu**p)
+        if ref == 0:
+            assert g[1] == 0.0, (c, g[1])
+        elif abs(ref) > np.finfo(np.float64).max:  # overflows, signed
+            assert g[1] == (np.inf if ref > 0 else -np.inf), (c, g[1])
+        else:
+            assert abs(g[1] - ref) <= 1.5e-15 * abs(ref), (c, g[1], float(ref))
+    assert n >= 60, n
 
 
 @pytest.mark.slow
 def test_table_regenerates_bit_for_bit(tmp_path):
     tweedie_gen.main(tmp_path)
-    assert (tmp_path / "tweedie_table.py").read_text() == pathlib.Path(tt.__file__).read_text()
+    assert (tmp_path / "tweedie_table.py").read_text() == pathlib.Path(
+        tt.__file__
+    ).read_text()

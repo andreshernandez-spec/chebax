@@ -33,10 +33,12 @@ def _series_cached(_tag):
     # (gammainc's large-a path), and a cached series whose arrays were
     # created under that trace leaks its tracers into every later call.
     with jax.ensure_compile_time_eval():
-        return (ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
-                ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
-                ChebSeries(_et.ERFCX_C, (0.0, _et.XS)),
-                ChebSeries(_et.ERFCX_H, (0.0, 1.0)))
+        return (
+            ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
+            ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
+            ChebSeries(_et.ERFCX_C, (0.0, _et.XS)),
+            ChebSeries(_et.ERFCX_H, (0.0, 1.0)),
+        )
 
 
 def _series():

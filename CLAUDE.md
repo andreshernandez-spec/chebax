@@ -3,6 +3,10 @@
 Read `PROJECT.md` first: goal, scope boundary, evidence, milestones, risks.
 This file is how to work here.
 
+Follow `docs/architecture.md` for dependency and numerical contracts, and
+`docs/coding-style.md` for naming, formatting, and documentation. Open items
+from the latest review are in `docs/review-2026-10-26.md`.
+
 > **Read `../CLAUDE.md` before anything else.** It governs: the OSS git identity (§1),
 > the `gh` restriction (§1.2), never push / never open a PR / never publish (§2), the
 > `open-source` conda env (§3), and writing style for anything upstream-facing (§4).
@@ -29,12 +33,13 @@ This file is how to work here.
   trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
   still the only number for a outside the box — say which when citing; gammaincinv
   solver rewire (`experiments/09`, same solver, residual swapped, RE-RUN
-  2026-08-02 on the log-space solver; the earlier 6.3–23.4× / 1.4× figures were
-  the pre-merge solver and no longer describe the code): 10.4–37.8× f64 for
-  uniform p at a in {9.9, 3.5, 0.5} and 5.8–14.7× at a in {50, 500} on the
-  Temme path, 2.4–5.3× on pure deep-tail p (jax's series branch is cheap
-  there), path agreement ≤ 1.8e-12, and the JVP's dP/da term 4.9–17.6× vs
-  igamma_grad_a (agreement ≤ 1.7e-14); betainc race
+  2026-10-27 after the floor test added one residual evaluation per solve;
+  the earlier 6.3–23.4× / 1.4× figures were the pre-merge solver and no
+  longer describe the code): 10.3–38.2× f64 for uniform p at a in
+  {9.9, 3.5, 0.5} and 5.9–14.7× at a in {50, 500} on the Temme path,
+  2.5–5.3× on pure deep-tail p (jax's series branch is cheap there), path
+  agreement ≤ 1.8e-12, and the JVP's dP/da term 4.0–15.6× vs igamma_grad_a
+  (agreement ≤ 1.7e-14); betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
@@ -99,6 +104,10 @@ python -m pytest -q -m slow -n 4                  # table regeneration, ~4.5 min
                                                   #  commits; CI runs them as separate
                                                   #  jobs on every push (bake header test
                                                   #  skips without g++; conftest enables x64)
+python -m black src tests examples                # format (the lint extra pins black;
+                                                  #  CI runs --check). Reformatting a
+                                                  #  generator changes its source hash:
+                                                  #  regenerate its table too
 python -m chebax._src.recipes.besselk_gen         # regenerate the besselk log-tables
 python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-tables
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
@@ -131,7 +140,8 @@ compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
 PROJECT.md      the plan and evidence
 CLAUDE.md       this file
 README.md       orientation, quickstart, capability table
-docs/           adding-a-recipe.md (the recipe workflow), increments.md (design log)
+docs/           architecture.md (contracts), coding-style.md (conventions),
+                adding-a-recipe.md (workflow), increments.md (design log), reviews
 experiments/    reproducible measurements, incl. 03_degree_measurement.py which
                 reproduces every degree claim in the generator docstrings
 notebooks/      executed example notebooks, themed (see notebooks/README.md);

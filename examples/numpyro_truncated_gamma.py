@@ -82,7 +82,8 @@ def check_nuts_recovery():
 
     c_true, r_true, lo, hi = 3.0, 2.0, 1.0, 6.0
     y = TruncatedGamma(c_true, r_true, low=lo, high=hi).sample(
-        random.PRNGKey(3), (400,))
+        random.PRNGKey(3), (400,)
+    )
 
     def model(y):
         c = numpyro.sample("concentration", dist.LogNormal(0.0, 1.0))
@@ -90,14 +91,22 @@ def check_nuts_recovery():
         with numpyro.plate("data", y.shape[0]):
             numpyro.sample("y", TruncatedGamma(c, r, low=lo, high=hi), obs=y)
 
-    mcmc = MCMC(NUTS(model), num_warmup=500, num_samples=500, num_chains=2,
-                chain_method="sequential", progress_bar=False)
+    mcmc = MCMC(
+        NUTS(model),
+        num_warmup=500,
+        num_samples=500,
+        num_chains=2,
+        chain_method="sequential",
+        progress_bar=False,
+    )
     mcmc.run(random.PRNGKey(4), np.asarray(y))
     post = mcmc.get_samples()
     cm, cs = float(post["concentration"].mean()), float(post["concentration"].std())
     rm, rs = float(post["rate"].mean()), float(post["rate"].std())
-    print(f"NUTS on truncated data: concentration {cm:.2f} +- {cs:.2f} "
-          f"(true {c_true}), rate {rm:.2f} +- {rs:.2f} (true {r_true})")
+    print(
+        f"NUTS on truncated data: concentration {cm:.2f} +- {cs:.2f} "
+        f"(true {c_true}), rate {rm:.2f} +- {rs:.2f} (true {r_true})"
+    )
     assert abs(cm - c_true) < 4 * cs and abs(rm - r_true) < 4 * rs
 
 

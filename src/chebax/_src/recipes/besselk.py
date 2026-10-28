@@ -41,11 +41,16 @@ import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
-from chebax._src.recipes._common import (canon_param, canon_float, canon_tag, check_range,
-                                         param_coefs,
-                                         param_coefs_der, traced_coefs)
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_float,
+    canon_tag,
+    check_range,
+    param_coefs,
+    param_coefs_der,
+    traced_coefs,
+)
 from chebax._src.series import ChebSeries
-
 
 # sqrt(pi/2) and ln sqrt(pi/2) factored out: forming 2*x first overflows
 # above x ~ 9e307 (and above ~1.7e38 in f32), which sent ln K to -inf and
@@ -125,17 +130,20 @@ class BesselKdnu(Recipe):
         self.v = float(self.v)
 
     def __call__(self, x):
-        return _eval_k_dnu(self.v, jnp.asarray(x), self.ltil, self.ltail,
-                           self.ltil_nu, self.ltail_nu)
+        return _eval_k_dnu(
+            self.v, jnp.asarray(x), self.ltil, self.ltail, self.ltil_nu, self.ltail_nu
+        )
 
 
 @functools.lru_cache(maxsize=128)
 def _besselk_cached(v, _tag):
     v = check_range("besselk", "v", v, 0.0, _kt.VMAX)
     table, lo, hi = _panel(v)
-    return BesselK(v,
-                   ChebSeries(param_coefs(table, lo, hi, v), (_kt.U0, _kt.U1)),
-                   ChebSeries(param_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, v), (0.0, 1.0)))
+    return BesselK(
+        v,
+        ChebSeries(param_coefs(table, lo, hi, v), (_kt.U0, _kt.U1)),
+        ChebSeries(param_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, v), (0.0, 1.0)),
+    )
 
 
 @functools.lru_cache(maxsize=128)

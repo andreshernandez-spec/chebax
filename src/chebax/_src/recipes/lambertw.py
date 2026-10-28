@@ -44,9 +44,31 @@ def _halley(x, w):
     return w
 
 
+# Above this, k = 0 iterates on the logarithmic residual instead
+_LOG_FORM = 1e300
+
+
+def _halley_log(lx, w):
+    """Halley on g(w) = w + ln w - ln x, for x near the top of the range.
+
+    There w e^w - x overflows as soon as an iterate overshoots the root,
+    and so does e^w (w + 1) in the denominator: at x = max float no update
+    was finite and w stayed at its initializer, 3e-8 off (review,
+    2026-10-26). Every term of g is O(w). It costs about one more ulp than
+    the plain residual, whose error is eps / (1 + w) relative, so it is
+    used only up here."""
+    for _ in range(_ITERS):
+        g = w + jnp.log(w) - lx
+        g1 = 1.0 + 1.0 / w
+        g2 = -1.0 / (w * w)
+        wn = w - g / (g1 - g * g2 / (2.0 * g1))
+        w = jnp.where(jnp.isfinite(wn) & (wn > 0.0), wn, w)
+    return w
+
+
 def _branch_series(p, sign):
     # W = -1 + s p - p^2/3 + 11 s p^3/72, s = +1 (k=0), -1 (k=-1)
-    return -1.0 + sign * p - p * p / 3.0 + sign * 11.0 * p ** 3 / 72.0
+    return -1.0 + sign * p - p * p / 3.0 + sign * 11.0 * p**3 / 72.0
 
 
 @jax.custom_jvp
@@ -57,7 +79,8 @@ def _w0(x):
     l1 = jnp.log(jnp.maximum(xs, 2.0))
     l2 = jnp.log(l1)
     init = jnp.where(xs < 1.0, _branch_series(p, 1.0), l1 - l2 + l2 / l1)
-    w = _halley(xs, init)
+    big = xs > _LOG_FORM
+    w = jnp.where(big, _halley_log(l1, jnp.where(big, init, 1.0)), _halley(xs, init))
     w = jnp.where(x == jnp.inf, jnp.inf, w)
     return jnp.where((x < _BR_LO) | jnp.isnan(x), jnp.nan, w)
 

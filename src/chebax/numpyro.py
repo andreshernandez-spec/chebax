@@ -24,9 +24,9 @@ unresolvable, in logs as much as out of them, and comes back with a
 relative error of about eps over its mass.
 
 The chebax contract applies: shape parameters are uniform per call (a
-scalar or one traced latent each; batched shape arrays are not served,
-use chebax.pergroup for per-group shapes), and a non-scalar shape is
-rejected at construction. Domains, from the underlying tables and
+scalar, a size-one array or one traced latent each; batched shape arrays
+are not served, use chebax.pergroup for per-group shapes), and a shape
+holding more than one value is rejected at construction. Domains, from the underlying tables and
 checked eagerly when the value is not traced: TruncatedBeta needs
 (concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
 needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
@@ -54,7 +54,8 @@ try:
     from numpyro.distributions.util import promote_shapes, validate_sample
 except ImportError as e:
     raise ImportError(
-        "chebax.numpyro needs numpyro: pip install chebax[numpyro]") from e
+        "chebax.numpyro needs numpyro: pip install chebax[numpyro]"
+    ) from e
 
 from jax import lax, random
 from jax.scipy.special import betaln, gammaln
@@ -62,8 +63,7 @@ from jax.scipy.special import betaln, gammaln
 import chebax
 from chebax import domains as _dom
 from chebax._src.recipes._common import canon_float
-from chebax._src.recipes.quantiles import (_t_logpdf, log_stdtr,
-                                           log_stdtr_sf)
+from chebax._src.recipes.stdtr import _t_logpdf, log_stdtr, log_stdtr_sf
 
 __all__ = ["TruncatedGamma", "TruncatedBeta", "TruncatedStudentT", "Tweedie"]
 
@@ -79,8 +79,21 @@ def _logdiffexp(a, b):
     edge of the support needs; a = -inf (both terms zero) gives -inf."""
     fin = a > -jnp.inf
     a_s = jnp.where(fin, a, 0.0)
-    d = jnp.minimum(b - a_s, 0.0)          # rounding can push b just past a
+    d = jnp.minimum(b - a_s, 0.0)  # rounding can push b just past a
     return jnp.where(fin, a_s + jnp.log(-jnp.expm1(d)), -jnp.inf)
+
+
+def _tail_logdiffexp(upper, upper_pair, lower_pair):
+    """_logdiffexp of upper_pair where upper holds, else of lower_pair.
+
+    Select the operands, not the results. Deep in one tail the other
+    tail's two logs round to the same value, its log difference is
+    log(0), and that infinite slope times the zero cotangent of the
+    unselected lane is a nan gradient: TruncatedGamma(3) on [1000, 1001]
+    had a finite log_prob and a nan shape gradient (review, 2026-10-26)."""
+    a = jnp.where(upper, upper_pair[0], lower_pair[0])
+    b = jnp.where(upper, upper_pair[1], lower_pair[1])
+    return _logdiffexp(a, b)
 
 
 def _pick(mask, when_true, when_false):
@@ -96,6 +109,16 @@ def _pick(mask, when_true, when_false):
     return when_true() if taken else when_false()
 
 
+def _batched(dist_, out):
+    """out broadcast against the distribution's batch shape. The shape
+    parameters reach the computation as scalars, so a (1,) concentration
+    set batch_shape (1,) while cdf came back () (review follow-up,
+    2026-10-26)."""
+    return jnp.broadcast_to(
+        out, lax.broadcast_shapes(jnp.shape(out), dist_.batch_shape)
+    )
+
+
 def _check_bounds_eagerly(low, high):
     try:  # traced bounds cannot be checked at construction time
         if not np.all(np.asarray(low) < np.asarray(high)):
@@ -105,15 +128,18 @@ def _check_bounds_eagerly(low, high):
 
 
 def _check_scalar(owner, name, v):
-    if jnp.ndim(v) != 0:
+    # size, not ndim: a (1,) array is the one value it holds, as in the
+    # core functions, and numpyro's own broadcasting hands those back
+    if jnp.size(v) != 1:
         raise ValueError(
             f"{owner} needs a scalar {name}: chebax shape parameters are "
-            "uniform per call, use chebax.pergroup for per-group shapes")
+            "uniform per call, use chebax.pergroup for per-group shapes"
+        )
 
 
 def _check_shape_range(owner, name, v, lo, hi):
     try:  # a traced shape cannot be checked at construction time
-        x = float(np.asarray(v))
+        x = float(np.asarray(v).reshape(()))
     except jax.errors.TracerArrayConversionError:
         return
     if not lo <= x <= hi:
@@ -134,15 +160,18 @@ def _log_pq(a, x, use_recipe):
     functions do."""
     if use_recipe:
         return chebax.log_gammainc_fn(a, x), chebax.log_gammaincc_fn(a, x)
-    return (jnp.log(jax.scipy.special.gammainc(a, x)),
-            jnp.log(jax.scipy.special.gammaincc(a, x)))
+    return (
+        jnp.log(jax.scipy.special.gammainc(a, x)),
+        jnp.log(jax.scipy.special.gammaincc(a, x)),
+    )
 
 
 def _gamma_log_pq(a, x):
     """(ln P, ln Q) for any a > 0. One scalar cond, only one branch runs."""
     a, x = canon_float(a), canon_float(x)
-    return lax.cond(_in_box(a), lambda: _log_pq(a, x, True),
-                    lambda: _log_pq(a, x, False))
+    return lax.cond(
+        _in_box(a), lambda: _log_pq(a, x, True), lambda: _log_pq(a, x, False)
+    )
 
 
 _Norm = namedtuple("_Norm", "lnz lo_f lo_s hi_f hi_s upper")
@@ -173,7 +202,7 @@ class _Truncated(dist.Distribution):
         # a constant. A straddling interval takes the lower form; it has
         # O(1) mass on at least one side.
         upper = lo_f >= -_LN2
-        lnz = jnp.where(upper, _logdiffexp(lo_s, hi_s), _logdiffexp(hi_f, lo_f))
+        lnz = _tail_logdiffexp(upper, (lo_s, hi_s), (hi_f, lo_f))
         return _Norm(lnz, lo_f, lo_s, hi_f, hi_s, upper)
 
     def rsample(self, key, sample_shape=()):
@@ -198,19 +227,26 @@ class _Truncated(dist.Distribution):
         q = jnp.where(bad, 0.5, q)
         lp = jnp.logaddexp(n.lo_f, jnp.log(q) + n.lnz)
         ls = jnp.logaddexp(n.hi_s, jnp.log1p(-q) + n.lnz)
-        x = _pick(n.upper,
-                  lambda: self._icdf_upper(jnp.exp(ls)),
-                  lambda: self._icdf_lower(jnp.exp(lp)))
+        x = _pick(
+            n.upper,
+            lambda: self._icdf_upper(jnp.exp(ls)),
+            lambda: self._icdf_lower(jnp.exp(lp)),
+        )
         x = jnp.clip(x, self.low, self.high)
         x = jnp.where(q <= 0.0, self.low, jnp.where(q >= 1.0, self.high, x))
-        return jnp.where(bad, jnp.nan, x)
+        return _batched(self, jnp.where(bad, jnp.nan, x))
 
     def cdf(self, value):
         n = self._norm()
-        v = jnp.clip(jnp.asarray(value), self.low, self.high)
+        value = jnp.asarray(value)
+        v = jnp.clip(value, self.low, self.high)
         f, s = self._log_cdf_sf(v)
-        num = jnp.where(n.upper, _logdiffexp(n.lo_s, s), _logdiffexp(f, n.lo_f))
-        return jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
+        num = _tail_logdiffexp(n.upper, (n.lo_s, s), (f, n.lo_f))
+        # nan is no point of the support: the base laws read it as above
+        # the median and every class returned cdf(nan) = 1 (review,
+        # 2026-10-26), where icdf and the core functions give nan
+        out = jnp.clip(jnp.exp(num - n.lnz), 0.0, 1.0)
+        return _batched(self, jnp.where(jnp.isnan(value), jnp.nan, out))
 
     def _validate_sample(self, value):
         # numpyro checks the support with numpy unless the value is a jax
@@ -221,8 +257,12 @@ class _Truncated(dist.Distribution):
     def log_prob(self, value):
         value = jnp.asarray(value)
         inside = (value >= self.low) & (value <= self.high)
-        return jnp.where(inside, self._log_density(value) - self._norm().lnz,
-                         -jnp.inf)
+        # nan counts as outside the support, here and in numpyro's own
+        # validation, which replaces log_prob there by -inf
+        return _batched(
+            self,
+            jnp.where(inside, self._log_density(value) - self._norm().lnz, -jnp.inf),
+        )
 
 
 class TruncatedGamma(_Truncated):
@@ -240,16 +280,18 @@ class TruncatedGamma(_Truncated):
     }
     reparametrized_params = ["concentration", "rate", "low", "high"]
 
-    def __init__(self, concentration, rate=1.0, *, low=0.0, high=jnp.inf,
-                 validate_args=None):
+    def __init__(
+        self, concentration, rate=1.0, *, low=0.0, high=jnp.inf, validate_args=None
+    ):
         _check_scalar("TruncatedGamma", "concentration", concentration)
         self.concentration = jnp.asarray(concentration)
         self.rate, self.low, self.high = promote_shapes(
-            jnp.asarray(rate), jnp.asarray(low), jnp.asarray(high))
+            jnp.asarray(rate), jnp.asarray(low), jnp.asarray(high)
+        )
         _check_bounds_eagerly(self.low, self.high)
         batch_shape = lax.broadcast_shapes(
-            jnp.shape(concentration), jnp.shape(rate), jnp.shape(low),
-            jnp.shape(high))
+            jnp.shape(concentration), jnp.shape(rate), jnp.shape(low), jnp.shape(high)
+        )
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
     def _log_cdf_sf(self, value):
@@ -258,21 +300,27 @@ class TruncatedGamma(_Truncated):
         # a nan rate gradient (the default one-sided truncation)
         inside = (value > 0.0) & jnp.isfinite(value)
         v = jnp.where(inside, value, 1.0)
-        f, s = _gamma_log_pq(self.concentration, self.rate * v)
+        # the a-box cond needs a scalar predicate
+        c = jnp.reshape(self.concentration, ())
+        f, s = _gamma_log_pq(c, self.rate * v)
         below = value <= 0.0
-        return (jnp.where(inside, f, jnp.where(below, -jnp.inf, 0.0)),
-                jnp.where(inside, s, jnp.where(below, 0.0, -jnp.inf)))
+        return (
+            jnp.where(inside, f, jnp.where(below, -jnp.inf, 0.0)),
+            jnp.where(inside, s, jnp.where(below, 0.0, -jnp.inf)),
+        )
 
     def _log_density(self, value):
         c = self.concentration
         pos = (value > 0.0) & jnp.isfinite(value)
         v = jnp.where(pos, value, 1.0)
-        core = (c * jnp.log(self.rate) + (c - 1.0) * jnp.log(v)
-                - self.rate * v - gammaln(c))
+        core = (
+            c * jnp.log(self.rate) + (c - 1.0) * jnp.log(v) - self.rate * v - gammaln(c)
+        )
         # x = 0 leaves (c-1) log 0, which is 0 * -inf at c = 1, where the
         # density is the rate itself
-        at0 = jnp.where(c == 1.0, jnp.log(self.rate),
-                        jnp.where(c < 1.0, jnp.inf, -jnp.inf))
+        at0 = jnp.where(
+            c == 1.0, jnp.log(self.rate), jnp.where(c < 1.0, jnp.inf, -jnp.inf)
+        )
         return jnp.where(pos, core, jnp.where(value <= 0.0, at0, -jnp.inf))
 
     def _icdf_lower(self, p):
@@ -291,30 +339,34 @@ class TruncatedBeta(_Truncated):
     """
 
     arg_constraints = {
-        "concentration1": constraints.interval(_dom.BETAINC.lo,
-                                              _dom.BETAINC.hi),
-        "concentration0": constraints.interval(_dom.BETAINC.lo,
-                                               _dom.BETAINC.hi),
+        "concentration1": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
+        "concentration0": constraints.interval(_dom.BETAINC.lo, _dom.BETAINC.hi),
         "low": constraints.unit_interval,
         "high": constraints.unit_interval,
     }
     reparametrized_params = ["concentration1", "concentration0", "low", "high"]
 
-    def __init__(self, concentration1, concentration0, *, low=0.0, high=1.0,
-                 validate_args=None):
-        for name, c in (("concentration1", concentration1),
-                        ("concentration0", concentration0)):
+    def __init__(
+        self, concentration1, concentration0, *, low=0.0, high=1.0, validate_args=None
+    ):
+        for name, c in (
+            ("concentration1", concentration1),
+            ("concentration0", concentration0),
+        ):
             _check_scalar("TruncatedBeta", name, c)
-            _check_shape_range("TruncatedBeta", name, c, _dom.BETAINC.lo,
-                               _dom.BETAINC.hi)
+            _check_shape_range(
+                "TruncatedBeta", name, c, _dom.BETAINC.lo, _dom.BETAINC.hi
+            )
         self.concentration1 = jnp.asarray(concentration1)
         self.concentration0 = jnp.asarray(concentration0)
-        self.low, self.high = promote_shapes(jnp.asarray(low),
-                                             jnp.asarray(high))
+        self.low, self.high = promote_shapes(jnp.asarray(low), jnp.asarray(high))
         _check_bounds_eagerly(self.low, self.high)
         batch_shape = lax.broadcast_shapes(
-            jnp.shape(concentration1), jnp.shape(concentration0),
-            jnp.shape(low), jnp.shape(high))
+            jnp.shape(concentration1),
+            jnp.shape(concentration0),
+            jnp.shape(low),
+            jnp.shape(high),
+        )
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
     def _log_cdf_sf(self, value):
@@ -324,10 +376,16 @@ class TruncatedBeta(_Truncated):
         below = value <= 0.0
         # 1 - v is exact for v >= 1/2, which is the side the upper tail
         # needs; below the median the survival is O(1) and does not care
-        return (jnp.where(inside, chebax.log_betainc_fn(a, b, v),
-                          jnp.where(below, -jnp.inf, 0.0)),
-                jnp.where(inside, chebax.log_betainc_fn(b, a, 1.0 - v),
-                          jnp.where(below, 0.0, -jnp.inf)))
+        return (
+            jnp.where(
+                inside, chebax.log_betainc_fn(a, b, v), jnp.where(below, -jnp.inf, 0.0)
+            ),
+            jnp.where(
+                inside,
+                chebax.log_betainc_fn(b, a, 1.0 - v),
+                jnp.where(below, 0.0, -jnp.inf),
+            ),
+        )
 
     def _log_density(self, value):
         a, b = self.concentration1, self.concentration0
@@ -347,8 +405,7 @@ class TruncatedBeta(_Truncated):
     def _icdf_upper(self, s):
         # 1 - X is Beta(b, a), so the upper tail inverts at full accuracy
         # in the distance from 1; only the final subtraction is absolute
-        return 1.0 - chebax.betaincinv(self.concentration0,
-                                       self.concentration1, s)
+        return 1.0 - chebax.betaincinv(self.concentration0, self.concentration1, s)
 
 
 class TruncatedStudentT(_Truncated):
@@ -362,30 +419,32 @@ class TruncatedStudentT(_Truncated):
 
     # constraints.real rejects inf, so it would reject the untruncated
     # default bounds; interval's own test is inclusive
-    arg_constraints = {"df": constraints.interval(_DF_LO, _DF_HI),
-                       "low": _REAL_OR_INF,
-                       "high": _REAL_OR_INF}
+    arg_constraints = {
+        "df": constraints.interval(_DF_LO, _DF_HI),
+        "low": _REAL_OR_INF,
+        "high": _REAL_OR_INF,
+    }
     reparametrized_params = ["df", "low", "high"]
 
     def __init__(self, df, *, low=-jnp.inf, high=jnp.inf, validate_args=None):
         _check_scalar("TruncatedStudentT", "df", df)
         _check_shape_range("TruncatedStudentT", "df", df, _DF_LO, _DF_HI)
         self.df = jnp.asarray(df)
-        self.low, self.high = promote_shapes(jnp.asarray(low),
-                                             jnp.asarray(high))
+        self.low, self.high = promote_shapes(jnp.asarray(low), jnp.asarray(high))
         _check_bounds_eagerly(self.low, self.high)
         batch_shape = lax.broadcast_shapes(
-            jnp.shape(df), jnp.shape(low), jnp.shape(high))
+            jnp.shape(df), jnp.shape(low), jnp.shape(high)
+        )
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
     def _log_cdf_sf(self, value):
         fin = jnp.isfinite(value)
         v = jnp.where(fin, value, 0.0)
         below = value < 0.0
-        return (jnp.where(fin, log_stdtr(self.df, v),
-                          jnp.where(below, -jnp.inf, 0.0)),
-                jnp.where(fin, log_stdtr_sf(self.df, v),
-                          jnp.where(below, 0.0, -jnp.inf)))
+        return (
+            jnp.where(fin, log_stdtr(self.df, v), jnp.where(below, -jnp.inf, 0.0)),
+            jnp.where(fin, log_stdtr_sf(self.df, v), jnp.where(below, 0.0, -jnp.inf)),
+        )
 
     def _log_density(self, value):
         return _t_logpdf(self.df, value)
@@ -423,16 +482,21 @@ class Tweedie(dist.Distribution):
 
     def __init__(self, mu, phi, power, *, validate_args=None):
         _check_scalar("Tweedie", "power", power)
-        _check_shape_range("Tweedie", "power", power, _dom.TWEEDIE_P.lo,
-                           _dom.TWEEDIE_P.hi)
+        _check_shape_range(
+            "Tweedie", "power", power, _dom.TWEEDIE_P.lo, _dom.TWEEDIE_P.hi
+        )
         self.power = jnp.asarray(power)
         self.mu, self.phi = promote_shapes(jnp.asarray(mu), jnp.asarray(phi))
-        batch_shape = lax.broadcast_shapes(jnp.shape(mu), jnp.shape(phi))
+        batch_shape = lax.broadcast_shapes(
+            jnp.shape(mu), jnp.shape(phi), jnp.shape(power)
+        )
         super().__init__(batch_shape=batch_shape, validate_args=validate_args)
 
     @validate_sample
     def log_prob(self, value):
-        return chebax.tweedie_logpdf(self.power, self.mu, self.phi, value)
+        return _batched(
+            self, chebax.tweedie_logpdf(self.power, self.mu, self.phi, value)
+        )
 
     def sample(self, key, sample_shape=()):
         shape = sample_shape + self.batch_shape
@@ -452,4 +516,4 @@ class Tweedie(dist.Distribution):
 
     @property
     def variance(self):
-        return jnp.broadcast_to(self.phi * self.mu ** self.power, self.batch_shape)
+        return jnp.broadcast_to(self.phi * self.mu**self.power, self.batch_shape)

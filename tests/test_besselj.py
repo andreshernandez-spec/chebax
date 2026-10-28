@@ -36,13 +36,19 @@ def refs():
 
 
 def worst(err_fn):
-    return max(err_fn(v) for v in NUS)
+    # python's max drops a nan, so check before reducing
+    errs = [err_fn(v) for v in NUS]
+    assert np.all(np.isfinite(errs)), errs
+    return max(errs)
 
 
 def test_values_f64(refs):
     def err(v):
         J, _ = refs[v]
-        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XS)) - J)) / np.max(np.abs(J))
+        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XS)) - J)) / np.max(
+            np.abs(J)
+        )
+
     assert worst(err) <= 5e-15
 
 
@@ -51,33 +57,39 @@ def test_dx_f64(refs):
         _, Jp = refs[v]
         g = jax.vmap(jax.grad(chebax.besselj(float(v))))(jnp.asarray(XS))
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
+
     assert worst(err) <= 1e-14
 
 
 def test_values_f32(refs):
     x32 = jnp.asarray(XS, jnp.float32)
+
     def err(v):
         J, _ = refs[v]
         y = chebax.besselj(float(v)).astype(jnp.float32)(x32)
         assert y.dtype == jnp.float32
         return np.max(np.abs(np.asarray(y) - J)) / np.max(np.abs(J))
+
     assert worst(err) <= 1e-6
 
 
 def test_dx_f32(refs):
     x32 = jnp.asarray(XS, jnp.float32)
+
     def err(v):
         _, Jp = refs[v]
         g = jax.vmap(jax.grad(chebax.besselj(float(v)).astype(jnp.float32)))(x32)
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
+
     assert worst(err) <= 5e-6
 
 
 def test_dnu():
     xd = np.linspace(0.3, 8.0, 16)
     for v in [0.3, 1.7, float(mp.pi), 5.5, 7.77, 9.6]:
-        ref = np.array([float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v)))
-                        for x in xd])
+        ref = np.array(
+            [float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v))) for x in xd]
+        )
         got = np.asarray(chebax.besselj_dnu(v)(xd))
         assert np.max(np.abs(got - ref)) / np.max(np.abs(ref)) <= 5e-15
 
@@ -94,8 +106,9 @@ def test_x_zero():
         derivative = chebax.besselj(v)
         for order in range(5):
             expected = float(mp.besselj(v, 0, order))
-            np.testing.assert_allclose(jax.jit(derivative)(0.0), expected,
-                                       rtol=0, atol=1e-14)
+            np.testing.assert_allclose(
+                jax.jit(derivative)(0.0), expected, rtol=0, atol=1e-14
+            )
             derivative = jax.grad(derivative)
 
 
@@ -113,7 +126,7 @@ def test_factory_is_cached():
 def test_jit_with_static_order():
     xs = jnp.linspace(0.1, 8.0, 32)
     jv = chebax.besselj(2.5)
-    y_arg = jax.jit(lambda q, x: q(x))(jv, xs)      # instance as pytree argument
+    y_arg = jax.jit(lambda q, x: q(x))(jv, xs)  # instance as pytree argument
     y_closed = jax.jit(lambda x: chebax.besselj(2.5)(x))(xs)  # built at trace time
     ref = np.asarray(jv(xs))
     np.testing.assert_allclose(np.asarray(y_arg), ref, rtol=0, atol=1e-15)
@@ -125,6 +138,7 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     besselj_gen.main(tmp_path)  # emits both the inner and the ext tables
     for name in ("besselj_table.py", "besselj_table_ext.py"):
         packaged = pathlib.Path(tab.__file__).with_name(name).read_text()
@@ -137,6 +151,7 @@ def test_factory_accepts_jax_scalars_and_bounds_cache():
     b = chebax.besselj(2.5)
     assert a is b
     from chebax._src.recipes.besselj import _besselj_cached
+
     assert _besselj_cached.cache_info().maxsize == 128
 
 
@@ -149,11 +164,14 @@ def test_factory_cache_keyed_per_x64_mode():
         "jax.config.update('jax_enable_x64', True)\n"
         "b = chebax.besselj(2.5)\n"
         "assert np.asarray(b.g.coef).dtype == np.float64, np.asarray(b.g.coef).dtype\n"
-        "print('ok')\n")
+        "print('ok')\n"
+    )
     import os
     import subprocess
     import sys
+
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-1500:]

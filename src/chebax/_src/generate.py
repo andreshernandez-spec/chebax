@@ -30,7 +30,9 @@ from chebax._src.series import ChebSeries, PiecewiseCheb
 _DEFAULT_TOL = 5e-16
 
 
-def fit(f, domain=(-1.0, 1.0), *, deg=None, tol=None, breaks=None, dps=None, max_deg=256):
+def fit(
+    f, domain=(-1.0, 1.0), *, deg=None, tol=None, breaks=None, dps=None, max_deg=256
+):
     """Chebyshev interpolant of f, as a ChebSeries (or PiecewiseCheb if breaks given).
 
     f:       callable on the domain. Vectorized over numpy arrays if possible;
@@ -78,8 +80,10 @@ def fit(f, domain=(-1.0, 1.0), *, deg=None, tol=None, breaks=None, dps=None, max
             raise ValueError("breaks must be finite")
         if not all(u < v for u, v in zip(br, br[1:])):
             raise ValueError("breaks must be strictly increasing")
-        cs = [_fit_interval(f, br[i], br[i + 1], deg, tol, max_deg, dps)
-              for i in range(len(br) - 1)]
+        cs = [
+            _fit_interval(f, br[i], br[i + 1], deg, tol, max_deg, dps)
+            for i in range(len(br) - 1)
+        ]
         n = max(c.size for c in cs)
         coef = np.zeros((len(cs), n))
         for i, c in enumerate(cs):
@@ -107,15 +111,14 @@ def _check_int(name, v, low):
 
 
 def _fit_interval(f, a, b, deg, tol, max_deg, dps):
-    dct, sample_unit = (_dct_mp(f, a, b, dps) if dps is not None
-                        else _dct_np(f, a, b))
+    dct, sample_unit = _dct_mp(f, a, b, dps) if dps is not None else _dct_np(f, a, b)
     if deg is not None:
         return dct(deg + 1)
     return _adaptive(dct, sample_unit, tol, max_deg, (a, b))
 
 
-_NOISE_CEIL = 1e-8   # a window this close to the function scale is signal
-_PHI = 0.6180339887498949   # (sqrt(5) - 1)/2, irrational: see _offgrid
+_NOISE_CEIL = 1e-8  # a window this close to the function scale is signal
+_PHI = 0.6180339887498949  # (sqrt(5) - 1)/2, irrational: see _offgrid
 
 
 def _chop(c, tol):
@@ -140,13 +143,16 @@ def _chop(c, tol):
     one), so a window within _NOISE_CEIL of the scale is signal and the
     requested tol governs instead."""
     scale = np.max(np.abs(c))
-    win = float(np.max(np.abs(c[-max(2, c.size // 16):])))
+    win = float(np.max(np.abs(c[-max(2, c.size // 16) :])))
     measured = win <= _NOISE_CEIL * scale
     noise = 2.0 * win if measured else 0.0
     level = max(tol * scale, noise)
     keep = np.nonzero(np.abs(c) > level)[0]
-    return ((c[: keep[-1] + 1] if keep.size else c[:1]), level,
-            noise / scale if measured else np.inf)
+    return (
+        (c[: keep[-1] + 1] if keep.size else c[:1]),
+        level,
+        noise / scale if measured else np.inf,
+    )
 
 
 def _offgrid(m):
@@ -187,11 +193,11 @@ def _validated(cand, level, sample_unit, n):
     degree-544 candidate lands 6e-13 off its own exact samples, over the
     1000x chop margin, so an honest high-degree fit was being rejected
     (measured on T544 once the off-grid sets started catching it)."""
-    allow = max(1000.0 * level,
-                100.0 * np.finfo(float).eps * cand.size
-                * float(np.sum(np.abs(cand))))
-    for t in (algorithms.chebpts(2 * n), _offgrid(2 * n + 1),
-              _offgrid(4 * n + 1)):
+    allow = max(
+        1000.0 * level,
+        100.0 * np.finfo(float).eps * cand.size * float(np.sum(np.abs(cand))),
+    )
+    for t in (algorithms.chebpts(2 * n), _offgrid(2 * n + 1), _offgrid(4 * n + 1)):
         err = np.max(np.abs(algorithms.chebval(t, cand) - sample_unit(t)))
         if err > allow:
             return False
@@ -218,7 +224,9 @@ def _adaptive(dct, sample_unit, tol, max_deg, interval):
             # of converged) must escalate, not chop. rel is inf when the
             # window held signal rather than noise, so a resolution with no
             # plateau to report cannot seed the comparison either way.
-            settled = level <= 2.0 * tol * scale or (rel <= 1e-10 and rel >= prev_rel / 4.0)
+            settled = level <= 2.0 * tol * scale or (
+                rel <= 1e-10 and rel >= prev_rel / 4.0
+            )
             prev_rel = rel
         at_cap = n >= max_deg + 1
         # A candidate holding nearly every coefficient of its grid has not
@@ -232,7 +240,8 @@ def _adaptive(dct, sample_unit, tol, max_deg, interval):
                 f"no validated convergence to tol={tol:g} by degree {max_deg} on "
                 f"{interval}; f may not be smooth there (split the domain), may "
                 "need a higher max_deg, or float64 sampling noise may sit above "
-                "tol (build with dps)")
+                "tol (build with dps)"
+            )
         n = min(2 * n - 1, max_deg + 1)
 
 
@@ -243,6 +252,7 @@ def _dct_np(f, a, b):
 
     def dct(n):
         return algorithms.chebfit_dct(sample_unit(algorithms.chebpts(n)))
+
     return dct, sample_unit
 
 
@@ -262,7 +272,8 @@ def _dct_mp(f, a, b, dps):
         import mpmath as mp
     except ImportError as e:
         raise ImportError(
-            "chebax.fit(dps=...) needs mpmath: pip install chebax[gen]") from e
+            "chebax.fit(dps=...) needs mpmath: pip install chebax[gen]"
+        ) from e
 
     def sample_unit(t):
         with mp.workdps(dps):
@@ -274,11 +285,16 @@ def _dct_mp(f, a, b, dps):
         with mp.workdps(dps):
             mid = (mp.mpf(b) + mp.mpf(a)) / 2
             half = (mp.mpf(b) - mp.mpf(a)) / 2
-            fk = [f(mid + half * mp.cos(mp.pi * (2 * i + 1) / (2 * n))) for i in range(n)]
+            fk = [
+                f(mid + half * mp.cos(mp.pi * (2 * i + 1) / (2 * n))) for i in range(n)
+            ]
             c = []
             for j in range(n):
-                s = mp.fsum(fk[i] * mp.cos(mp.pi * j * (2 * i + 1) / (2 * n)) for i in range(n))
+                s = mp.fsum(
+                    fk[i] * mp.cos(mp.pi * j * (2 * i + 1) / (2 * n)) for i in range(n)
+                )
                 c.append(2 * s / n)
             c[0] /= 2
             return np.array([float(x) for x in c])
+
     return dct, sample_unit

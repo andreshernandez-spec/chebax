@@ -40,9 +40,16 @@ import numpy as np
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besseli_table as _it
-from chebax._src.recipes._common import (canon_param, canon_float, canon_tag, check_range,
-                                         digamma64, param_coefs,
-                                         param_coefs_der, traced_coefs)
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_float,
+    canon_tag,
+    check_range,
+    digamma64,
+    param_coefs,
+    param_coefs_der,
+    traced_coefs,
+)
 from chebax._src.recipes.besselk import besselk, besselk_fn
 from chebax._src.series import ChebSeries
 
@@ -136,9 +143,9 @@ def _dlog_i(x, lh_nu, lt_nu, psi):
     """dlnI_v/dv from the tables' first v-derivative (psi = digamma(v+1))."""
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     xo = jnp.where(x <= _it.XS, _it.XS, x)
-    return jnp.where(x <= _it.XS,
-                     lh_nu(xi * xi) + jnp.log(xi / 2) - psi,
-                     lt_nu(_it.XS / xo))
+    return jnp.where(
+        x <= _it.XS, lh_nu(xi * xi) + jnp.log(xi / 2) - psi, lt_nu(_it.XS / xo)
+    )
 
 
 def _int_dlog2(v, x, lh2a, lt2a, psi1a, lh2b, lt2b, psi1b):
@@ -152,9 +159,13 @@ def _int_dlog2(v, x, lh2a, lt2a, psi1a, lh2b, lt2b, psi1b):
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     xo = jnp.where(x <= _it.XS, _it.XS, x)
     z, t = xi * xi, _it.XS / xo
-    return 0.5 * v * jnp.where(x <= _it.XS,
-                               (lh2a(z) - psi1a) + (lh2b(z) - psi1b),
-                               lt2a(t) + lt2b(t))
+    return (
+        0.5
+        * v
+        * jnp.where(
+            x <= _it.XS, (lh2a(z) - psi1a) + (lh2b(z) - psi1b), lt2a(t) + lt2b(t)
+        )
+    )
 
 
 def _combine_dnu(val, ratio, k0, d_first, integ, dv=1.0):
@@ -167,8 +178,9 @@ def _combine_dnu(val, ratio, k0, d_first, integ, dv=1.0):
     only, or the v derivative of the whole branch (d2I/dv2) goes with it.
     d_first, the first-derivative route, arrives already scaled by dv."""
     safe = jnp.where(jnp.isinf(val) & (integ == 0.0), 0.0, val)
-    return jnp.where(jnp.abs(integ) < _dlog_floor(),
-                     (integ * safe - k0 * ratio) * dv, d_first)
+    return jnp.where(
+        jnp.abs(integ) < _dlog_floor(), (integ * safe - k0 * ratio) * dv, d_first
+    )
 
 
 @jax.tree_util.register_pytree_node_class
@@ -184,7 +196,9 @@ class BesselI(Recipe):
         self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
 
     def __call__(self, x):
-        return _eval_i(self.v, self._inv_gamma, jnp.asarray(x), self.lh, self.lt, self.scaled)
+        return _eval_i(
+            self.v, self._inv_gamma, jnp.asarray(x), self.lh, self.lt, self.scaled
+        )
 
 
 @jax.tree_util.register_pytree_node_class
@@ -192,8 +206,18 @@ class BesselIdnu(Recipe):
     """Callable dI_v/dv (or e^-x dI_v/dv if scaled). Build with besseli_dnu()."""
 
     _static_fields = ("v", "scaled")
-    _series_fields = ("lh", "lt", "lh_nu", "lt_nu",
-                      "lh2a", "lt2a", "lh2b", "lt2b", "i0", "k0")
+    _series_fields = (
+        "lh",
+        "lt",
+        "lh_nu",
+        "lt_nu",
+        "lh2a",
+        "lt2a",
+        "lh2b",
+        "lt2b",
+        "i0",
+        "k0",
+    )
 
     def _post_init(self):
         self.v = float(self.v)
@@ -209,13 +233,24 @@ class BesselIdnu(Recipe):
         if self.v == 0.0:
             ratio = 1.0
         else:
-            sc = val if self.scaled else _eval_i(self.v, self._inv_gamma, x,
-                                                 self.lh, self.lt, True)
+            sc = (
+                val
+                if self.scaled
+                else _eval_i(self.v, self._inv_gamma, x, self.lh, self.lt, True)
+            )
             ratio = sc / self.i0(x)
         k0 = self.k0(x) * jnp.exp(-x) if self.scaled else self.k0(x)
         d_first = val * _dlog_i(x, self.lh_nu, self.lt_nu, self._psi)
-        integ = _int_dlog2(self.v, x, self.lh2a, self.lt2a, self._psi1a,
-                           self.lh2b, self.lt2b, self._psi1b)
+        integ = _int_dlog2(
+            self.v,
+            x,
+            self.lh2a,
+            self.lt2a,
+            self._psi1a,
+            self.lh2b,
+            self.lt2b,
+            self._psi1b,
+        )
         out = _combine_dnu(val, ratio, k0, d_first, integ)
         if self.scaled:
             # e^-x I_v -> 0 at +inf and so does its order derivative; the
@@ -227,15 +262,20 @@ class BesselIdnu(Recipe):
 @functools.lru_cache(maxsize=128)
 def _besseli_cached(v, scaled, _tag):
     v = check_range("besseli", "v", v, 0.0, _it.VMAX)
-    return BesselI(v, scaled,
-                   ChebSeries(param_coefs(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
-                   ChebSeries(param_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)))
+    return BesselI(
+        v,
+        scaled,
+        ChebSeries(param_coefs(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
+        ChebSeries(param_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
+    )
 
 
 def _d2_series(v):
     """The two second-v-derivative series (inner, tail) at order v."""
-    return (ChebSeries(_D2_SCALE * param_coefs(_D2_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
-            ChebSeries(_D2_SCALE * param_coefs(_D2_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)))
+    return (
+        ChebSeries(_D2_SCALE * param_coefs(_D2_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
+        ChebSeries(_D2_SCALE * param_coefs(_D2_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
+    )
 
 
 @functools.lru_cache(maxsize=128)
@@ -244,27 +284,40 @@ def _besseli_dnu_cached(v, scaled, _tag):
     lh2a, lt2a = _d2_series(_G_LO * v)
     lh2b, lt2b = _d2_series(_G_HI * v)
     return BesselIdnu(
-        v, scaled,
+        v,
+        scaled,
         ChebSeries(param_coefs(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
         ChebSeries(param_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
         ChebSeries(param_coefs_der(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
         ChebSeries(param_coefs_der(_it.TABLE_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
-        lh2a, lt2a, lh2b, lt2b,
-        _besseli_cached(0.0, True, canon_tag()), besselk(0.0),
+        lh2a,
+        lt2a,
+        lh2b,
+        lt2b,
+        _besseli_cached(0.0, True, canon_tag()),
+        besselk(0.0),
     )
 
 
 def _besseli_fn_impl(nu, x, scaled):
     inv_gamma = jnp.exp(-jax.scipy.special.gammaln(nu + 1.0))
-    return _eval_i(nu, inv_gamma, x,
-                   ChebSeries(traced_coefs(_it.TABLE_IN, 0.0, _it.VMAX, nu), (0.0, _it.ZMAX)),
-                   ChebSeries(traced_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, nu), (0.0, 1.0)),
-                   scaled)
+    return _eval_i(
+        nu,
+        inv_gamma,
+        x,
+        ChebSeries(traced_coefs(_it.TABLE_IN, 0.0, _it.VMAX, nu), (0.0, _it.ZMAX)),
+        ChebSeries(traced_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, nu), (0.0, 1.0)),
+        scaled,
+    )
 
 
 def _d2_series_traced(nu):
-    return (ChebSeries(_D2_SCALE * traced_coefs(_D2_IN, 0.0, _it.VMAX, nu), (0.0, _it.ZMAX)),
-            ChebSeries(_D2_SCALE * traced_coefs(_D2_TAIL, 0.0, _it.VMAX, nu), (0.0, 1.0)))
+    return (
+        ChebSeries(
+            _D2_SCALE * traced_coefs(_D2_IN, 0.0, _it.VMAX, nu), (0.0, _it.ZMAX)
+        ),
+        ChebSeries(_D2_SCALE * traced_coefs(_D2_TAIL, 0.0, _it.VMAX, nu), (0.0, 1.0)),
+    )
 
 
 def _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu):
@@ -277,8 +330,16 @@ def _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu):
     sa, sb = _G_LO * nu, _G_HI * nu
     lh2a, lt2a = _d2_series_traced(sa)
     lh2b, lt2b = _d2_series_traced(sb)
-    integ = _int_dlog2(nu, x, lh2a, lt2a, jax.scipy.special.polygamma(1, sa + 1.0),
-                       lh2b, lt2b, jax.scipy.special.polygamma(1, sb + 1.0))
+    integ = _int_dlog2(
+        nu,
+        x,
+        lh2a,
+        lt2a,
+        jax.scipy.special.polygamma(1, sa + 1.0),
+        lh2b,
+        lt2b,
+        jax.scipy.special.polygamma(1, sb + 1.0),
+    )
     return _combine_dnu(val, ratio, k0, d_ad, integ, dnu)
 
 
@@ -310,8 +371,9 @@ def besseli_fn(nu, x, scaled=False):
     near nu = 0 comes from the small-order path (exact -K_0(x) at nu = 0,
     clamped below x = 1e-6 with the K table), so it is also correct to
     second order in nu."""
-    return _besseli_fn(canon_param(nu, "besseli_fn", "nu"),
-                       canon_float(x), bool(scaled))
+    return _besseli_fn(
+        canon_param(nu, "besseli_fn", "nu"), canon_float(x), bool(scaled)
+    )
 
 
 def besseli(v, scaled=False):
@@ -371,7 +433,10 @@ def besseli_ratio(nu, x):
     # inf and NaN ride the table branch's dummy too, or their gradients
     # transpose back through the select as NaN
     xt = jnp.where(near | ~jnp.isfinite(x), 2.0 * _RATIO_XS, x)
-    r = jnp.where(near, _ratio_series(nu, xs),
-                  besseli_fn(nu + 1.0, xt, scaled=True) / besseli_fn(nu, xt, scaled=True))
+    r = jnp.where(
+        near,
+        _ratio_series(nu, xs),
+        besseli_fn(nu + 1.0, xt, scaled=True) / besseli_fn(nu, xt, scaled=True),
+    )
     r = jnp.where(jnp.isinf(x), 1.0, r)
     return jnp.where(jnp.isnan(x) | jnp.isnan(nu), jnp.nan, r)

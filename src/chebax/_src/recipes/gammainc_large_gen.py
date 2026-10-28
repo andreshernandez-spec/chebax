@@ -38,19 +38,24 @@ with no canary split. Regenerate with:
     python -m chebax._src.recipes.gammainc_large_gen
 """
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, table_path,
-                                             write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    table_path,
+    write_table_module,
+)
 
 ASPLIT_L = 10.0
-VLO, VHI = 0.0, 1.0     # v = ASPLIT_L / a, v = 0 being a = inf
+VLO, VHI = 0.0, 1.0  # v = ASPLIT_L / a, v = 0 being a = inf
 ELO, EHI = -0.7, 2.6
-LHI = 0.5               # lower zone: lambda in [0, LHI]
-SHI = 1.0 / 6.0         # upper zone: s = (a-1)/x in [0, SHI]
-NE = 26   # eta-nodes (worst measured 20)
+LHI = 0.5  # lower zone: lambda in [0, LHI]
+SHI = 1.0 / 6.0  # upper zone: s = (a-1)/x in [0, SHI]
+NE = 26  # eta-nodes (worst measured 20)
 NV_T = 10  # v-nodes, Temme (worst measured 7)
-NL = 24   # lambda-nodes (worst measured 18)
+NL = 24  # lambda-nodes (worst measured 18)
 NV_D = 36  # v-nodes, lower (worst measured 29 on [0, 1])
-NS = 16   # s-nodes (worst measured 11)
+NS = 16  # s-nodes (worst measured 11)
 NV_U = 12  # v-nodes, upper (worst measured 8)
 
 
@@ -109,8 +114,7 @@ def _temme(mp, v, eta):
     y = eta * mp.sqrt(a / 2)
     if eta < 0:
         # small side: R = erfc(-y)/2 - P, both ~ e^(-a eta^2/2)
-        p = (mp.exp(a * mp.log(x) - x - mp.loggamma(a + 1))
-             * _hyp1f1_1(mp, a + 1, x))
+        p = mp.exp(a * mp.log(x) - x - mp.loggamma(a + 1)) * _hyp1f1_1(mp, a + 1, x)
         r = mp.erfc(-y) / 2 - p
     else:
         r = mp.exp(_log_q(mp, a, x)) - mp.erfc(y) / 2
@@ -136,9 +140,11 @@ def _fit2d(mp, f, narg, nv, arg_lo, arg_hi):
     rows = []
     for tv in nodes(mp, nv):
         v = vlo + (tv + 1) / 2 * (vhi - vlo)
-        rows.append(dct(mp, [f(mp, v, lo + (t + 1) / 2 * (hi - lo))
-                             for t in nodes(mp, narg)]))
+        rows.append(
+            dct(mp, [f(mp, v, lo + (t + 1) / 2 * (hi - lo)) for t in nodes(mp, narg)])
+        )
     import numpy as np
+
     out = np.empty((narg, nv))
     for k in range(narg):
         col = dct(mp, [rows[j][k] for j in range(nv)])
@@ -161,11 +167,25 @@ def main(out_dir=None):
         "v = ASPLIT/a in [VLO, 1]; TABLE_TEMME has argument eta in "
         "[ELO, EHI], TABLE_LOW argument lambda = x/a in [0, LHI], "
         "TABLE_UP argument s = (a-1)/x in [0, SHI]",
-        {"ne": NE, "nv_t": NV_T, "nl": NL, "nv_d": NV_D, "ns": NS,
-         "nv_u": NV_U, "asplit": ASPLIT_L},
-        {"ASPLIT": ASPLIT_L, "VLO": VLO, "ELO": ELO,
-         "EHI": EHI, "LHI": LHI, "SHI": SHI},
-        {"TABLE_TEMME": temme, "TABLE_LOW": lower, "TABLE_UP": upper})
+        {
+            "ne": NE,
+            "nv_t": NV_T,
+            "nl": NL,
+            "nv_d": NV_D,
+            "ns": NS,
+            "nv_u": NV_U,
+            "asplit": ASPLIT_L,
+        },
+        {
+            "ASPLIT": ASPLIT_L,
+            "VLO": VLO,
+            "ELO": ELO,
+            "EHI": EHI,
+            "LHI": LHI,
+            "SHI": SHI,
+        },
+        {"TABLE_TEMME": temme, "TABLE_LOW": lower, "TABLE_UP": upper},
+    )
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ variants (differentiable in the parameter through the series custom_jvp).
 """
 
 import functools
+import inspect
 import math
 
 import numpy as np
@@ -60,7 +61,8 @@ def canon_param(p, who, name):
     raise ValueError(
         f"{who} takes {name} as a scalar (uniform per call), got shape "
         f"{a.shape}. For one parameter set per group use "
-        f"chebax.pergroup({who}, group_idx).")
+        f"chebax.pergroup({who}, group_idx)."
+    )
 
 
 @jax.custom_jvp
@@ -83,8 +85,8 @@ def _edge_slope_jvp(primals, tangents):
 
 
 def float_params(impl):
-    """Public entry point for a custom_jvp'd implementation: promote every
-    argument to the canonical float dtype before the rule sees it.
+    """Public entry point for a custom_jvp'd implementation: normalize every
+    argument before the rule sees it.
 
     A python or numpy INTEGER parameter is not a differentiable type, so
     jax hands the rule a float0 tangent for it and the rule's own
@@ -93,23 +95,28 @@ def float_params(impl):
     nu=4 or kappa=5 is how anyone would write those. Converting OUTSIDE
     the rule turns the parameter into an ordinary float constant, which
     is what the caller meant; converting inside cannot work, since by
-    then the tangent already exists.
+    then the tangent already exists. A size-one parameter has the same
+    problem in another form: squeezed inside the rule, the tangent keeps
+    its shape and no longer matches the primal.
 
-    Leading arguments are the parameters and the last is the evaluation
-    point (the library's argument order throughout), so the parameters
-    also go through canon_param: a broadcast size-1 array counts as the
-    scalar it holds, and a genuinely per-element one is refused by name.
+    The library's argument order holds throughout: leading arguments are
+    uniform parameters (canon_param, so a size-one array counts as the
+    scalar it holds and a per-element one is refused by name) and the last
+    is the evaluation point. Keyword calls are bound to the same names
+    first; stdtr(nu=4, t=t) used to skip all of this (review, 2026-10-26).
     """
-    who = getattr(impl, "__name__", "this function").lstrip("_")
-    who = who[:-3] if who.endswith("_cj") else who
+    who = impl.__name__.lstrip("_").removesuffix("_cj")
+    sig = inspect.signature(impl)
+    *params, point = sig.parameters
 
     @functools.wraps(impl)
     def public(*args, **kw):
-        if len(args) < 2:
-            return impl(*[canon_float(a) for a in args], **kw)
-        params = [canon_param(a, who, f"argument {i + 1}")
-                  for i, a in enumerate(args[:-1])]
-        return impl(*params, canon_float(args[-1]), **kw)
+        arg = sig.bind(*args, **kw).arguments
+        return impl(
+            *(canon_param(arg[n], who, n) for n in params), canon_float(arg[point])
+        )
+
+    public.__name__ = public.__qualname__ = who
     return public
 
 
@@ -170,5 +177,7 @@ def digamma64(z):
         acc -= 1.0 / z
         z += 1.0
     zi = 1.0 / (z * z)
-    tail = 1 / 12 - zi * (1 / 120 - zi * (1 / 252 - zi * (1 / 240 - zi * (1 / 132 - zi * (691 / 32760)))))
+    tail = 1 / 12 - zi * (
+        1 / 120 - zi * (1 / 252 - zi * (1 / 240 - zi * (1 / 132 - zi * (691 / 32760))))
+    )
     return acc + math.log(z) - 0.5 / z - zi * tail

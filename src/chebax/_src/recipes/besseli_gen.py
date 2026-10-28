@@ -23,8 +23,15 @@ via experiments/03_degree_measurement.py. Regenerate with:
 
 import pathlib
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path, write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 from chebax._src.recipes.besselj_gen import VMAX
 
 ZMAX_I = 64.0
@@ -46,8 +53,10 @@ def generate_inner_table():
             return mp.log(mp.besseli(v, x)) - v * mp.log(x / 2) + mp.loggamma(v + 1)
 
         tz = nodes(mp, NZ_I)
-        rows = [dct(mp, [lh(v, (t + 1) / 2 * zmax) for t in tz])
-                for v in [(s + 1) / 2 * mp.mpf(VMAX) for s in nodes(mp, NV_I)]]
+        rows = [
+            dct(mp, [lh(v, (t + 1) / 2 * zmax) for t in tz])
+            for v in [(s + 1) / 2 * mp.mpf(VMAX) for s in nodes(mp, NV_I)]
+        ]
         return to_f64(param_fit(mp, rows))
 
 
@@ -62,8 +71,10 @@ def generate_tail_table():
             return mp.log(mp.besseli(v, x)) - x + mp.log(mp.sqrt(2 * mp.pi * x))
 
         tt = nodes(mp, NT_I)
-        rows = [dct(mp, [lt(v, (t + 1) / 2) for t in tt])
-                for v in [(s + 1) / 2 * mp.mpf(VMAX) for s in nodes(mp, NVT_I)]]
+        rows = [
+            dct(mp, [lt(v, (t + 1) / 2) for t in tt])
+            for v in [(s + 1) / 2 * mp.mpf(VMAX) for s in nodes(mp, NVT_I)]
+        ]
         return to_f64(param_fit(mp, rows))
 
 
@@ -74,10 +85,18 @@ def main(out_dir=None):
         "T[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th argument "
         "coefficient (z = x^2 in [0, ZMAX] for TABLE_IN; t = XS/x in [0, 1] "
         "for TABLE_TAIL)",
-        {"nz": NZ_I, "nv": NV_I, "nt_tail": NT_I, "nv_tail": NVT_I,
-         "zmax": ZMAX_I, "xs": XS_I, "vmax": VMAX},
+        {
+            "nz": NZ_I,
+            "nv": NV_I,
+            "nt_tail": NT_I,
+            "nv_tail": NVT_I,
+            "zmax": ZMAX_I,
+            "xs": XS_I,
+            "vmax": VMAX,
+        },
         {"ZMAX": ZMAX_I, "XS": XS_I, "VMAX": VMAX},
-        {"TABLE_IN": generate_inner_table(), "TABLE_TAIL": generate_tail_table()})
+        {"TABLE_IN": generate_inner_table(), "TABLE_TAIL": generate_tail_table()},
+    )
 
 
 if __name__ == "__main__":

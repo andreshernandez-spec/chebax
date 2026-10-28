@@ -38,8 +38,13 @@ import jax.numpy as jnp
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselj_table as _tab
 from chebax._src.recipes import besselj_table_ext as _ext
-from chebax._src.recipes._common import (canon_tag, check_range, digamma64,
-                                         param_coefs, param_coefs_der)
+from chebax._src.recipes._common import (
+    canon_tag,
+    check_range,
+    digamma64,
+    param_coefs,
+    param_coefs_der,
+)
 from chebax._src.series import ChebSeries
 
 
@@ -79,8 +84,9 @@ class _JBase(Recipe):
         return jnp.where(x <= _ext.MID_X0, x, _ext.MID_X0)
 
     def _xmid(self, x):
-        return jnp.where(x <= _ext.MID_X0, _ext.MID_X0,
-                         jnp.where(x <= _ext.MID_X1, x, _ext.MID_X1))
+        return jnp.where(
+            x <= _ext.MID_X0, _ext.MID_X0, jnp.where(x <= _ext.MID_X1, x, _ext.MID_X1)
+        )
 
     def _xout(self, x):
         return jnp.where(x <= _ext.MID_X1, _ext.MID_X1, x)
@@ -103,7 +109,9 @@ class _JBase(Recipe):
 
     @staticmethod
     def _select(x, inner, mid, outer):
-        return jnp.where(x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer))
+        return jnp.where(
+            x <= _ext.MID_X0, inner, jnp.where(x <= _ext.MID_X1, mid, outer)
+        )
 
     def _trim(self, x, y):
         """nan outside a declared domain. A trimmed instance evaluates
@@ -130,8 +138,9 @@ class BesselJ(_JBase):
         xo, P, Q = self._outer_pq(x)
         a = P * self._cphi + Q * self._sphi
         b = P * self._sphi - Q * self._cphi
-        return ((jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo))
-                * (jnp.cos(xo) * a + jnp.sin(xo) * b))
+        return (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (
+            jnp.cos(xo) * a + jnp.sin(xo) * b
+        )
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -141,8 +150,9 @@ class BesselJ(_JBase):
             return self._trim(x, self._mid(x))
         if self.regions == ("out",):
             return self._trim(x, self._outer(x))
-        return self._trim(x, self._select(x, self._inner(x), self._mid(x),
-                                          self._outer(x)))
+        return self._trim(
+            x, self._select(x, self._inner(x), self._mid(x), self._outer(x))
+        )
 
 
 @jax.tree_util.register_pytree_node_class
@@ -172,8 +182,9 @@ class BesselJdnu(_JBase):
         b = P * self._sphi - Q * self._cphi
         an = Pn * self._cphi + Qn * self._sphi - (0.5 * math.pi) * b
         bn = Pn * self._sphi - Qn * self._cphi + (0.5 * math.pi) * a
-        return ((jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo))
-                * (jnp.cos(xo) * an + jnp.sin(xo) * bn))
+        return (jnp.sqrt(2.0 / jnp.pi) / jnp.sqrt(xo)) * (
+            jnp.cos(xo) * an + jnp.sin(xo) * bn
+        )
 
     def __call__(self, x):
         x = jnp.asarray(x)
@@ -183,15 +194,20 @@ class BesselJdnu(_JBase):
             return self._trim(x, self.jmnu(self._xmid(x)))
         if self.regions == ("out",):
             return self._trim(x, self._outer_dnu(x))
-        return self._trim(x, self._select(x, self._inner_dnu(x),
-                                          self.jmnu(self._xmid(x)),
-                                          self._outer_dnu(x)))
+        return self._trim(
+            x,
+            self._select(
+                x, self._inner_dnu(x), self.jmnu(self._xmid(x)), self._outer_dnu(x)
+            ),
+        )
 
 
 def _series_at(v):
     return (
         ChebSeries(param_coefs(_tab.TABLE, 0.0, _tab.VMAX, v), (0.0, _tab.ZMAX)),
-        ChebSeries(param_coefs(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)),
+        ChebSeries(
+            param_coefs(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)
+        ),
         ChebSeries(param_coefs(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
         ChebSeries(param_coefs(_ext.TABLE_QS, 0.0, _tab.VMAX, v), (0.0, 1.0)),
     )
@@ -202,8 +218,9 @@ def _canon_domain(name, domain):
         return None
     lo, hi = (float(d) for d in domain)
     if not (0.0 <= lo < hi):
-        raise ValueError(f"{name} needs domain=(lo, hi) with 0 <= lo < hi, "
-                         f"got ({lo}, {hi})")
+        raise ValueError(
+            f"{name} needs domain=(lo, hi) with 0 <= lo < hi, " f"got ({lo}, {hi})"
+        )
     return (lo, hi)
 
 
@@ -227,17 +244,21 @@ def besselj(v, domain=None):
     domain the result is nan, since the regions that would have answered
     are the ones that were dropped. The tables and their accuracy are
     unchanged; this only removes work."""
-    return _besselj_cached(float(v), _canon_domain("besselj", domain),
-                           canon_tag())
+    return _besselj_cached(float(v), _canon_domain("besselj", domain), canon_tag())
 
 
 @functools.lru_cache(maxsize=128)
 def _besselj_dnu_cached(v, domain, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJdnu(
-        v, domain, *_series_at(v),
+        v,
+        domain,
+        *_series_at(v),
         ChebSeries(param_coefs_der(_tab.TABLE, 0.0, _tab.VMAX, v), (0.0, _tab.ZMAX)),
-        ChebSeries(param_coefs_der(_ext.TABLE_MID, 0.0, _tab.VMAX, v), (_ext.MID_X0, _ext.MID_X1)),
+        ChebSeries(
+            param_coefs_der(_ext.TABLE_MID, 0.0, _tab.VMAX, v),
+            (_ext.MID_X0, _ext.MID_X1),
+        ),
         ChebSeries(param_coefs_der(_ext.TABLE_P, 0.0, _tab.VMAX, v), (0.0, 1.0)),
         ChebSeries(param_coefs_der(_ext.TABLE_QS, 0.0, _tab.VMAX, v), (0.0, 1.0)),
     )
@@ -247,5 +268,6 @@ def besselj_dnu(v, domain=None):
     """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient).
 
     domain=(lo, hi) trims the regions exactly as besselj's does."""
-    return _besselj_dnu_cached(float(v), _canon_domain("besselj_dnu", domain),
-                               canon_tag())
+    return _besselj_dnu_cached(
+        float(v), _canon_domain("besselj_dnu", domain), canon_tag()
+    )

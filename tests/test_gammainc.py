@@ -33,43 +33,61 @@ mp.mp.dps = 40
 AS = [0.1, 0.11, 0.5, 1.0, 1.001, 2.5, 5.5, 7.77, 9.9, 10.0]
 # the three density-at-zero regimes, a = 1 exactly included
 AEDGE = [0.1, 0.5, 0.999, 1.0, 1.001, 2.5, 10.0]
-ALLFN = [chebax.gammainc_fn, chebax.gammaincc_fn,
-         chebax.log_gammainc_fn, chebax.log_gammaincc_fn]
+ALLFN = [
+    chebax.gammainc_fn,
+    chebax.gammaincc_fn,
+    chebax.log_gammainc_fn,
+    chebax.log_gammaincc_fn,
+]
 
 
 def _over_a(f):
     """One trace for the whole AEDGE list instead of one per a."""
     return jax.vmap(f, in_axes=(0, None))
+
+
 # grid stops at 600, the same platform-subnormal caveat as besselk's
-XG = np.sort(np.concatenate([
-    np.logspace(-8, np.log10(8.0), 20), [8.0, 8.0001],
-    np.logspace(np.log10(8.2), np.log10(600.0), 12),
-]))
+XG = np.sort(
+    np.concatenate(
+        [
+            np.logspace(-8, np.log10(8.0), 20),
+            [8.0, 8.0001],
+            np.logspace(np.log10(8.2), np.log10(600.0), 12),
+        ]
+    )
+)
 
 
 def _pref(a):
-    return np.array([float(mp.gammainc(mp.mpf(a), 0, mp.mpf(x), regularized=True))
-                     for x in XG])
+    return np.array(
+        [float(mp.gammainc(mp.mpf(a), 0, mp.mpf(x), regularized=True)) for x in XG]
+    )
 
 
 def _qref(a):
-    return np.array([float(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True))
-                     for x in XG])
+    return np.array(
+        [float(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True)) for x in XG]
+    )
 
 
 def _dens(a):
-    return np.array([float(mp.exp((mp.mpf(a) - 1) * mp.log(x) - x - mp.loggamma(a)))
-                     for x in XG])
+    return np.array(
+        [float(mp.exp((mp.mpf(a) - 1) * mp.log(x) - x - mp.loggamma(a))) for x in XG]
+    )
 
 
 def test_values_absolute_and_traced():
     for a in AS:
         P, Q = _pref(a), _qref(a)
-        for got in (np.asarray(chebax.gammainc(a)(XG)),
-                    np.asarray(chebax.gammainc_fn(a, XG))):
+        for got in (
+            np.asarray(chebax.gammainc(a)(XG)),
+            np.asarray(chebax.gammainc_fn(a, XG)),
+        ):
             assert np.max(np.abs(got - P)) <= 2e-14, a
-        for got in (np.asarray(chebax.gammaincc(a)(XG)),
-                    np.asarray(chebax.gammaincc_fn(a, XG))):
+        for got in (
+            np.asarray(chebax.gammaincc(a)(XG)),
+            np.asarray(chebax.gammaincc_fn(a, XG)),
+        ):
             assert np.max(np.abs(got - Q)) <= 2e-14, a
 
 
@@ -100,14 +118,28 @@ def test_dx_against_density():
 def test_da_and_traced_grad():
     xs = XG[XG > 1e-6]
     for a in [0.11, 1.0, 2.5, 9.9]:
-        da = np.array([float(mp.diff(
-            lambda t: mp.gammainc(t, 0, mp.mpf(x), regularized=True), mp.mpf(a)))
-            for x in xs])
-        gp = np.asarray(jax.vmap(jax.grad(chebax.gammainc_fn, argnums=0),
-                                 in_axes=(None, 0))(jnp.asarray(a), jnp.asarray(xs)))
+        da = np.array(
+            [
+                float(
+                    mp.diff(
+                        lambda t: mp.gammainc(t, 0, mp.mpf(x), regularized=True),
+                        mp.mpf(a),
+                    )
+                )
+                for x in xs
+            ]
+        )
+        gp = np.asarray(
+            jax.vmap(jax.grad(chebax.gammainc_fn, argnums=0), in_axes=(None, 0))(
+                jnp.asarray(a), jnp.asarray(xs)
+            )
+        )
         assert np.max(np.abs(gp - da)) <= 2e-14, a
-        gq = np.asarray(jax.vmap(jax.grad(chebax.gammaincc_fn, argnums=0),
-                                 in_axes=(None, 0))(jnp.asarray(a), jnp.asarray(xs)))
+        gq = np.asarray(
+            jax.vmap(jax.grad(chebax.gammaincc_fn, argnums=0), in_axes=(None, 0))(
+                jnp.asarray(a), jnp.asarray(xs)
+            )
+        )
         assert np.max(np.abs(gq + da)) <= 2e-14, a
 
 
@@ -147,9 +179,14 @@ def test_x_at_infinity():
         assert float(chebax.gammainc(a)(np.inf)) == 1.0, a
         assert float(chebax.gammaincc(a)(np.inf)) == 0.0, a
     for x in [1e3, 1e30, 1e300]:
-        r = np.array([float(mp.log(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf,
-                                               regularized=True)))
-                      for a in AEDGE])
+        r = np.array(
+            [
+                float(
+                    mp.log(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True))
+                )
+                for a in AEDGE
+            ]
+        )
         g = np.asarray(_over_a(chebax.log_gammaincc_fn)(aa, x))
         assert np.max(np.abs(g - r) / np.abs(r)) <= 1e-15, x
 
@@ -167,8 +204,7 @@ def test_x_zero_slope_is_the_density():
     aa = jnp.asarray(AEDGE)
     an = np.asarray(AEDGE)
     d0 = np.where(an < 1.0, np.inf, np.where(an > 1.0, 0.0, 1.0))
-    gp, gq, glp, glq = [np.asarray(_over_a(jax.grad(f, 1))(aa, 0.0))
-                        for f in ALLFN]
+    gp, gq, glp, glq = [np.asarray(_over_a(jax.grad(f, 1))(aa, 0.0)) for f in ALLFN]
     assert np.array_equal(gp, d0) and np.array_equal(gq, -d0)
     assert np.all(np.isposinf(glp)) and np.array_equal(glq, -d0)
     # the splice must not disturb the values
@@ -179,11 +215,17 @@ def test_x_zero_slope_is_the_density():
         assert float(jax.grad(chebax.gammaincc(a))(0.0)) == -d, a
     xs = np.array([1e-14, 1e-10, 1e-6])
     for a in [0.5, 1.0, 1.001, 2.0]:
-        d = np.array([float(mp.exp((mp.mpf(a) - 1) * mp.log(x) - x
-                                   - mp.loggamma(a))) for x in xs])
-        g = np.asarray(jax.vmap(jax.grad(chebax.gammainc_fn, 1),
-                                in_axes=(None, 0))(jnp.asarray(a),
-                                                   jnp.asarray(xs)))
+        d = np.array(
+            [
+                float(mp.exp((mp.mpf(a) - 1) * mp.log(x) - x - mp.loggamma(a)))
+                for x in xs
+            ]
+        )
+        g = np.asarray(
+            jax.vmap(jax.grad(chebax.gammainc_fn, 1), in_axes=(None, 0))(
+                jnp.asarray(a), jnp.asarray(xs)
+            )
+        )
         assert np.max(np.abs(g - d) / d) <= 5e-14, a
 
 
@@ -195,13 +237,16 @@ def test_masked_lanes_stay_finite():
     density slope at x = 0 for a < 1."""
     xs = jnp.asarray([-3.0, 0.0, 1e-8, 1.0, 8.0, 20.0, 1e300, np.inf, np.nan])
     aa = jnp.asarray(AEDGE)
-    def grid(f):
-        return jax.jit(jax.vmap(jax.vmap(f, in_axes=(None, 0)),
-                                in_axes=(0, None)))
 
-    for f, neg in [(chebax.gammainc_fn, 0.0), (chebax.gammaincc_fn, 1.0),
-                   (chebax.log_gammainc_fn, -np.inf),
-                   (chebax.log_gammaincc_fn, 0.0)]:
+    def grid(f):
+        return jax.jit(jax.vmap(jax.vmap(f, in_axes=(None, 0)), in_axes=(0, None)))
+
+    for f, neg in [
+        (chebax.gammainc_fn, 0.0),
+        (chebax.gammaincc_fn, 1.0),
+        (chebax.log_gammainc_fn, -np.inf),
+        (chebax.log_gammaincc_fn, 0.0),
+    ]:
         v = np.asarray(grid(f)(aa, xs))
         assert np.all(v[:, 0] == neg) and np.all(np.isnan(v[:, -1])), f.__name__
         g = np.asarray(grid(jax.grad(f, 1))(aa, xs))
@@ -215,8 +260,9 @@ def test_masked_lanes_stay_finite():
 def test_jit_pytree_and_out_of_range():
     p = chebax.gammainc(2.5)
     x = jnp.asarray([0.5, 3.0, 20.0])
-    np.testing.assert_allclose(np.asarray(jax.jit(lambda d, v: d(v))(p, x)),
-                               np.asarray(p(x)), rtol=1e-14)
+    np.testing.assert_allclose(
+        np.asarray(jax.jit(lambda d, v: d(v))(p, x)), np.asarray(p(x)), rtol=1e-14
+    )
     # only the lower end bites now: the Temme tables run to a = inf
     with pytest.raises(ValueError, match="gammainc"):
         chebax.gammainc(0.05)
@@ -236,9 +282,11 @@ def test_matches_jax_gammainc():
 @pytest.mark.slow
 def test_tables_regenerate_bit_for_bit(tmp_path):
     import pathlib
+
     gammainc_gen.main(tmp_path)
-    assert ((tmp_path / "gammainc_table.py").read_text()
-            == pathlib.Path(gt.__file__).read_text())
+    assert (tmp_path / "gammainc_table.py").read_text() == pathlib.Path(
+        gt.__file__
+    ).read_text()
 
 
 def test_log_gammainc_pair():
@@ -249,18 +297,30 @@ def test_log_gammainc_pair():
     # floor over Q (measured 12 eps / Q worst, the gammaincc_fn wedge);
     # the bar carries the value bar 2e-14 divided by Q. dQ/da vs
     # mp.diff measured 7e-13 of max(1, |.|). Bars ~4x.
-    xg = np.concatenate([[1e-100, 1e-10, 1e-3], np.linspace(0.5, 8.0, 8),
-                         [8.0001, 20.0, 100.0, 700.0, 1e4]])
+    xg = np.concatenate(
+        [
+            [1e-100, 1e-10, 1e-3],
+            np.linspace(0.5, 8.0, 8),
+            [8.0001, 20.0, 100.0, 700.0, 1e4],
+        ]
+    )
     for a in [0.1, 1.0, 2.5, 9.9]:
-        refp = np.array([float(mp.log(mp.gammainc(mp.mpf(a), 0, mp.mpf(x),
-                                                  regularized=True)))
-                         for x in xg])
+        refp = np.array(
+            [
+                float(mp.log(mp.gammainc(mp.mpf(a), 0, mp.mpf(x), regularized=True)))
+                for x in xg
+            ]
+        )
         gotp = np.asarray(chebax.log_gammainc_fn(a, jnp.asarray(xg)))
-        assert np.max(np.abs(gotp - refp)
-                      / np.maximum(1.0, np.abs(refp))) <= 5e-14, a
-        refq = np.array([float(mp.log(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf,
-                                                  regularized=True)))
-                         for x in xg])
+        assert np.max(np.abs(gotp - refp) / np.maximum(1.0, np.abs(refp))) <= 5e-14, a
+        refq = np.array(
+            [
+                float(
+                    mp.log(mp.gammainc(mp.mpf(a), mp.mpf(x), mp.inf, regularized=True))
+                )
+                for x in xg
+            ]
+        )
         gotq = np.asarray(chebax.log_gammaincc_fn(a, jnp.asarray(xg)))
         bar = 5e-14 * np.maximum(1.0, np.abs(refq))
         bar[xg <= gt.XS] += 2e-14 / np.exp(refq[xg <= gt.XS])
@@ -271,12 +331,27 @@ def test_log_gammainc_pair():
     xs = np.linspace(0.5, 20.0, 9)
     np.testing.assert_allclose(
         np.exp(np.asarray(chebax.log_gammaincc_fn(2.5, jnp.asarray(xs)))),
-        np.asarray(chebax.gammaincc(2.5)(xs)), rtol=1e-12)
+        np.asarray(chebax.gammaincc(2.5)(xs)),
+        rtol=1e-12,
+    )
     xa = np.array([0.5, 3.0, 20.0, 100.0])
     for a in [0.1, 2.5, 9.9]:
-        da = np.array([float(mp.diff(lambda t: mp.log(mp.gammainc(
-            t, mp.mpf(x), mp.inf, regularized=True)), mp.mpf(a))) for x in xa])
-        gda = np.asarray(jax.vmap(jax.grad(chebax.log_gammaincc_fn, argnums=0),
-                                  in_axes=(None, 0))(jnp.asarray(a),
-                                                     jnp.asarray(xa)))
+        da = np.array(
+            [
+                float(
+                    mp.diff(
+                        lambda t: mp.log(
+                            mp.gammainc(t, mp.mpf(x), mp.inf, regularized=True)
+                        ),
+                        mp.mpf(a),
+                    )
+                )
+                for x in xa
+            ]
+        )
+        gda = np.asarray(
+            jax.vmap(jax.grad(chebax.log_gammaincc_fn, argnums=0), in_axes=(None, 0))(
+                jnp.asarray(a), jnp.asarray(xa)
+            )
+        )
         assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 3e-12, a

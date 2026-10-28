@@ -37,12 +37,19 @@ Measured degrees are reproducible via experiments/03_degree_measurement.py.
 
 import pathlib
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes, param_fit,
-                                             to_f64, table_path, write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    param_fit,
+    to_f64,
+    table_path,
+    write_table_module,
+)
 
 # inner table
-NZ = 25      # z-degree 24, covers the worst case (v=0) with margin
-NV = 64      # v-nodes, shared by all tables
+NZ = 25  # z-degree 24, covers the worst case (v=0) with margin
+NV = 64  # v-nodes, shared by all tables
 ZMAX = 64.0  # z = x^2, x in [0, 8]
 VMAX = 10.0
 
@@ -50,7 +57,7 @@ VMAX = 10.0
 MID_X0 = 8.0
 MID_X1 = 30.0
 NX_MID = 42  # x-degree 41; measured tail at degree 40 is ~1e-19
-XS = 30.0    # outer switch point; also the seam with the mid region
+XS = 30.0  # outer switch point; also the seam with the mid region
 NT_OUT = 12  # t-degree 11; measured tail is below 1e-16 from degree ~8
 
 
@@ -65,8 +72,10 @@ def generate_table():
     with mp.workdps(DPS):
         zmax = mp.mpf(ZMAX)
         tz = nodes(mp, NZ)
-        rows = [dct(mp, [mp.hyp0f1(v + 1, -((t + 1) / 2 * zmax) / 4) for t in tz])
-                for v in _vnodes(mp)]
+        rows = [
+            dct(mp, [mp.hyp0f1(v + 1, -((t + 1) / 2 * zmax) / 4) for t in tz])
+            for v in _vnodes(mp)
+        ]
         table = param_fit(mp, rows)
     return to_f64(table)
 
@@ -78,8 +87,10 @@ def generate_mid_table():
     with mp.workdps(DPS):
         x0, x1 = mp.mpf(MID_X0), mp.mpf(MID_X1)
         tx = nodes(mp, NX_MID)
-        rows = [dct(mp, [mp.besselj(v, (t + 1) / 2 * (x1 - x0) + x0) for t in tx])
-                for v in _vnodes(mp)]
+        rows = [
+            dct(mp, [mp.besselj(v, (t + 1) / 2 * (x1 - x0) + x0) for t in tx])
+            for v in _vnodes(mp)
+        ]
         table = param_fit(mp, rows)
     return to_f64(table)
 
@@ -127,7 +138,8 @@ def main(out_dir=None):
         "z-coefficient (z in [0, ZMAX])",
         {"nz": NZ, "nv": NV, "zmax": ZMAX, "vmax": VMAX},
         {"ZMAX": ZMAX, "VMAX": VMAX},
-        {"TABLE": generate_table()})
+        {"TABLE": generate_table()},
+    )
     mid = generate_mid_table()
     ptab, qtab = generate_outer_tables()
     write_table_module(
@@ -136,10 +148,17 @@ def main(out_dir=None):
         "T[k, j] = j-th v-coefficient (v in [0, 10]) of the k-th argument "
         "coefficient (x in [MID_X0, MID_X1] for TABLE_MID; t = (XS/x)^2 in "
         "[0, 1] for TABLE_P and TABLE_QS)",
-        {"nx_mid": NX_MID, "nt_out": NT_OUT, "nv": NV,
-         "mid": (MID_X0, MID_X1), "xs": XS, "vmax": VMAX},
+        {
+            "nx_mid": NX_MID,
+            "nt_out": NT_OUT,
+            "nv": NV,
+            "mid": (MID_X0, MID_X1),
+            "xs": XS,
+            "vmax": VMAX,
+        },
         {"MID_X0": MID_X0, "MID_X1": MID_X1, "XS": XS},
-        {"TABLE_MID": mid, "TABLE_P": ptab, "TABLE_QS": qtab})
+        {"TABLE_MID": mid, "TABLE_P": ptab, "TABLE_QS": qtab},
+    )
 
 
 if __name__ == "__main__":

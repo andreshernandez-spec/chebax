@@ -46,13 +46,19 @@ import functools
 import jax
 import jax.numpy as jnp
 
+from chebax import domains as _dom
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes._common import (canon_param, canon_tag, check_range, edge_slope,
-                                         param_coefs,
-                                         traced_coefs)
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_tag,
+    check_range,
+    edge_slope,
+    param_coefs,
+    traced_coefs,
+)
 from chebax._src.series import ChebSeries
 
 
@@ -60,14 +66,14 @@ def _eval_logs(a, x, lser, ltail):
     """(ln P inner, ln Q tail), masked lanes fed finite dummies."""
     pos = x > 0.0
     xd = jnp.where(pos & (x <= _gt.XS), x, 1.0)
-    lp_in = (a * jnp.log(xd) - xd - jax.scipy.special.gammaln(a + 1.0)
-             + lser(xd))
+    lp_in = a * jnp.log(xd) - xd - jax.scipy.special.gammaln(a + 1.0) + lser(xd)
     # at x = inf the tail bracket is inf - inf, so mask it out and set the
     # limit ln Q = -inf by hand; all four entry points read it off that.
     big = x == jnp.inf
     xo = jnp.where((x > _gt.XS) & ~big, x, 2.0 * _gt.XS)
-    lq_tl = ((a - 1.0) * jnp.log(xo) - xo - jax.scipy.special.gammaln(a)
-             + ltail(_gt.XS / xo))
+    lq_tl = (
+        (a - 1.0) * jnp.log(xo) - xo - jax.scipy.special.gammaln(a) + ltail(_gt.XS / xo)
+    )
     return lp_in, jnp.where(big, -jnp.inf, lq_tl)
 
 
@@ -120,15 +126,14 @@ class GammaIncQ(Recipe):
 
 
 def _series_at(a):
-    return (ChebSeries(param_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a),
-                       (0.0, _gt.XS)),
-            ChebSeries(param_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a),
-                       (0.0, 1.0)))
+    return (
+        ChebSeries(param_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a), (0.0, _gt.XS)),
+        ChebSeries(param_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a), (0.0, 1.0)),
+    )
 
 
 @functools.lru_cache(maxsize=128)
 def _gammainc_cached(a, _tag):
-    from chebax import domains as _dom
     a = check_range("gammainc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeP(a, *_gl.series_eager(a))
@@ -137,7 +142,6 @@ def _gammainc_cached(a, _tag):
 
 @functools.lru_cache(maxsize=128)
 def _gammaincc_cached(a, _tag):
-    from chebax import domains as _dom
     a = check_range("gammaincc", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
         return _gl.GammaIncLargeQ(a, *_gl.series_eager(a))
@@ -145,10 +149,10 @@ def _gammaincc_cached(a, _tag):
 
 
 def _traced_series(a):
-    return (ChebSeries(traced_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a),
-                       (0.0, _gt.XS)),
-            ChebSeries(traced_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a),
-                       (0.0, 1.0)))
+    return (
+        ChebSeries(traced_coefs(_gt.TABLE_IN, _gt.ALO, _gt.AHI, a), (0.0, _gt.XS)),
+        ChebSeries(traced_coefs(_gt.TABLE_TAIL, _gt.ALO, _gt.AHI, a), (0.0, 1.0)),
+    )
 
 
 def _dispatch_fn(a, x, small, kind):

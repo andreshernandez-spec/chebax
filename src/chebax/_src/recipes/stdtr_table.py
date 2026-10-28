@@ -6,7 +6,7 @@ Axes: T[k, j] = j-th b-coefficient of the k-th x coefficient; TABLE_A_* hold L(1
 
 import numpy as np
 
-META = {'nx': 68, 'nb_a_lo': 28, 'nb_a_hi': 44, 'nb_b_lo': 66, 'nb_b_hi': 56, 'blo': 0.1, 'bsplit': 10.0, 'bhi': 100.0, 'xsplit': 0.5, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': 'f155cb633c45f610'}
+META = {'nx': 68, 'nb_a_lo': 28, 'nb_a_hi': 44, 'nb_b_lo': 66, 'nb_b_hi': 56, 'blo': 0.1, 'bsplit': 10.0, 'bhi': 100.0, 'xsplit': 0.5, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '3ca4a36ed1d71e25'}
 BLO = 0.1
 BSPLIT = 10.0
 BHI = 100.0

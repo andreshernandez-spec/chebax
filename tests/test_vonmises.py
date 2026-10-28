@@ -21,8 +21,10 @@ TH = np.linspace(-np.pi, np.pi, 15)
 
 def _cdf_ref(kappa, th):
     i0 = mp.besseli(0, mp.mpf(kappa))
-    return float(mp.quad(lambda u: mp.exp(kappa * mp.cos(u)), [-mp.pi, mp.mpf(th)])
-                 / (2 * mp.pi * i0))
+    return float(
+        mp.quad(lambda u: mp.exp(kappa * mp.cos(u)), [-mp.pi, mp.mpf(th)])
+        / (2 * mp.pi * i0)
+    )
 
 
 def test_values():
@@ -42,17 +44,26 @@ def test_dtheta_is_density():
     for k in [0.5, 5.0, 50.0]:
         i0 = float(mp.besseli(0, mp.mpf(k)))
         pdf = np.exp(k * np.cos(ths)) / (2 * np.pi * i0)
-        g = np.asarray(jax.vmap(jax.grad(chebax.vonmises_cdf, argnums=1),
-                                in_axes=(None, 0))(jnp.asarray(k), jnp.asarray(ths)))
+        g = np.asarray(
+            jax.vmap(jax.grad(chebax.vonmises_cdf, argnums=1), in_axes=(None, 0))(
+                jnp.asarray(k), jnp.asarray(ths)
+            )
+        )
         assert np.max(np.abs(g - pdf) / pdf.max()) <= 1e-12, k
 
 
 def test_dkappa():
     for k, t in [(0.5, 1.0), (5.0, -0.5), (30.0, 0.2)]:
         g = float(jax.grad(chebax.vonmises_cdf, argnums=0)(k, t))
-        r = float(mp.diff(lambda kk: mp.quad(lambda u: mp.exp(kk * mp.cos(u)),
-                                             [-mp.pi, mp.mpf(t)])
-                          / (2 * mp.pi * mp.besseli(0, kk)), mp.mpf(k)))
+        r = float(
+            mp.diff(
+                lambda kk: mp.quad(
+                    lambda u: mp.exp(kk * mp.cos(u)), [-mp.pi, mp.mpf(t)]
+                )
+                / (2 * mp.pi * mp.besseli(0, kk)),
+                mp.mpf(k),
+            )
+        )
         assert abs(g - r) <= 1e-11 * (1 + abs(r)), (k, t)
 
 
@@ -81,7 +92,10 @@ def test_endpoints_and_jit():
     th = jnp.asarray([-1.0, 0.5])
     np.testing.assert_allclose(
         np.asarray(jax.jit(chebax.vonmises_cdf)(5.0, th)),
-        np.asarray(chebax.vonmises_cdf(5.0, th)), rtol=0, atol=1e-15)
+        np.asarray(chebax.vonmises_cdf(5.0, th)),
+        rtol=0,
+        atol=1e-15,
+    )
 
 
 @pytest.mark.slow
@@ -89,16 +103,21 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath
     # version, dps) and the header must reproduce byte for byte
     import pathlib
+
     vonmises_gen.main(tmp_path)
-    assert (tmp_path / "vonmises_table.py").read_text() == pathlib.Path(vt.__file__).read_text()
+    assert (tmp_path / "vonmises_table.py").read_text() == pathlib.Path(
+        vt.__file__
+    ).read_text()
 
 
 # ---- review 2026-07-30 regressions ------------------------------------------
+
 
 def test_kappa_gradient_at_zero():
     # the sqrt(kappa) table axis made d/dkappa infinite at the documented
     # boundary; the exact Fourier limit is sin(theta)/(2 pi)
     import math
+
     g = float(jax.grad(chebax.vonmises_cdf)(0.0, 0.5))
     assert abs(g - math.sin(0.5) / (2 * math.pi)) <= 1e-12
     assert float(jax.grad(chebax.vonmises_cdf)(0.0, 0.0)) == 0.0
@@ -117,14 +136,16 @@ def test_icdf_nan_and_oob():
 
 # ---- review 2026-08-01: icdf residual enforcement ---------------------------
 
+
 def _icdf_ref(kappa, p, start=0.0):
     """mpmath Newton on the defining integral, to ~1e-35."""
     k = mp.mpf(kappa)
     i0 = mp.besseli(0, k)
     t = mp.mpf(float(start))
     for _ in range(300):
-        f = (mp.quad(lambda u: mp.exp(k * mp.cos(u)), [-mp.pi, t])
-             / (2 * mp.pi * i0) - mp.mpf(p))
+        f = mp.quad(lambda u: mp.exp(k * mp.cos(u)), [-mp.pi, t]) / (
+            2 * mp.pi * i0
+        ) - mp.mpf(p)
         t = t - f / (mp.exp(k * mp.cos(t)) / (2 * mp.pi * i0))
         t = max(-mp.pi, min(mp.pi, t))
         if abs(f) < mp.mpf(10) ** -38:
@@ -195,8 +216,9 @@ def test_icdf_jit_and_vmap_match_eager():
     ps = jnp.asarray([1e-6, 0.25, 0.9])
     eager = np.asarray(chebax.vonmises_icdf(20.0, ps))
     assert np.isfinite(eager).all()
-    np.testing.assert_allclose(np.asarray(jax.jit(chebax.vonmises_icdf)(20.0, ps)),
-                               eager, rtol=0, atol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(jax.jit(chebax.vonmises_icdf)(20.0, ps)), eager, rtol=0, atol=1e-10
+    )
     vm = jax.vmap(chebax.vonmises_icdf, in_axes=(None, 0))(jnp.asarray(20.0), ps)
     np.testing.assert_allclose(np.asarray(vm), eager, rtol=0, atol=1e-10)
 
@@ -231,11 +253,14 @@ def test_icdf_x64_off():
         "        assert abs(rt - p) <= 2e-3 * p, (k, p, rt)\n"
         "assert float(chebax.vonmises_icdf(5.0, 0.0)) == -np.float32(np.pi)\n"
         "assert np.isnan(float(chebax.vonmises_icdf(5.0, 2.0)))\n"
-        "print('ok')\n")
+        "print('ok')\n"
+    )
     import os
     import subprocess
     import sys
+
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                         text=True, env=env)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
     assert out.returncode == 0, out.stderr[-1500:]

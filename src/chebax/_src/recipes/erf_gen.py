@@ -18,8 +18,13 @@ import pathlib
 
 import numpy as np
 
-from chebax._src.recipes._gen_common import (DPS, dct, nodes,
-                                             table_path, write_table_module)
+from chebax._src.recipes._gen_common import (
+    DPS,
+    dct,
+    nodes,
+    table_path,
+    write_table_module,
+)
 
 XS_E = 6.0
 NZ_DAWSN = 44
@@ -41,13 +46,28 @@ def generate_tables():
         def erfcx(x):
             return mp.erfc(x) * mp.exp(x * x)
 
-        e = dct(mp, [(lambda x: dawsn(x) / x)(mp.sqrt((t + 1) / 2 * zmax))
-                     for t in nodes(mp, NZ_DAWSN)])
-        g = dct(mp, [(lambda x: x * dawsn(x))(xs / mp.sqrt((t + 1) / 2))
-                     for t in nodes(mp, NT_DAWSN)])
+        e = dct(
+            mp,
+            [
+                (lambda x: dawsn(x) / x)(mp.sqrt((t + 1) / 2 * zmax))
+                for t in nodes(mp, NZ_DAWSN)
+            ],
+        )
+        g = dct(
+            mp,
+            [
+                (lambda x: x * dawsn(x))(xs / mp.sqrt((t + 1) / 2))
+                for t in nodes(mp, NT_DAWSN)
+            ],
+        )
         c = dct(mp, [erfcx((t + 1) / 2 * xs) for t in nodes(mp, NC_ERFCX)])
-        h = dct(mp, [(lambda x: x * erfcx(x))(xs / mp.sqrt((t + 1) / 2))
-                     for t in nodes(mp, NT_ERFCX)])
+        h = dct(
+            mp,
+            [
+                (lambda x: x * erfcx(x))(xs / mp.sqrt((t + 1) / 2))
+                for t in nodes(mp, NT_ERFCX)
+            ],
+        )
     tof = lambda row: np.array([float(v) for v in row])
     return tof(e), tof(g), tof(c), tof(h)
 
@@ -59,10 +79,16 @@ def main(out_dir=None):
         "chebax._src.recipes.erf_gen",
         "1-D coefficient vectors; DAWSN_E on z = x^2 in [0, XS^2], ERFCX_C "
         "on x in [0, XS], the two tails on t = (XS/x)^2 in [0, 1]",
-        {"nz_dawsn": NZ_DAWSN, "nt_dawsn": NT_DAWSN,
-         "nc_erfcx": NC_ERFCX, "nt_erfcx": NT_ERFCX, "xs": XS_E},
+        {
+            "nz_dawsn": NZ_DAWSN,
+            "nt_dawsn": NT_DAWSN,
+            "nc_erfcx": NC_ERFCX,
+            "nt_erfcx": NT_ERFCX,
+            "xs": XS_E,
+        },
         {"XS": XS_E},
-        {"DAWSN_E": e, "DAWSN_G": g, "ERFCX_C": c, "ERFCX_H": h})
+        {"DAWSN_E": e, "DAWSN_G": g, "ERFCX_C": c, "ERFCX_H": h},
+    )
 
 
 if __name__ == "__main__":

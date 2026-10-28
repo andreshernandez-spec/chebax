@@ -13,16 +13,28 @@ Measured worst, float64 (bar about 4x in each test):
   term, 3.2e-16. Both branches at the split agree to 4.4e-16 in value and
   3.5e-15 in d/du. The table's s -> 0 end matches
   c1(rho) = -(2 rho + 1)(rho + 2)/(24 rho) to 8.9e-16.
-- density: values 3.3e-13; d/dmu 3.1e-16, d/dy 1.2e-13, d/dphi 7.5e-13,
-  d/dp 3.6e-12. All worst near p = 1.05 in the direct sum, where
-  lgamma(rho n) reaches ~4000 near the split and its rounding,
-  eps |lgamma|, survives the cancellation down to an O(1) log-density;
-  d/dp also carries drho/dp = -1/(p-1)^2 = -400 there.
-- float32 (x64 off): ln W 7.8e-7, density 7.4e-6.
+- density on CASES: values 3.3e-13; d/dmu 3.1e-16, d/dy 1.2e-13,
+  d/dphi 7.5e-13, d/dp 3.6e-12.
+- density on MORE, chebtorch's fixture points, which reach just below the
+  split at small p where CASES does not: values 1.1e-12, d/dp 4.7e-11,
+  d/dln mu 3.9e-16, d/dln phi 9.3e-12, d/dln y 7.8e-12. All worst near
+  p = 1.05 in the direct sum, where lgamma(rho n) reaches ~4000 near the
+  split and its rounding, eps |lgamma|, survives the cancellation down to
+  an O(1) log-density; d/dp also carries drho/dp = -1/(p-1)^2 = -400 there.
+- float32 (x64 off): ln W 7.8e-7, density 7.4e-6 on test_x64_off's grid.
+  On MORE, against float64 at the same float32 inputs, by p:
+                density  d/dp     d/dln mu  d/dln phi  d/dln y
+    p < 1.1     4.5e-4   1.7e-2   1.7e-7    5.1e-3     4.9e-3
+    p < 1.3     3.4e-5   8.9e-4   2.3e-7    1.1e-4     5.4e-5
+    p >= 1.3    5.6e-6   2.7e-5   1.9e-7    5.3e-6     2.9e-6
+  The same cancellation at float32's eps, plus XLA's float32 lgamma
+  (~10 ulp near small arguments), which dominates at p >= 1.3.
 """
 
+import math
 import os
 import pathlib
+import random
 import subprocess
 import sys
 
@@ -39,6 +51,7 @@ from chebax._src.recipes.tweedie import _half_deviance, _log_series, _over, _spl
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
+HERE = pathlib.Path(__file__).parent
 
 RHOS = [1 / 19, 0.07, 0.111, 0.25, 0.5, 1.0, 2.0, 4.0, 9.0, 14.0, 19.0]
 
@@ -252,6 +265,134 @@ def test_tweedie_gradients(arg, bar):
         )
         worst = max(worst, _rel(got, ref))
     assert worst <= bar, worst
+
+
+def _more_points():
+    """chebtorch's fixture points beyond CASES (its tools/export.py, same
+    random stream): just below the split at small p, where the density and
+    its gradients are worst and CASES does not reach; random points there,
+    since the worst errors are rounding spikes a grid samples poorly; the
+    spikes chebtorch's parity draws found; random points over the box.
+    graded starts from the CASES points test_tweedie_gradients takes, so
+    the count, and with it every point, matches chebtorch's."""
+    graded = {
+        c for c in CASES if c[3] in (0.0, 0.05, 3.0, 150.0) and c[1] in (1.0, 50.0, 3.0)
+    }
+    for p in (1.05, 1.06, 1.08, 1.15):
+        rho = (2 - p) / (p - 1)
+        z1 = tt.ZA + tt.S1 * (1 + rho) ** 2
+        for phi in (0.01, 0.07, 0.3, 1.5):
+            for frac in (0.5, 0.8, 0.9, 0.97):
+                y = (frac * z1 * phi * (2 - p) * (p - 1)) ** (1 / (2 - p))
+                graded |= {(p, y * r, phi, y) for r in (0.6, 1.2, 1.6)}
+    rng = random.Random(0)
+    for _ in range(200):
+        p = rng.uniform(1.05, 1.1)
+        rho = (2 - p) / (p - 1)
+        z1 = tt.ZA + tt.S1 * (1 + rho) ** 2
+        phi = math.exp(rng.uniform(math.log(0.01), math.log(2.0)))
+        y = (rng.uniform(0.6, 1.0) * z1 * phi * (2 - p) * (p - 1)) ** (1 / (2 - p))
+        graded.add((p, y * math.exp(rng.uniform(-0.5, 0.5)), phi, y))
+    graded |= {
+        (1.05, 0.7322062443874073, 0.020028698807062692, 0.6674935636203755),
+        (1.05, 14.948103612343962, 0.40139605555805025, 14.238663807946466),
+        (1.07, 12.087159758573403, 0.46620545614301584, 11.639439755817165),
+        (1.05, 0.8697386997688737, 0.02401901878639002, 0.7764388225849072),
+        (1.05, 42.37604975000736, 0.020616521318877278, 41.93810466188303),
+    }
+    while len(graded) < 650:
+        p = rng.uniform(1.05, 1.95)
+        mu, phi = (
+            math.exp(rng.uniform(math.log(lo), math.log(hi)))
+            for lo, hi in ((0.05, 50.0), (0.02, 5.0))
+        )
+        y = mu * math.exp(rng.uniform(-4.0, 3.0))
+        if y ** (2 - p) / (phi * (2 - p) * (p - 1)) <= 1e5:
+            graded.add((p, mu, phi, y))
+    return sorted(graded - set(CASES))
+
+
+MORE = _more_points()
+
+
+def _values_and_log_gradients(points, dtype):
+    """Values and (d/dp, d/dln mu, d/dln phi, d/dln y) as float64 arrays."""
+    cols = [jnp.asarray([c[k] for c in points], dtype) for k in range(4)]
+    f = chebax.tweedie_logpdf
+    v = jax.jit(jax.vmap(f))(*cols)
+    g = jax.jit(jax.vmap(jax.grad(f, argnums=(0, 1, 2, 3))))(*cols)
+    g = [g[0]] + [x * gk for x, gk in zip(cols[1:], g[1:])]
+    return np.asarray(v, np.float64), np.asarray(g, np.float64)
+
+
+def test_tweedie_below_the_split():
+    # Gradients in the logarithms of mu, phi and y: df/dphi is 1/phi times
+    # a cancellation that does not shrink with phi, so a plain metric grows
+    # as 1/phi near a zero of it. Order: density, d/dp, d/dln mu, d/dln phi,
+    # d/dln y.
+    v, g = _values_and_log_gradients(MORE, jnp.float64)
+    assert np.isfinite(v).all() and np.isfinite(g).all()
+    worst = np.zeros(5)
+    for i, c in enumerate(MORE):
+        args = list(map(mp.mpf, c))
+        errs = [_rel(v[i], float(ref_logpdf(*c)))]
+        for k in range(4):
+            ref = mp.diff(
+                lambda t: ref_logpdf(*(args[:k] + [t] + args[k + 1 :])), args[k]
+            )
+            s = 1.0 if k == 0 else c[k]
+            errs.append(_rel(g[k, i], s * float(ref)))
+        worst = np.maximum(worst, errs)
+    assert (worst <= [4e-12, 2e-10, 1.5e-15, 4e-11, 3e-11]).all(), worst
+
+
+# float32 bars by band of p, in the order above
+BARS_X64_OFF = {
+    (1.0, 1.1): [2e-3, 7e-2, 7e-7, 2e-2, 2e-2],
+    (1.1, 1.3): [1.5e-4, 4e-3, 1e-6, 5e-4, 2.5e-4],
+    (1.3, 2.0): [2.5e-5, 1.2e-4, 8e-7, 2.5e-5, 1.2e-5],
+}
+
+
+def test_tweedie_below_the_split_x64_off(tmp_path):
+    # float32 against float64 at the same float32 inputs, which separates
+    # the arithmetic from the rounding of the inputs: at p = 1.05 df/dp is in
+    # the thousands, so rounding p alone moves the density by ~1e-4. p is
+    # nudged into the box where it rounds out of it.
+    pts = []
+    for c in MORE:
+        p = np.float32(c[0])
+        if not tt.P_LO <= float(p) <= tt.P_HI:
+            p = np.nextafter(p, np.float32(1.5))
+        pts.append((float(p), *(float(np.float32(x)) for x in c[1:])))
+    v, g = _values_and_log_gradients(pts, jnp.float64)
+    ref = np.vstack([v, g])
+    np.save(tmp_path / "pts.npy", np.asarray(pts))
+    code = (
+        "import sys, numpy as np, jax.numpy as jnp\n"
+        "assert jnp.empty(()).dtype == jnp.float32\n"
+        "sys.path.insert(0, sys.argv[2])\n"
+        "from test_tweedie import _values_and_log_gradients\n"
+        "pts = [tuple(r) for r in np.load(sys.argv[1])]\n"
+        "v, g = _values_and_log_gradients(pts, jnp.float32)\n"
+        "np.save(sys.argv[1], np.vstack([v, g]))\n"
+    )
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    env.pop("JAX_ENABLE_X64", None)
+    out = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path / "pts.npy"), str(HERE)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert out.returncode == 0, out.stderr[-1500:]
+    got = np.load(tmp_path / "pts.npy")
+    assert np.isfinite(got).all()
+    err = np.abs(got - ref) / np.maximum(1.0, np.abs(ref))
+    p = np.asarray(pts)[:, 0]
+    for (lo, hi), bars in BARS_X64_OFF.items():
+        worst = err[:, (p >= lo) & (p < hi)].max(axis=1)
+        assert (worst <= bars).all(), (lo, hi, worst)
 
 
 def test_deviance_partials_match_finite_differences():

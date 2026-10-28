@@ -25,10 +25,12 @@ spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name 
 publishing action and stays Andres's.
 
 **Status:** live. Public at https://github.com/andreshernandez-spec/chebax;
-0.3.0 cut 2026-08-03 (thirty-one increments in `docs/increments.md`; 0.2.0 was
-2026-07-31). Open: the GPJax Matern play, upstream outreach
+0.4.0 released 2026-10-28, the first published from its tag by
+`release.yml` (thirty-three increments in `docs/increments.md`; 0.3.0 was
+2026-08-03, 0.2.0 2026-07-31). Open: the GPJax Matern play, upstream outreach
 (local notes in `drafts/`), and Wright Bessel, which is measured and
-specified in M6 but not built. Parent evidence lives in
+specified in M6 but built only for the beta = 0 slice behind Tweedie.
+Parent evidence lives in
 `../bessel/` (Track B); this project generalizes B1 into a library.
 **Owner:** Andres
 **Last verified:** 2026-08-01, experiments run locally (see `results/`); upstream

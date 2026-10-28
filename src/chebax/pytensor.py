@@ -84,8 +84,6 @@ except ImportError as e:
 import chebax
 from chebax import domains as _dom
 
-_BOX_LO, _BOX_HI = _dom.BETAINC.lo, _dom.BETAINC.hi
-
 
 def _is_uniform(p):
     return jnp.ndim(p) == 0 or getattr(p, "size", None) == 1
@@ -214,12 +212,12 @@ def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
 def _in_box(*params):
     ok = jnp.asarray(True)
     for p in params:
-        ok = ok & (p >= _BOX_LO) & (p <= _BOX_HI)
+        ok = ok & (p >= _dom.BETAINC.lo) & (p <= _dom.BETAINC.hi)
     return ok
 
 
 def _clip_box(p):
-    return jnp.clip(p, _BOX_LO, _BOX_HI)
+    return jnp.clip(p, _dom.BETAINC.lo, _dom.BETAINC.hi)
 
 
 @jax_funcify.register(BetaIncInv)

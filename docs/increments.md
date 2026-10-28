@@ -874,3 +874,24 @@ near the split at p = 1.05), gradients to 3.7e-12 (d/dp, where
 drho/dp = -400); float32 7.4e-6. Values 89-130x scipy on one CPU core and
 254-331x on the GPU; NUTS recovers the power (p = 1.41 +- 0.05 at 1.35 on
 1,500 draws).
+
+## 34. Tweedie: what chebtorch's port found (2026-10-28)
+
+chebtorch's Tweedie fixtures reach the region just below the split at small
+p, which the grid here missed, and the stated floors were too low there:
+float64 density 1.1e-12 (3.3e-13 stated), d/dp 4.7e-11 (3.6e-12), float32
+density 4.5e-4 at p < 1.1 (7.4e-6). The cause is the one already named,
+lgamma(rho n) rounding in the direct sum; the grid did not sample its worst.
+Those 578 points are chebax's tests now (MORE in test_tweedie.py, the same
+random stream), float32 checked by band of p against float64 at the same
+float32 inputs.
+
+The port also kept a third deviance form, mu^a (expm1(a x) - a delta) /
+(a (a-1)) with x = log1p(delta), for 1/4 < |delta| and |ln(y/mu)| <= 1.
+The far form's terms cancel to O(delta^2) there, 32 eps / (a (1-a)) at
+|delta| = 1/4; the new one cancels only first-order terms, ~9 eps / (1-a).
+float64 does not move. In float32 at p >= 1.3, d/dln phi goes from 8.5e-6
+to 5.3e-6 and d/dp from 4.8e-5 to 2.7e-5, but the density stays at 5.6e-6:
+XLA's float32 lgamma dominates it (chebtorch, on torch's lgamma, reaches
+1.5e-6). The deviance's hand-written partials in mu and y, and _over's in
+phi, are checked against finite differences in each form.

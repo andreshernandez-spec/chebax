@@ -1,0 +1,127 @@
+# Build a release and publish it to PyPI.
+#
+# Runs when a tag v<version> is pushed, or by hand with a tag's name. Publishing uses
+# PyPI's trusted publishing (OpenID Connect), so no API token exists anywhere: PyPI
+# trusts this repository's workflow named release.yml, running in the environment named
+# pypi. Both names are part of the trust, so renaming either breaks publishing until
+# PyPI is told.
+#
+# A version can never be reused on PyPI, even after deletion, so everything that can be
+# checked is checked before the upload: the tag names the version pyproject.toml
+# declares, the tests workflow passed on the tagged commit as pushed to main, the
+# artifacts pass twine, the sdist and the wheel hold only what they should, and the
+# wheel installs into a clean environment and evaluates a function from outside the
+# checkout.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the tag to build and publish, e.g. v0.4.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read   # to look up the tests run of the tagged commit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0   # the tags, for the check below
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: the tag names the version the package declares
+        id: version
+        run: |
+          tag=$(git describe --tags --exact-match HEAD)
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          echo "tag $tag, declared version $version"
+          test "$tag" = "v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: the tests workflow passed on this commit, pushed to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the full suite takes ~40 min on main after a merge; if it is still
+          # running, wait for it and re-run this workflow by hand with the tag
+          sha=$(git rev-parse HEAD)
+          state=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow tests.yml \
+            --commit "$sha" --event push --json status,conclusion \
+            --jq '.[0] | "\(.status) \(.conclusion)"')
+          echo "tests on $sha: $state"
+          test "$state" = "completed success"
+      - name: build
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+          ls -l dist
+      - name: the sdist and the wheel hold only what they should
+        run: |
+          sdist=$(tar -tzf dist/*.tar.gz | sed 's|^[^/]*/||' | cut -d/ -f1 | grep . | LC_ALL=C sort -u | tr '\n' ' ')
+          echo "sdist: $sdist"
+          test "$sdist" = "LICENSE PKG-INFO README.md pyproject.toml setup.cfg src tests "
+          python - <<'PY'
+          import glob, zipfile
+          (whl,) = glob.glob("dist/*.whl")
+          tops = sorted({n.split("/")[0] for n in zipfile.ZipFile(whl).namelist()})
+          print("wheel:", tops)
+          assert len(tops) == 2 and tops[0] == "chebax", tops
+          assert tops[1].startswith("chebax-") and tops[1].endswith(".dist-info"), tops
+          PY
+      - name: the wheel installs into a clean environment and evaluates away from the checkout
+        working-directory: ${{ runner.temp }}
+        env:
+          JAX_PLATFORMS: cpu
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python -m venv clean
+          clean/bin/pip install --quiet "$GITHUB_WORKSPACE"/dist/*.whl
+          clean/bin/python - <<'PY'
+          import os, pathlib
+          import jax
+          import chebax
+          here = pathlib.Path(chebax.__file__).resolve()
+          assert "site-packages" in here.parts, here
+          assert chebax.__version__ == os.environ["VERSION"], chebax.__version__
+          jax.config.update("jax_enable_x64", True)
+          # I_0.4(2, 3) = 1 - 0.6^4 - 4 (0.4) 0.6^3 = 0.5248, read off the baked tables
+          v = float(chebax.betainc(2.0, 3.0)(0.4))
+          assert abs(v - 0.5248) <= 1e-14, v
+          print("chebax", chebax.__version__, "from", here.parent, "betainc", v)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/chebax/
+    permissions:
+      id-token: write   # what PyPI's trusted publishing verifies; nothing else is needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

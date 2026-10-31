@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""erfcx as one Chebyshev series in t = K / (K + x), against the two-table erfcx.
+"""erfcx in t = K / (K + x): one series or t-panels, against the two-table erfcx.
 
 WHAT THIS MEASURES
 ------------------
@@ -10,37 +10,40 @@ x < 0. Since 2026-10-31 it maps all of [0, inf) onto t in (0, 1]
 
     erfcx(x) = t h(t),  t = K / (K + x),  h(t) = erfcx(x) (K + x) / K
 
-h is smooth on [0, 1] (h(1) = 1, h(0) = 1 / (K sqrt(pi))), so one series
-serves every x >= 0 with no select. The reflection now splits x^2 exactly
-before the exp.
+h is smooth on [0, 1] (h(1) = 1, h(0) = 1 / (K sqrt(pi))), so no select on
+x is needed. One series in t takes 26 terms; chebax uses 32 equal t-panels
+of 8 terms, picked by floor(32 t). The reflection splits x^2 exactly before
+the exp.
 
-1. Degrees: Chebyshev terms of h above 2^-56 min h, by K.
+1. Degrees: Chebyshev terms of h above 2^-56 min h, for one series by K,
+   and per panel (the worst panel) by the number of panels at K = 3.
 2. Values and derivative against mpmath (40 dps; 60 for the derivative,
    whose identity 2 x erfcx - 2/sqrt(pi) cancels at large x), pointwise
    relative and in ulps of the reference: the two-table erfcx (refitted
-   here as its generator did), the one series with x^2 rounded in the
-   reflection, chebax.erfcx (one series, x^2 split), and
-   jax.scipy.special.erfcx.
-3. erfc from the same series, erfc(x) = t h(t) e^{-x^2} for x >= 0 and
+   here as its generator did), one series with x^2 rounded and with x^2
+   split, chebax.erfcx (32 panels, x^2 split), jax.scipy.special.erfcx.
+3. erfc from the panels, erfc(x) = t h(t) e^{-x^2} for x >= 0 and
    2 - erfc(-x) below, x^2 split exactly (Dekker): what a compiled kernel
    built on the table computes before any compensated arithmetic. Against
    XLA's erfc. CPU only.
 4. Speed under jit, values and the gradient of the sum: GPU (N = 2^22) and
    one CPU thread (N = 2^20), x ~ normal(0, 3).
 
-FINDINGS (2026-10-31, RTX 3080 Laptop, jax 0.11.0)
+FINDINGS (2026-11-01, RTX 3080 Laptop, jax 0.11.0)
 --------------------------------------------------
-results/22_erfcx_one_series.txt. 26 terms at K = 3 (25-26 for K in
-[2.5, 5]). The one series is as accurate as the two tables for x >= 0
-(6.1e-16 against 4.8e-16). Both shared a worst case of 5.7e-14 at
-x = -22.75 from e^{x^2} with x^2 rounded; chebax.erfcx splits x^2 and
-reaches 6.2e-16 (3-4 ulp) on both sides, derivative 8.7e-16. Under jit,
-XLA folds e^hi e^lo into e^(hi + lo), which undoes the split, so the
-library writes e^hi (1 + expm1(lo)). jax 0.11's own erfcx returns 0 for x
-in [26.543, 26.642] (erfc underflows before its asymptotic branch starts
-at 26.64; jax has since rewritten erfcx). On the GPU chebax.erfcx takes
-0.71x the two tables' time for values and 0.93x for the gradient, in a
-run with another job on the machine.
+results/22_erfcx_panels.txt. One series takes 26 terms at K = 3 (25-26
+for K in [2.5, 5]); the worst of 32 panels takes 8 for values, and the
+table keeps 9 so the derivative's worst case is 7.0e-16 rather than
+6.8e-15 at a panel edge. Values: 4.4e-16 for x < 0 and 5.8e-16 for x >= 0
+against the two tables' 5.7e-14 and 4.8e-16; the x < 0 gain is the split
+x^2 (the rounded x^2 costs 5.7e-14 at x = -22.75 with any series).
+Derivative 5.9e-16 / 7.0e-16 against 5.7e-14 / 1.4e-14. Under jit XLA
+folds e^hi e^lo into e^(hi + lo), which undoes the split, so the library
+writes e^hi (1 + expm1(lo)), expm1 by three terms of its series. jax
+0.11's own erfcx returns 0 for x in [26.543, 26.642] (erfc underflows
+before its asymptotic branch starts at 26.64; jax has since rewritten
+erfcx). Speed against the two tables, values / gradient: CPU 0.52x /
+0.46x the time, GPU 0.42x / 0.52x; faster than jax's own erfcx on the GPU.
 
 WHAT IT DOES NOT ESTABLISH
 --------------------------
@@ -67,6 +70,7 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import chebax
+from chebax._src.recipes import erf_family
 from chebax._src.recipes import erf_table as et
 from chebax._src.recipes._gen_common import DPS, dct, nodes
 from chebax._src.series import ChebSeries
@@ -85,18 +89,40 @@ def erfcx_mp(x):
     return mp.erfc(x) * mp.exp(x * x)
 
 
-def h_terms(K):
-    def h(u):
-        a = K * (1 - u) / (1 + u)
-        return mp.erfc(a) * mp.exp(a * a) * (K + a) / K
+def h_mp(K, t):
+    a = K * (1 - t) / t
+    return mp.erfc(a) * mp.exp(a * a) * (K + a) / K
 
-    with mp.workdps(DPS):
-        K = mp.mpf(K)
-        c = [float(v) for v in dct(mp, [h(u) for u in nodes(mp, 64)])]
+
+def terms(c, hmin):
     m = len(c)
-    while m > 1 and abs(c[m - 1]) < TOL / (float(K) * math.sqrt(math.pi)):
+    while m > 1 and abs(c[m - 1]) < TOL * hmin:
         m -= 1
     return m
+
+
+def h_terms(K):
+    with mp.workdps(DPS):
+        K = mp.mpf(K)
+        c = [float(v) for v in dct(mp, [h_mp(K, (u + 1) / 2) for u in nodes(mp, 64)])]
+    return terms(c, 1 / (float(K) * math.sqrt(math.pi)))
+
+
+def panel_terms(P, K=3):
+    """Terms of the worst panel among P equal t-panels, each fitted on 24 nodes."""
+    with mp.workdps(DPS):
+        K = mp.mpf(K)
+        worst = 0
+        for j in range(P):
+            lo, hi = mp.mpf(j) / P, mp.mpf(j + 1) / P
+            c = [float(v) for v in dct(mp, [h_mp(K, lo + (u + 1) / 2 * (hi - lo)) for u in nodes(mp, 24)])]
+            worst = max(worst, terms(c, float(min(h_mp(K, hi), h_mp(K, lo) if lo else 1 / (K * mp.sqrt(mp.pi))))))
+    return worst
+
+
+def one_series_fit(K=3.0, n=32):
+    with mp.workdps(DPS):
+        return np.array([float(v) for v in dct(mp, [h_mp(mp.mpf(K), (u + 1) / 2) for u in nodes(mp, n)])])
 
 
 def two_tables():
@@ -119,28 +145,35 @@ def two_tables():
     return erfcx
 
 
-T = ChebSeries(et.ERFCX_T, (0.0, 1.0))
+T = ChebSeries(one_series_fit(), (0.0, 1.0))
 
 
-def pos(a):
-    t = et.K / (et.K + a)
+def one_pos(a):
+    t = 3.0 / (3.0 + a)
     return t * T(t)
 
 
 def one_rounded(x):
     ax = jnp.where(x >= 0, x, -x)
     xn = jnp.where(x < 0, x, 0.0)
-    return jnp.where(x >= 0, pos(ax), 2.0 * jnp.exp(xn * xn) - pos(ax))
+    return jnp.where(x >= 0, one_pos(ax), 2.0 * jnp.exp(xn * xn) - one_pos(ax))
 
 
-def one_erfc(x):
+def one_split(x):
+    ax = jnp.where(x >= 0, x, -x)
+    xn = jnp.where(x < 0, x, 0.0)
+    return jnp.where(x >= 0, one_pos(ax), 2.0 * erf_family._exp_sq(xn) - one_pos(ax))
+
+
+def panel_erfc(x):
+    """erfc from chebax.erfcx's panels (x >= 0 lanes) times e^{-x^2}, x^2 split."""
     a = jnp.minimum(jnp.where(x >= 0, x, -x), XMAX)
     c = 134217729.0 * a
     ah = c - (c - a)
     al = a - ah
     hi = a * a
     lo = ((ah * ah - hi) + 2.0 * ah * al) + al * al
-    y = pos(a) * (jnp.exp(-hi) * (1.0 - lo))
+    y = chebax.erfcx(a) * (jnp.exp(-hi) * (1.0 - lo))
     return jnp.where(x >= 0, y, 2.0 - y)
 
 
@@ -177,12 +210,14 @@ def time_fn(f, x, reps=20):
 def main():
     print(f"jax {jax.__version__}, mpmath {mp.__version__}, devices {jax.devices()}")
     print("\n1. terms of h above 2^-56 min h (fit on 64 nodes)")
-    print("   " + "; ".join(f"K = {K}: {h_terms(K)}" for K in (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)))
-    print(f"   the table: K = {et.K}, {et.ERFCX_T.size} nodes, last coefficient {et.ERFCX_T[-1]:.1e}")
+    print("   one series: " + "; ".join(f"K = {K}: {h_terms(K)}" for K in (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)))
+    print("   worst panel, K = 3: " + "; ".join(f"{P} panels: {panel_terms(P)}" for P in (8, 16, 32, 64)))
+    print(f"   the table: K = {et.K}, {et.NP} panels x {et.ERFCX_P.shape[1]} terms")
 
     two = two_tables()
     fns = {"two tables (<= 0.4.1)": two, "one series, x^2 rounded": one_rounded,
-           "chebax.erfcx": chebax.erfcx, "jax.scipy.special.erfcx": jax.scipy.special.erfcx}
+           "one series, x^2 split": one_split, "chebax.erfcx (32 panels)": chebax.erfcx,
+           "jax.scipy.special.erfcx": jax.scipy.special.erfcx}
     with mp.workdps(40):
         ref = np.array([float(erfcx_mp(x)) for x in XG])
         ref_c = np.array([float(mp.erfc(mp.mpf(x))) if x < 1e3 else 0.0 for x in XG])
@@ -199,15 +234,17 @@ def main():
         for name, f in fns.items():
             g = np.asarray(jax.jit(jax.vmap(jax.grad(f)))(jnp.asarray(xd)))
             rel = np.abs(g - ref_d) / np.abs(ref_d)
-            print(f"   {name:30s} max rel {rel.max():.1e} at x = {xd[np.argmax(rel)]:.6g}")
+            neg, pos_ = xd < 0, xd >= 0
+            print(f"   {name:30s} x < 0 max rel {rel[neg].max():.1e} at x = {xd[neg][np.argmax(rel[neg])]:.6g}; "
+                  f"x >= 0 {rel[pos_].max():.1e} at x = {xd[pos_][np.argmax(rel[pos_])]:.6g}")
         jz = np.asarray(jax.jit(jax.scipy.special.erfcx)(jnp.asarray(np.linspace(26.5, 26.7, 2001))))
         zx = np.linspace(26.5, 26.7, 2001)[jz == 0]
         print(f"   jax.scipy.special.erfcx == 0 on [26.5, 26.7] (step 1e-4): {zx.size} points, "
               f"x in [{zx.min():.4f}, {zx.max():.4f}]" if zx.size else "   jax erfcx: no zeros on [26.5, 26.7]")
 
-        print("\n3. erfc from the one series, against mpmath")
+        print("\n3. erfc from the panels, against mpmath")
         normal = ref_c >= np.finfo(float).tiny
-        for name, f in (("one series, x^2 split", one_erfc), ("XLA erfc", jax.scipy.special.erfc)):
+        for name, f in (("panels, x^2 split", panel_erfc), ("XLA erfc", jax.scipy.special.erfc)):
             v = np.asarray(jax.jit(f)(xs))
             rel = np.abs(v[normal] - ref_c[normal]) / ref_c[normal]
             ulp = np.abs(v[normal] - ref_c[normal]) / np.spacing(ref_c[normal])
@@ -216,7 +253,7 @@ def main():
         print("   (subnormal results are flushed to 0 by XLA on the CPU, in both)")
 
     print("\n4. ms per call under jit, values / gradient of the sum, x ~ normal(0, 3), median of 20")
-    fns = {**fns, "one series erfc": one_erfc, "XLA erfc": jax.scipy.special.erfc}
+    fns = {**fns, "panels erfc": panel_erfc, "XLA erfc": jax.scipy.special.erfc}
     for dev, n in ((jax.devices("cpu")[0], 1 << 20), *[(d, 1 << 22) for d in jax.devices() if d.platform == "gpu"]):
         with jax.default_device(dev):
             x = jax.device_put(jnp.asarray(np.random.default_rng(0).normal(0.0, 3.0, n)), dev)

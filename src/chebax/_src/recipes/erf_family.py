@@ -6,8 +6,9 @@ Parameter-free, so these are plain functions, not factories.
   Chebyshev series on [0, 36] — writing it that way (raw x, even series)
   makes the oddness and the gradient at 0 exact. Tail:
   sign(x) * G((6/x)^2) / |x|.
-- erfcx(x): t T(t) with t = K / (K + |x|), one series for every x >= 0;
-  negative x by the reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which
+- erfcx(x): t h(t) with t = K / (K + |x|) in (0, 1], h from one of NP
+  t-panels picked by floor(NP t), so no select on x; negative x by the
+  reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which
   correctly overflows to inf past x ~ -26.6. x^2 is split exactly before
   the exp: rounded, it puts up to x^2 eps of relative error into e^{x^2}
   (5.7e-14 at x = -22.75). The |x| used for the positive-branch input is
@@ -23,7 +24,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import erf_table as _et
-from chebax._src.recipes._common import canon_tag
+from chebax._src.recipes._common import canon_float, canon_tag
 from chebax._src.series import ChebSeries
 
 
@@ -38,13 +39,14 @@ def _series_cached(_tag):
         return (
             ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
             ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
-            ChebSeries(_et.ERFCX_T, (0.0, 1.0)),
+            canon_float(_et.ERFCX_P),
         )
 
 
 def _series():
-    """The three fitted series, keyed per x64 mode: a cache filled under x64
-    off would otherwise pin float32 coefficients after the flip."""
+    """The two dawsn series and the erfcx panel table, keyed per x64 mode: a
+    cache filled under x64 off would otherwise pin float32 coefficients
+    after the flip."""
     return _series_cached(canon_tag())
 
 
@@ -62,9 +64,11 @@ def _exp_sq(x):
     bits = jax.lax.bitcast_convert_type(xs, it)
     xh = jax.lax.bitcast_convert_type(bits & ~((1 << low) - 1), dt)
     # e^hi (1 + expm1(lo)), not e^hi e^lo: under jit XLA folds a product of
-    # exps into the exp of the sum, which rounds x^2 again
+    # exps into the exp of the sum, which rounds x^2 again. |lo| <= 2.1e-5
+    # where e^hi is finite, so three terms of expm1 are exact to 1e-20.
     e = jnp.exp(xh * xh)
-    y = e + e * jnp.expm1((xs - xh) * (xs + xh))
+    lo = (xs - xh) * (xs + xh)
+    y = e + e * (lo * (1.0 + lo * (0.5 + lo * (1.0 / 6.0))))
     return jnp.where(inf | jnp.isinf(e), jnp.inf, y)
 
 
@@ -94,11 +98,20 @@ def erfcx(x):
     """Scaled complementary error function e^{x^2} erfc(x), any real x.
 
     Overflows to inf (correctly) for x below ~ -26.6."""
-    _, _, T = _series()
+    _, _, panels = _series()
     x = jnp.asarray(x)
     ax = jnp.where(x >= 0, x, -x)
     t = _et.K / (_et.K + ax)
-    pos = t * T(t)
+    y = _et.NP * t
+    fy = jnp.minimum(jnp.floor(y), _et.NP - 1)
+    v = 2.0 * (y - fy) - 1.0
+    # one gather per coefficient: on XLA's CPU half the time of gathering rows
+    i = fy.astype(jnp.int32)
+    c = [jnp.take(panels[:, k], i, mode="clip") for k in range(panels.shape[1])]
+    b1 = b2 = jnp.zeros_like(v)
+    for k in range(len(c) - 1, 0, -1):
+        b1, b2 = c[k] - b2 + 2.0 * v * b1, b1
+    pos = t * (c[0] - b2 + v * b1)
     # clamp the reflection's exp argument for the masked (x >= 0) lanes:
     # exp(x^2) = inf there would poison gradients via 0 * inf. The split
     # runs in the result's dtype (integer and f16 inputs promote).

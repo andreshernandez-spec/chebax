@@ -52,7 +52,9 @@ vonmises: H degrees (claims: w <= 90 at kappa=50, r <= 87 at w=9)
   r-dir w=0.01: last>1e-15 at k=81  a[87]=8.0e-17  a[95]=5.8e-18
   r-dir w=9.0: last>1e-15 at k=87  a[87]=1.2e-15  a[95]=1.9e-17
 == erf ==
-erf family (claims: dawsn E 37 / G 10, seam 6; erfcx T in t = 3/(3+x), 32 nodes)
+erf family (claims: dawsn E 37 / G 10, seam 6; erfcx 32 t-panels in t = 3/(3+x), 9 terms)
   dawsn E z-dir: last>1e-15 at k=37  a[38]=6.0e-16  a[42]=1.1e-18
   dawsn G t-dir: last>1e-15 at k=10  a[12]=5.7e-17  a[14]=1.9e-18
-  erfcx T t-dir: last>1e-15 at k=21  a[24]=1.4e-17  a[26]=1.4e-18  a[31]=1.1e-21
+  erfcx panel 0 t-dir: last>1e-15 at k=6  a[7]=5.0e-16  a[8]=4.2e-19  a[9]=1.0e-20
+  erfcx panel 15 t-dir: last>1e-15 at k=7  a[7]=1.3e-15  a[8]=4.2e-18  a[9]=2.6e-20
+  erfcx panel 31 t-dir: last>1e-15 at k=6  a[7]=3.1e-16  a[8]=2.0e-18  a[9]=8.9e-21

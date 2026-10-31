@@ -5,12 +5,12 @@ has zeros away from dawsn's x = 0, which is tested exactly). Derivative
 tests use the exact ODE identities as oracles, so no mp.diff is needed:
 D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
 
-erfcx is one series in t = 3/(3 + |x|) since 2026-10-31, with x^2 split
-exactly in the reflection's e^{x^2}. Measured worst (jax 0.11 and 0.5.3,
-CPU and GPU, eager and jitted) against the bars: values 5.7e-16 on XE
-(bar 2.5e-15), 4.1e-16 on the deep negatives XN (bar 1.5e-15; the rounded
-x^2 gave 5.7e-14), 1.9e-16 on XBIG (bar 1e-15), the derivative identity
-4.4e-16 (bar 2e-15) and 3.9e-16 on XN (bar 1.5e-15).
+erfcx comes from 32 panels in t = 3/(3 + |x|) since 2026-11-01, with x^2
+split exactly in the reflection's e^{x^2}. Measured worst (jax 0.11 and
+0.5.3, CPU and GPU, eager and jitted) against the bars: values 4.0e-16 on
+XE (bar 1.5e-15), 4.1e-16 on the deep negatives XN (bar 1.5e-15; the
+rounded x^2 gave 5.7e-14), 1.9e-16 on XBIG (bar 1e-15), the derivative
+identity 4.1e-16 (bar 2e-15) and 3.9e-16 on XN (bar 1.5e-15).
 
 The sections after the acceptance tests cover the 2026-08-01 review fixes:
 the x64 keying of this module's series cache, and, since series.py's own
@@ -87,7 +87,7 @@ def test_dawsn_derivative_identity():
 # jitted too: XLA folds e^a e^b into e^(a + b), which undid the x^2 split
 # under jit only (5.7e-14 jitted against 4e-16 eager, 2026-10-31)
 @pytest.mark.parametrize("jit", [False, True])
-@pytest.mark.parametrize("xs, bar", [(XE, 2.5e-15), (XN, 1.5e-15), (XBIG, 1e-15)])
+@pytest.mark.parametrize("xs, bar", [(XE, 1.5e-15), (XN, 1.5e-15), (XBIG, 1e-15)])
 def test_erfcx_values(xs, bar, jit):
     ref = np.array([float(_erfcx_mp(x)) for x in xs])
     f = jax.jit(chebax.erfcx) if jit else chebax.erfcx

@@ -5,6 +5,13 @@ has zeros away from dawsn's x = 0, which is tested exactly). Derivative
 tests use the exact ODE identities as oracles, so no mp.diff is needed:
 D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
 
+erfcx is one series in t = 3/(3 + |x|) since 2026-10-31, with x^2 split
+exactly in the reflection's e^{x^2}. Measured worst (jax 0.11 and 0.5.3,
+CPU and GPU, eager and jitted) against the bars: values 5.7e-16 on XE
+(bar 2.5e-15), 4.1e-16 on the deep negatives XN (bar 1.5e-15; the rounded
+x^2 gave 5.7e-14), 1.9e-16 on XBIG (bar 1e-15), the derivative identity
+4.4e-16 (bar 2e-15) and 3.9e-16 on XN (bar 1.5e-15).
+
 The sections after the acceptance tests cover the 2026-08-01 review fixes:
 the x64 keying of this module's series cache, and, since series.py's own
 file (test_m1.py) was not part of that change, the O(n) coefficient
@@ -42,6 +49,20 @@ XPOS = np.sort(
 )
 XD = np.concatenate([-XPOS[::-1], XPOS])  # dawsn: both signs
 XE = np.concatenate([-np.linspace(0.1, 5.0, 8)[::-1], XPOS])  # erfcx: mild negatives
+# deep negatives, mostly full mantissas: x^2 is not exact there
+XN = -np.concatenate(
+    [np.linspace(5.0, 26.5, 44), np.random.default_rng(0).uniform(0.0, 26.6, 400)]
+)
+XBIG = np.array([1e6, 1e10, 1e100, 1e300])  # past mpmath's erfc
+
+
+def _erfcx_mp(x):
+    x = mp.mpf(x)
+    if x > 1e5:
+        # asymptotic series, exact far past f64 here
+        y = 1 / (2 * x * x)
+        return (1 - y + 3 * y * y - 15 * y**3) / (x * mp.sqrt(mp.pi))
+    return mp.erfc(x) * mp.exp(x * x)
 
 
 def test_dawsn_values():
@@ -63,26 +84,41 @@ def test_dawsn_derivative_identity():
     assert np.max(np.abs(g - (1.0 - 2.0 * XD * D))) <= 5e-14
 
 
-def test_erfcx_values():
-    ref = np.array([float(mp.erfc(mp.mpf(x)) * mp.exp(mp.mpf(x) ** 2)) for x in XE])
-    got = np.asarray(chebax.erfcx(XE))
-    assert np.max(np.abs(got - ref) / ref) <= 5e-15
+# jitted too: XLA folds e^a e^b into e^(a + b), which undid the x^2 split
+# under jit only (5.7e-14 jitted against 4e-16 eager, 2026-10-31)
+@pytest.mark.parametrize("jit", [False, True])
+@pytest.mark.parametrize("xs, bar", [(XE, 2.5e-15), (XN, 1.5e-15), (XBIG, 1e-15)])
+def test_erfcx_values(xs, bar, jit):
+    ref = np.array([float(_erfcx_mp(x)) for x in xs])
+    f = jax.jit(chebax.erfcx) if jit else chebax.erfcx
+    got = np.asarray(f(jnp.asarray(xs)))
+    assert np.max(np.abs(got - ref) / ref) <= bar
 
 
 def test_erfcx_derivative_identity():
     g = np.asarray(jax.vmap(jax.grad(chebax.erfcx))(jnp.asarray(XPOS)))
     C = np.asarray(chebax.erfcx(XPOS))
     resid = g - (2.0 * XPOS * C - 2.0 / np.sqrt(np.pi))
-    assert np.max(np.abs(resid) / np.maximum(np.abs(g), 1.0)) <= 5e-14
+    assert np.max(np.abs(resid) / np.maximum(np.abs(g), 1.0)) <= 2e-15
     d0 = float(jax.grad(chebax.erfcx)(0.0))
     assert abs(d0 + 2.0 / np.sqrt(np.pi)) <= 1e-14
 
 
+def test_erfcx_derivative_deep_negatives():
+    g = np.asarray(jax.jit(jax.vmap(jax.grad(chebax.erfcx)))(jnp.asarray(XN)))
+    ref = np.array(
+        [float(2 * mp.mpf(x) * _erfcx_mp(x) - 2 / mp.sqrt(mp.pi)) for x in XN]
+    )
+    assert np.max(np.abs(g - ref) / np.abs(ref)) <= 1.5e-15
+
+
 def test_erfcx_negative_overflow():
     assert float(chebax.erfcx(-27.0)) == np.inf
-    ref = float(mp.erfc(mp.mpf(-20)) * mp.exp(mp.mpf(400)))
-    got = float(chebax.erfcx(-20.0))
-    assert abs(got - ref) / ref <= 1e-12  # dominated by exp(x^2) rounding, eps*x^2
+    assert float(chebax.erfcx(-np.inf)) == np.inf
+    # the derivative overflows with the value: -inf, not the 0 * inf nan a
+    # derivative through the x^2 split gives where its low part is 0
+    for x in (-27.0, -28.0, -1e300, -np.inf):
+        assert float(jax.grad(chebax.erfcx)(x)) == -np.inf
 
 
 def test_jit():

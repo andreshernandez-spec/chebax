@@ -1,14 +1,16 @@
 """dawsn and erfcx (recent jax ships both; kept for the C++ bake path).
 
-Parameter-free, so these are plain functions, not factories. Both use one
-hard select at |x| = 6.
+Parameter-free, so these are plain functions, not factories.
 
-- dawsn(x): odd. Inner: x * E(x^2) with E a Chebyshev series on [0, 36] —
-  writing it that way (raw x, even series) makes the oddness and the
-  gradient at 0 exact. Tail: sign(x) * G((6/x)^2) / |x|.
-- erfcx(x): fitted on [0, 6], tail H((6/x)^2) / x; negative x by the
-  reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which correctly overflows
-  to inf past x ~ -26.6. The |x| used for the positive-branch input is
+- dawsn(x): odd, one hard select at |x| = 6. Inner: x * E(x^2) with E a
+  Chebyshev series on [0, 36] — writing it that way (raw x, even series)
+  makes the oddness and the gradient at 0 exact. Tail:
+  sign(x) * G((6/x)^2) / |x|.
+- erfcx(x): t T(t) with t = K / (K + |x|), one series for every x >= 0;
+  negative x by the reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which
+  correctly overflows to inf past x ~ -26.6. x^2 is split exactly before
+  the exp: rounded, it puts up to x^2 eps of relative error into e^{x^2}
+  (5.7e-14 at x = -22.75). The |x| used for the positive-branch input is
   built from a select (not jnp.abs) so the derivative at exactly 0 is
   right; abs would zero it by its tie convention.
 
@@ -36,20 +38,49 @@ def _series_cached(_tag):
         return (
             ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
             ChebSeries(_et.DAWSN_G, (0.0, 1.0)),
-            ChebSeries(_et.ERFCX_C, (0.0, _et.XS)),
-            ChebSeries(_et.ERFCX_H, (0.0, 1.0)),
+            ChebSeries(_et.ERFCX_T, (0.0, 1.0)),
         )
 
 
 def _series():
-    """The four fitted series, keyed per x64 mode: a cache filled under x64
+    """The three fitted series, keyed per x64 mode: a cache filled under x64
     off would otherwise pin float32 coefficients after the flip."""
     return _series_cached(canon_tag())
 
 
+@jax.custom_jvp
+def _exp_sq(x):
+    """e^{x^2} with x^2 = hi + lo split, hi exact. x_hi keeps the top half
+    of the significand (a bit mask, so no fma or contraction can change
+    the split); lo = (x - x_hi)(x + x_hi) is up to 2^-25 x^2 in f64, too
+    big for 1 + lo to stand in for e^lo."""
+    dt = x.dtype
+    it, low = (jnp.int64, 27) if dt == jnp.float64 else (jnp.int32, 12)
+    # an infinite x would make x - x_hi nan; e^{x^2} is inf long before
+    inf = jnp.isinf(x)
+    xs = jnp.where(inf, 0.0, x)
+    bits = jax.lax.bitcast_convert_type(xs, it)
+    xh = jax.lax.bitcast_convert_type(bits & ~((1 << low) - 1), dt)
+    # e^hi (1 + expm1(lo)), not e^hi e^lo: under jit XLA folds a product of
+    # exps into the exp of the sum, which rounds x^2 again
+    e = jnp.exp(xh * xh)
+    y = e + e * jnp.expm1((xs - xh) * (xs + xh))
+    return jnp.where(inf | jnp.isinf(e), jnp.inf, y)
+
+
+@_exp_sq.defjvp
+def _exp_sq_jvp(primals, tangents):
+    # through the split, reverse mode gives inf * 0 = nan once e^{x^2}
+    # overflows at an x whose lo is exactly 0 (x = -27); the derivative is
+    # 2 x e^{x^2} whatever the split
+    (x,), (dx,) = primals, tangents
+    y = _exp_sq(x)
+    return y, 2.0 * x * y * dx
+
+
 def dawsn(x):
     """Dawson's integral D(x) = e^{-x^2} int_0^x e^{t^2} dt, any real x."""
-    E, G, _, _ = _series()
+    E, G, _ = _series()
     x = jnp.asarray(x)
     ax = jnp.where(x >= 0, x, -x)
     zi = jnp.where(ax <= _et.XS, x * x, _et.XS * _et.XS)
@@ -63,15 +94,13 @@ def erfcx(x):
     """Scaled complementary error function e^{x^2} erfc(x), any real x.
 
     Overflows to inf (correctly) for x below ~ -26.6."""
-    _, _, C, H = _series()
+    _, _, T = _series()
     x = jnp.asarray(x)
     ax = jnp.where(x >= 0, x, -x)
-    xi = jnp.where(ax <= _et.XS, ax, _et.XS)
-    inner = C(xi)
-    xo = jnp.where(ax <= _et.XS, _et.XS, ax)
-    tail = H((_et.XS / xo) ** 2) / xo
-    pos = jnp.where(ax <= _et.XS, inner, tail)
+    t = _et.K / (_et.K + ax)
+    pos = t * T(t)
     # clamp the reflection's exp argument for the masked (x >= 0) lanes:
-    # exp(x^2) = inf there would poison gradients via 0 * inf
-    xn = jnp.where(x < 0, x, 0.0)
-    return jnp.where(x >= 0, pos, 2.0 * jnp.exp(xn * xn) - pos)
+    # exp(x^2) = inf there would poison gradients via 0 * inf. The split
+    # runs in the result's dtype (integer and f16 inputs promote).
+    xn = jnp.where(x < 0, x, 0.0).astype(pos.dtype)
+    return jnp.where(x >= 0, pos, 2.0 * _exp_sq(xn) - pos)

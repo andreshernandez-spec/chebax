@@ -1,0 +1,43 @@
+jax 0.11.0, mpmath 1.3.0, devices [CudaDevice(id=0)]
+
+1. terms of h above 2^-56 min h (fit on 64 nodes)
+   K = 1.5: 30; K = 2.0: 28; K = 2.5: 26; K = 3.0: 26; K = 3.5: 25; K = 4.0: 25; K = 5.0: 26; K = 6.0: 27
+   the table: K = 3.0, 32 nodes, last coefficient 5.6e-22
+
+2. erfcx on 8702 points in [-26.5, 1e300], against mpmath
+   two tables (<= 0.4.1)          x < 0  max rel 5.7e-14 (466 ulp) at x = -22.7504; mean 58.16 ulp
+   two tables (<= 0.4.1)          x >= 0 max rel 4.8e-16 (4 ulp) at x = 0.08; mean 0.36 ulp
+   one series, x^2 rounded        x < 0  max rel 5.7e-14 (466 ulp) at x = -22.7504; mean 58.16 ulp
+   one series, x^2 rounded        x >= 0 max rel 6.1e-16 (4 ulp) at x = 6.085; mean 0.65 ulp
+   chebax.erfcx                   x < 0  max rel 6.2e-16 (3 ulp) at x = -0.0672475; mean 0.30 ulp
+   chebax.erfcx                   x >= 0 max rel 6.1e-16 (4 ulp) at x = 6.085; mean 0.65 ulp
+   jax.scipy.special.erfcx        x < 0  max rel 5.7e-14 (466 ulp) at x = -22.7504; mean 58.15 ulp
+   jax.scipy.special.erfcx        x >= 0 max rel 1.0e+00 (6121734049459086 ulp) at x = 26.545; mean 18514836777708.21 ulp
+   derivative on 8310 points with |x| <= 1e6, against 2 x erfcx - 2/sqrt(pi)
+   two tables (<= 0.4.1)          max rel 5.7e-14 at x = -24.3138
+   one series, x^2 rounded        max rel 5.7e-14 at x = -24.3138
+   chebax.erfcx                   max rel 8.7e-16 at x = 1.185
+   jax.scipy.special.erfcx        max rel 1.4e+03 at x = 26.64
+   jax.scipy.special.erfcx == 0 on [26.5, 26.7] (step 1e-4): 985 points, x in [26.5433, 26.6417]
+
+3. erfc from the one series, against mpmath
+   one series, x^2 split          normal results: max rel 6.7e-16 (5 ulp) at x = 1.15; mean 0.60 ulp
+   XLA erfc                       normal results: max rel 5.7e-14 (509 ulp) at x = 22.785; mean 41.83 ulp
+   (subnormal results are flushed to 0 by XLA on the CPU, in both)
+
+4. ms per call under jit, values / gradient of the sum, x ~ normal(0, 3), median of 20
+   cpu, N = 1048576
+   two tables (<= 0.4.1)             3.961 /    4.743
+   one series, x^2 rounded           2.429 /    2.448
+   chebax.erfcx                      2.776 /    3.253
+   jax.scipy.special.erfcx           1.252 /    1.375
+   one series erfc                   2.017 /    3.024
+   XLA erfc                          0.857 /    0.705
+   gpu, N = 4194304
+   two tables (<= 0.4.1)             6.701 /    8.587
+   one series, x^2 rounded           4.002 /    7.365
+   chebax.erfcx                      4.769 /    7.945
+   jax.scipy.special.erfcx           5.115 /    5.220
+   one series erfc                   4.511 /    8.257
+   XLA erfc                          3.796 /    0.676
+(run with another job using the GPU and ~3 CPU cores; CPU timings varied up to 1.6x between runs)

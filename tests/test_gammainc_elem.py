@@ -19,8 +19,12 @@ same far side), bars 2e-6 and 1.2e-5; P, Q absolute 4.0e-7, bar 1.6e-6.
 d/dx against the Gamma density (d ln P/dx = density/P, d ln Q/dx =
 -density/Q, formed in mpmath), relative: 2.0e-13, bar 8e-13. d/da against
 mp.diff, 10 points per zone, |g - ref| / max(1, |ref|): 1.3e-13, bar
-5e-13. The IEEE endpoints and the x = 0 slopes are exact, so those
-tests assert equality.
+5e-13. The far tails, past the random points, have their own check
+against mpmath with the precision raised for |ln F| (x up to 1e300, and
+x/a underflowing): float64 2.2e-16, bar 1e-15; float32 1.0e-7, bar 4e-7,
+in forward and reverse mode. The ends of each dtype's range are checked
+for nan in both modes. The IEEE endpoints and the x = 0 slopes are exact,
+so those tests assert equality.
 """
 
 import os
@@ -155,38 +159,180 @@ def test_values_absolute(refs):
     assert np.max(np.abs(q - np.exp(lq))) <= 3.5e-15
 
 
-def test_float32(refs, tmp_path):
-    """float32 is the default runtime (x64 off): the leading 7 x 7 block of
-    the same patches, with erfcx and every prefactor in float32 too. x64
-    is process-global, so the public functions run in a child process, on
-    the float32-rounded points."""
-    a, x = refs[:2]
-    a32, x32 = a.astype(np.float32), x.astype(np.float32)
-    np.savez(tmp_path / "in.npz", a=a32, x=x32)
-    code = textwrap.dedent(f"""
+def _x64_off(tmp_path, body, **arrays):
+    """Run body in a child process with x64 at its default (off): it reads
+    the arrays from d and puts its results in the dict out. x64 is
+    process-global, so float32 cannot be checked in this process."""
+    np.savez(tmp_path / "in.npz", **arrays)
+    code = (
+        textwrap.dedent(f"""
+        import sys
         import numpy as np, jax, jax.numpy as jnp, chebax
         assert jnp.empty(()).dtype == jnp.float32, "x64 leaked in"
+        sys.path.insert(0, {str(pathlib.Path(__file__).parent)!r})
+        from test_gammainc_elem import ALLFN, _slopes
         d = np.load({str(tmp_path / "in.npz")!r})
-        out = {{
-            f.__name__: np.asarray(jax.jit(f)(d["a"], d["x"]))
-            for f in (chebax.gammainc_elem, chebax.gammaincc_elem,
-                      chebax.log_gammainc_elem, chebax.log_gammaincc_elem)
-        }}
-        assert all(v.dtype == np.float32 for v in out.values())
+        out = {{}}
+    """)
+        + textwrap.dedent(body)
+        + textwrap.dedent(f"""
         np.savez({str(tmp_path / "out.npz")!r}, **out)
     """)
+    )
     env = {**os.environ, "JAX_PLATFORMS": "cpu"}
     env.pop("JAX_ENABLE_X64", None)
     run = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, env=env
     )
     assert run.returncode == 0, run.stderr[-3000:]
-    got = np.load(tmp_path / "out.npz")
+    return dict(np.load(tmp_path / "out.npz"))
+
+
+def test_float32(refs, tmp_path):
+    """float32 is the default runtime (x64 off): the leading 7 x 7 block of
+    the same patches, with erfcx and every prefactor in float32 too, on the
+    float32-rounded points."""
+    a, x = refs[:2]
+    a32, x32 = a.astype(np.float32), x.astype(np.float32)
+    got = _x64_off(
+        tmp_path,
+        """
+        for f in ALLFN:
+            out[f.__name__] = np.asarray(jax.jit(f)(d["a"], d["x"]))
+            assert out[f.__name__].dtype == np.float32
+        """,
+        a=a32,
+        x=x32,
+    )
     lp, lq = _mp_logs(a32.astype(np.float64), x32.astype(np.float64))
     assert np.max(_err(got["log_gammainc_elem"], lp)) <= 2e-6
     assert np.max(_err(got["log_gammaincc_elem"], lq)) <= 1.2e-5
     assert np.max(np.abs(got["gammainc_elem"] - np.exp(lp))) <= 1.6e-6
     assert np.max(np.abs(got["gammaincc_elem"] - np.exp(lq))) <= 1.6e-6
+
+
+def _slopes(a, x):
+    """Values and both AD modes' slopes in a and in x, for each function."""
+    a, x = jnp.asarray(a), jnp.asarray(x)
+    one, zero = jnp.ones_like(a), jnp.zeros_like(a)
+    out = {}
+    for f in ALLFN:
+        n = f.__name__
+        ga, gx = jax.jit(jax.grad(lambda a, x: jnp.sum(f(a, x)), (0, 1)))(a, x)
+        out[n] = np.asarray(f(a, x))
+        out[n + " rev a"], out[n + " rev x"] = np.asarray(ga), np.asarray(gx)
+        out[n + " fwd a"] = np.asarray(jax.jvp(f, (a, x), (one, zero))[1])
+        out[n + " fwd x"] = np.asarray(jax.jvp(f, (a, x), (zero, one))[1])
+    return out
+
+
+def _in_dtype(dtype, tmp_path, a, x):
+    if dtype == "float64":
+        return _slopes(a, x)
+    body = 'out = _slopes(d["a"], d["x"])\n'
+    return _x64_off(tmp_path, body, a=a.astype(np.float32), x=x.astype(np.float32))
+
+
+# every zone at both ends of each dtype's normal range
+_EXTREME_A = [0.1, 0.5, 0.999, 1.0, 2.5, 10.0, 10.5, 30.0, 1e3, 1e6]
+_EXTREME_X = {
+    "float64": [2.3e-308, 1e-306, 1e-300, 1e-200, 1e-20, 1e-8, 0.3, 1.0, 2.0, 9.0]
+    + [40.0, 1e8, 1e100, 1e300, 1.7e308],
+    "float32": [1.2e-38, 1e-37, 1e-30, 1e-20, 1e-8, 0.3, 1.0, 2.0, 9.0, 40.0]
+    + [1e8, 1e20, 1e37, 3e38],
+}
+
+
+@pytest.mark.parametrize("dtype", ["float64", "float32"])
+def test_extreme_inputs_in_both_modes(dtype, tmp_path):
+    """No nan in values or in forward- or reverse-mode slopes at the ends
+    of the range, and the two modes agree. An unused branch that divides by
+    an unmasked x once gave nan through 0 * inf (jax.grad of gammainc_elem
+    in x at (1, 1e-20) in float32), and differentiating x/a through the
+    ratio lost the a-term where x/a^2 left the float range. The one
+    infinity is d ln P/dx where its true value, ~ a/x, overflows."""
+    a, x = (v.ravel() for v in np.meshgrid(_EXTREME_A, _EXTREME_X[dtype]))
+    got = _in_dtype(dtype, tmp_path, a, x)
+    rtol = 1e-12 if dtype == "float64" else 1e-5
+    # slopes within a few decades of the smallest normal number pass through
+    # subnormal cotangents in reverse mode, so there the modes agree only
+    # absolutely (dP/da ~ 1e-303 at x = 1e-306, a = 1)
+    atol = 1e6 * np.finfo(dtype).tiny
+    with np.errstate(over="ignore"):
+        big = a / x > np.finfo(dtype).max
+    for f in ALLFN:
+        n = f.__name__
+        assert np.all(np.isfinite(got[n])), n
+        for w in ("a", "x"):
+            rev, fwd = got[f"{n} rev {w}"], got[f"{n} fwd {w}"]
+            assert not np.isnan(rev).any() and not np.isnan(fwd).any(), (n, w)
+            np.testing.assert_allclose(
+                rev, fwd, rtol=rtol, atol=atol, err_msg=f"{n} {w}"
+            )
+            want = big if (n, w) == ("log_gammainc_elem", "x") else False
+            assert np.array_equal(np.isinf(rev), want | np.zeros_like(big)), (n, w)
+    k = np.flatnonzero((a == 1.0) & (x == 1e-20))[0]
+    assert got["gammainc_elem rev x"][k] == pytest.approx(1.0, rel=rtol)
+
+
+# (a, x): the upper tail far past the table (ln Q ~ -x), the lower tail
+# where x/a underflows
+_TAILS = {
+    "float64": (
+        [(a, x) for a in (0.5, 2.5, 30.0, 1e3) for x in (1e4, 1e8, 1e15, 1e30, 1e100)]
+        + [(2.5, 1e300)],
+        [(0.5, 1e-300), (2.5, 1e-300), (30.0, 1e-200), (1e3, 1e-30), (1e3, 1e-306)]
+        + [(1e5, 1e-100)],
+    ),
+    "float32": (
+        [(a, x) for a in (0.5, 2.5, 30.0, 1e3) for x in (1e4, 1e8, 1e10, 1e20, 1e37)],
+        [(0.5, 1e-37), (2.5, 1e-37), (30.0, 1e-30), (1e3, 1e-36), (1e5, 1e-20)],
+    ),
+}
+
+
+def _mp_tail(a, x, upper):
+    """(ln F, d ln F/da, d ln F/dx), F = Q if upper else P, with enough
+    digits for |ln F| (~1e100 at x = 1e100) to leave 40 for the slopes."""
+    if upper:
+        F = lambda s, x: mp.gammainc(s, x, mp.inf, regularized=True)  # noqa: E731
+    else:
+        F = lambda s, x: mp.gammainc(s, 0, x, regularized=True)  # noqa: E731
+    size = abs(mp.log(F(mp.mpf(a), mp.mpf(x))))
+    with mp.workdps(50 + int(mp.log10(size + 1))):
+        am, xm = mp.mpf(a), mp.mpf(x)
+        lf = mp.log(F(am, xm))
+        da = mp.diff(lambda s: mp.log(F(s, xm)), am)
+        ld = (am - 1) * mp.log(xm) - xm - mp.loggamma(am)
+        dx = (-1 if upper else 1) * mp.exp(ld - lf)
+        return float(lf), float(da), float(dx)
+
+
+@pytest.mark.parametrize("dtype", ["float64", "float32"])
+def test_tails_against_mpmath(dtype, tmp_path):
+    """Values and both modes' slopes in the far tails, against mpmath with
+    the precision raised for |ln F|. Differentiating -a phi as a product
+    once cancelled two terms of size x/a here: d ln Q/da at (2.5, 1e8) was
+    13.6 for 17.7 in float32, 4e83 at x = 1e100 in float64. Forming x/a
+    lost ln P where it underflows: log_gammainc_elem(1000, 1e-36) was -inf
+    in float32 for -88805.19. Measured worst, |err| / max(1, |ref|):
+    float64 2.2e-16, bar 1e-15; float32 1.0e-7, bar 4e-7. A slope whose
+    true value overflows (d ln P/dx ~ a/x at x = 1e-306) must be inf."""
+    bar = 1e-15 if dtype == "float64" else 4e-7
+    top = np.finfo(dtype).max
+    for pts, upper in zip(_TAILS[dtype], (True, False)):
+        a, x = (np.array(v) for v in zip(*pts))
+        got = _in_dtype(dtype, tmp_path, a, x)
+        n = "log_gammaincc_elem" if upper else "log_gammainc_elem"
+        refs = np.array([_mp_tail(*p, upper) for p in pts]).T
+        for key, r in zip(("", " rev a", " rev x"), refs):
+            gots = [got[n + key]] + (
+                [got[n + key.replace("rev", "fwd")]] if key else []
+            )
+            for g in gots:
+                over = np.abs(r) > top
+                assert np.array_equal(g[over], np.sign(r[over]) * np.inf), (n, key)
+                assert np.max(_err(g[~over], r[~over]), initial=0.0) <= bar, (n, key)
 
 
 def test_dx_against_density(refs):
@@ -258,19 +404,24 @@ def test_x_zero_slope_is_the_density():
 
 def test_masked_lanes_stay_finite():
     """A batch mixing every zone with x < 0, x = 0, x = inf, x = nan and
-    invalid a: the masked branches see finite dummies, so their gradients
-    are 0 (or nan where the value is nan) and no other lane is poisoned."""
+    invalid a: the masked branches see finite dummies, so no other lane is
+    poisoned. x < 0 and x = inf are constant there, so flat in both modes;
+    lanes whose value is nan get a 0 cotangent."""
     xs = np.array([-3.0, 0.0, 1e-8, 0.3, 1.0, 1.9, 8.0, 40.0, 1e300, np.inf, np.nan])
     av = np.array([0.1, 0.5, 1.0, 3.0, 10.0, 11.0, 300.0, 0.05])
-    a, x = (jnp.asarray(v) for v in np.meshgrid(av, xs, indexing="ij"))
-    live = (np.asarray(a) >= 0.1) & np.isfinite(np.asarray(x))
+    an, xn = np.meshgrid(av, xs, indexing="ij")
+    got = _slopes(an, xn)
+    valid = an >= 0.1
+    inner = valid & (xn > 0.0) & np.isfinite(xn)
+    flat = valid & ((xn < 0.0) | (xn == np.inf))
+    assert flat.sum() == 2 * len(av[av >= 0.1])
     for f in ALLFN:
-        ga, gx = jax.jit(jax.grad(lambda a, x: jnp.sum(f(a, x)), (0, 1)))(a, x)
-        ga, gx = np.asarray(ga), np.asarray(gx)
-        inner = live & (np.asarray(x) > 0.0)
-        assert np.all(np.isfinite(ga[inner]) & np.isfinite(gx[inner])), f.__name__
-        flat = (np.asarray(x) < 0.0) | (np.asarray(x) == np.inf)
-        assert np.all(ga[flat & live] == 0.0) and np.all(gx[flat & live] == 0.0)
+        n = f.__name__
+        for key in (" rev a", " rev x", " fwd a", " fwd x"):
+            g = got[n + key]
+            assert np.all(np.isfinite(g[inner])), (n, key)
+            assert np.all(g[flat] == 0.0), (n, key)
+        assert np.all(got[n + " rev a"][~inner & ~flat & (xn != 0.0)] == 0.0), n
 
 
 def test_broadcast_jit_and_arguments():

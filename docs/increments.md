@@ -932,7 +932,7 @@ The pieces, each measured on its own first (generator docstring):
   outside 12 x 12 sum to at most 1e-15: 65 patches, 9,360 coefficients.
   float32 reads the leading 7 x 7 of each.
 
-Two float traps:
+Float traps, the last three found in review:
 
 - XLA's float64 log1p (increment 34) again, through phi = d - log1p(d) at
   d ~ -0.4: 5.5e-14 in ln P. The uniform large-a path has the same exposure
@@ -944,11 +944,26 @@ Two float traps:
   the direct form loses about 4 digits next to lambda = 1. phi comes from
   z = d/(2 + d) instead (log1p(d) = 2 atanh z), with no cancellation in
   either dtype.
+- An unused branch must not divide by x. A select zeroes its cotangent, but
+  a partial that overflows turns that 0 into nan: jax.grad of gammainc_elem
+  in x at (1, 1e-20) in float32 was nan. Each branch now gets x masked off
+  its own lanes.
+- Differentiating -a phi as a product cancels two terms of size x/a in the
+  upper tail. d ln Q/da at (2.5, 1e8) was 13.6 for 17.7 in float32, and
+  4e83 at x = 1e100 in float64. Written as -(x - a) + a ln lambda, d/da
+  stays at ln lambda. ln lambda's slope is written out (through the ratio,
+  x/a^2 and 1/lambda leave the float range at its ends).
+- x/a underflows deep in the lower tail: ln P at (1000, 1e-36) was -inf in
+  float32. ln lambda is log(x/a) only where that ratio is a normal number,
+  and ln x - ln a below. P = exp(ln P) gets slope 0 where P is 0, since
+  forward mode otherwise multiplies 0 by an overflowed a/x.
 
 Measured against mpmath on 2,300 points: float64 ln P 8.9e-16 and ln Q
 8.4e-15. The ln Q floor is the far side of a < 1, x <= a + 1, where
 Q = 1 - P and Q gets down to 0.024; elsewhere it is 7.8e-16. Gradients are
-within 2e-13, and float32 is 4.5e-7 for ln P and 2.9e-6 for ln Q.
+within 2e-13, and float32 is 4.5e-7 for ln P and 2.9e-6 for ln Q. In the
+far tails (x to 1e300, x/a underflowing) values and slopes in both modes
+are within 2.2e-16 in float64 and 1.0e-7 in float32.
 
 Speed (`experiments/22`, x drawn from Gamma(a)): the cost does not depend
 on how a is spread. float64 runs at 12.3-12.5 ns per value and 21-22 ns per

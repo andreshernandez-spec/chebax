@@ -911,9 +911,9 @@ against mpmath in each form catches it directly.
 Every table here collapses its parameter axis once per call. A Gamma
 likelihood with a shape per observation therefore paid that collapse per
 element through vmap: about 4,300 coefficients per element, counting both
-sides of the a = 10 dispatch. `gammainc_elem`, `gammaincc_elem` and their
-logs take a per element and evaluate one small 2-D patch instead
-(`gammainc_elem_gen.py`, `gammainc_elem.py`).
+sides of the a = 10 dispatch. `gammainc_array`, `gammaincc_array` and
+their logs take a per element and evaluate one small 2-D patch instead
+(`gammainc_array_gen.py`, `gammainc_array.py`).
 
 The pieces, each measured on its own first (generator docstring):
 
@@ -945,7 +945,7 @@ Float traps, the last three found in review:
   z = d/(2 + d) instead (log1p(d) = 2 atanh z), with no cancellation in
   either dtype.
 - An unused branch must not divide by x. A select zeroes its cotangent, but
-  a partial that overflows turns that 0 into nan: jax.grad of gammainc_elem
+  a partial that overflows turns that 0 into nan: jax.grad of gammainc_array
   in x at (1, 1e-20) in float32 was nan. Each branch now gets x masked off
   its own lanes.
 - Differentiating -a phi as a product cancels two terms of size x/a in the
@@ -969,6 +969,43 @@ Speed (`experiments/22`, x drawn from Gamma(a)): the cost does not depend
 on how a is spread. float64 runs at 12.5-12.8 ns per value and 23 ns per
 value_and_grad on the GPU, and 0.74-0.78 / 1.1-1.2 us on one CPU core. That
 is 2.3-18x jax's gammainc on GPU values and 2.8-24x on value_and_grad, and
-53-57x vmap of gammainc_fn on value_and_grad. float32 on the GPU is
+53-57x vmap of gammainc_scalar on value_and_grad. float32 on the GPU is
 1.1 / 1.7 ns, 4.5-67x and 6.8-96x jax's. jax's own gammainc is off by 1.4e-11 (float64)
 and 7e-3 (float32) near x ~ a ~ 1e4.
+
+## 36. One naming convention (2026-11-01)
+
+The names had grown per call pattern: `besselk(nu)` was a cached factory,
+`besselk_fn(nu, x)` its traced twin, and #35 added `gammainc_elem(a, x)`
+for a per element. None of the suffixes says what it means, and the
+gammainc entry points sat in three files.
+
+Every function now has one name that takes any parameter shape,
+`name(params, x)`, and one name per path:
+
+- `_scalar`: one traceable value per parameter for the whole call (the
+  old `_fn`);
+- `_array`: a value per element, broadcast with x (gammainc only);
+- `_frozen`: a cached callable for concrete parameters, the Recipe that
+  bake takes (the old one-argument factory).
+
+The plain name picks `_scalar` or `_array` from the parameters' shapes,
+which are static, so the choice costs nothing at run time. Families without
+`_array` refuse an array of parameters and name `pergroup`; families whose
+only path is `_frozen` (besselj, bessely, spherical) call it, and need a
+concrete order. Order derivatives follow suit: `besselk_dnu(nu, x)` and
+`besselk_dnu_frozen(nu)`.
+
+gammainc's entry points are all in `gammainc.py` now, and each path's
+implementation is in its own module (`gammainc_scalar.py`,
+`gammainc_array.py`, `gammainc_frozen.py`, with the a <= 10 and a > 10
+numerics the scalar and frozen paths share in `gammainc_small.py` and
+`gammainc_large.py`). The entry points import a path's module when it is
+first called, so calling `gammainc_scalar` loads 104 KB of tables and
+`gammainc_array` its own 231 KB, never both (`test_lazy_imports`).
+
+The 0.4 spellings still work for one release: the eleven `*_fn` names warn
+through `chebax.__getattr__` and return the `_scalar` function, and the
+one-argument factory calls warn and return the `_frozen` object (a bool in
+x's place is besseli's 0.4 positional `scaled`). `gammainc_elem` was never
+released and has no alias.

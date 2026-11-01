@@ -63,7 +63,7 @@ Use `_gen_common` (`nodes`, `dct`, `param_fit`, `to_f64`,
   initializes the jax backend as an import side effect; build lazily or
   inside factories.
 - Reconstruction: `_common.param_coefs` / `param_coefs_der` (eager, in the
-  cached factory) and `_common.traced_coefs` (inside a `*_fn` variant).
+  `_frozen` factory) and `_common.traced_coefs` (inside a `_scalar` path).
 - Instances subclass `pytree.Recipe`, decorated with plain
   `@jax.tree_util.register_pytree_node_class`: declare `_static_fields`
   (immutable static metadata) and `_series_fields` (ChebSeries, children), constructor takes
@@ -86,19 +86,23 @@ Use `_gen_common` (`nodes`, `dct`, `param_fit`, `to_f64`,
 
 ## 3. API conventions
 
-Parameters first, evaluation point last (note: opposite of scipy). The
-taxonomy:
+Parameters first, evaluation point last (note: opposite of scipy). Every
+function gets the plain `name(params, x)`, plus a suffixed name for each
+path it has (the full rule is in [Coding style](coding-style.md#names)):
 
-- `name(params)` — cached factory returning a callable pytree, when eager
-  per-parameter reconstruction is worthwhile.
-- `name_fn(params, x)` — traced-parameter variant *of a factory*, when the
+- `name_scalar(params, x)` — one traceable value per parameter, when the
   reconstruction is jax-traceable (gives `jax.grad` in the parameters).
-- plain `name(params, x)` — when there is no factory sibling (parameter-
-  free like `dawsn`, or solver-based like the quantiles, or traced-only
-  like `vonmises_cdf`).
-- `name_dnu(params)` — analytic order-derivative instance. This can coexist
-  with a traced variant, as for besseli and besselk. For bessely, the
-  recurrence depth ⌊ν⌋ is structural, so ν cannot trace.
+- `name_array(params, x)` — a parameter value per element, when per-element
+  evaluation is affordable (gammainc's small 2-D patches).
+- `name_frozen(params)` — cached callable pytree for concrete parameters,
+  when eager per-parameter reconstruction is worthwhile; what bake takes.
+- `name_dnu(params, x)` / `name_dnu_frozen(params)` — analytic
+  order-derivative instance. This can coexist with a `_scalar` path, as
+  for besseli and besselk. For bessely, the recurrence depth ⌊ν⌋ is
+  structural, so ν cannot trace and bessely has only `_frozen`.
+- a function with a single path (parameter-free like `dawsn`, solver-based
+  like the quantiles, traced-only like `vonmises_cdf`) keeps its plain name
+  and nothing else.
 
 ## 3b. Baking is automatic
 

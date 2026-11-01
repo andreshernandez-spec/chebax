@@ -19,6 +19,7 @@ pip install chebax[examples]     # adds matplotlib and numpyro
 | [06_copula_variational_inference](06_copula_variational_inference.ipynb) | Gaussian- and t-copula guides with Beta marginals, trained end to end through `betaincinv`; the t-copula's degrees of freedom are learned via `gammaincinv` and `stdtr`, and the ELBO decides whether tail dependence is worth having |
 | [07_censored_and_robust_likelihoods](07_censored_and_robust_likelihoods.ipynb) | detection-limit censoring via `betainc_fn` in the likelihood, and robit regression with `stdtr` where the degrees of freedom are a latent |
 | [08_hierarchical_per_group](08_hierarchical_per_group.ipynb) | `pergroup`: a truncated Beta whose shapes vary by group, with per-observation truncation windows, fitted with NUTS; the plate version of the uniform-per-call truncated distributions, plus where the crossover sits |
+| [09_gammainc_guide](09_gammainc_guide.ipynb) | the incomplete gamma functions by how the shape a is passed: the cached factory, the traced `_fn` functions and their log forms, `gammainc_elem` with a per element, `pergroup`, and the inverses, with gradients in a and x for each; ends with a censored Gamma regression whose shape depends on a covariate |
 
 All notebooks run on CPU in a few minutes total. They enable x64 at the
 top; committed outputs were produced with fixed PRNG keys, so rerunning

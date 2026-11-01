@@ -49,6 +49,12 @@ _LAZY = {
         "log_gammainc_fn",
         "log_gammaincc_fn",
     ),
+    "chebax._src.recipes.gammainc_elem": (
+        "gammainc_elem",
+        "gammaincc_elem",
+        "log_gammainc_elem",
+        "log_gammaincc_elem",
+    ),
     "chebax._src.recipes.gammaincinv": ("chi2inv", "gammainccinv", "gammaincinv"),
     "chebax._src.recipes.hyp1f1": ("hyp1f1", "hyp1f1_fn", "log_hyp1f1_fn"),
     "chebax._src.recipes.stdtr": ("log_stdtr", "log_stdtr_sf", "stdtr", "stdtrit"),
@@ -84,8 +90,10 @@ __all__ = [
     "erfcx",
     "fit",
     "gammainc",
+    "gammainc_elem",
     "gammainc_fn",
     "gammaincc",
+    "gammaincc_elem",
     "gammaincc_fn",
     "gammainccinv",
     "gammaincinv",
@@ -95,7 +103,9 @@ __all__ = [
     "log_betainc_fn",
     "log_hyp1f1_fn",
     "matern",
+    "log_gammainc_elem",
     "log_gammainc_fn",
+    "log_gammaincc_elem",
     "log_gammaincc_fn",
     "log_stdtr",
     "log_stdtr_sf",
@@ -160,6 +170,12 @@ if TYPE_CHECKING:
         gammaincc_fn,
         log_gammainc_fn,
         log_gammaincc_fn,
+    )
+    from chebax._src.recipes.gammainc_elem import (
+        gammainc_elem,
+        gammaincc_elem,
+        log_gammainc_elem,
+        log_gammaincc_elem,
     )
     from chebax._src.recipes.gammaincinv import chi2inv, gammainccinv, gammaincinv
     from chebax._src.recipes.hyp1f1 import hyp1f1, hyp1f1_fn, log_hyp1f1_fn

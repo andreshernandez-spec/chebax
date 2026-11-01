@@ -13,7 +13,8 @@ project's own regenerability rule — this script fixes that.
 
 Run everything:      python experiments/03_degree_measurement.py
 One family:          python experiments/03_degree_measurement.py besselk
-Families: besselj besselk besseli bessely betainc vonmises erf
+Families: besselj besselk besseli bessely betainc gammainc gammainc_elem
+stdtr vonmises erf
 
 WHAT THIS DOES NOT ESTABLISH
 ----------------------------
@@ -146,6 +147,18 @@ def gammainc():
            fit_axis(lambda a: T(a, mp.mpf(1)), 32, 0.1, 10), [20, 24])
 
 
+def gammainc_elem():
+    L = lambda a, x: mp.log(mp.hyp1f1(1, a + 1, x))
+    print("gammainc_elem: L's a-direction in u = ln(1 + a) against linear a, "
+          "a in [0.1, 10] (claims: u 17 vs a 53 at x = 0.01, 33 vs 46 at x = 8)")
+    for x in ["0.01", "8.0"]:
+        xm = mp.mpf(x)
+        report(f"L a-dir x={x}", fit_axis(lambda a: L(a, xm), 68, 0.1, 10), [46, 53])
+        report(f"L u-dir x={x}",
+               fit_axis(lambda u: L(mp.expm1(u), xm), 68, mp.log1p(mp.mpf("0.1")), mp.log(11)),
+               [17, 33])
+
+
 def stdtr():
     L = lambda a, b, x: mp.log(mp.hyp2f1(a + b, 1, a + 1, x))
     h = mp.mpf(1) / 2
@@ -190,7 +203,8 @@ def erf():
 
 
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
-            "bessely": bessely, "betainc": betainc, "gammainc": gammainc, "stdtr": stdtr,
+            "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
+            "gammainc_elem": gammainc_elem, "stdtr": stdtr,
             "vonmises": vonmises, "erf": erf}
 
 if __name__ == "__main__":

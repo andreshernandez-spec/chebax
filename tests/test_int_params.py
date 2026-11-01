@@ -34,6 +34,8 @@ CASES = [
     ("log_betainc_fn", lambda p, x: chebax.log_betainc_fn(p, 2, x), 3, 0.4),
     ("gammainc_fn", lambda p, x: chebax.gammainc_fn(p, x), 3, 1.5),
     ("log_gammainc_fn", lambda p, x: chebax.log_gammainc_fn(p, x), 3, 1.5),
+    ("gammainc_elem", lambda p, x: chebax.gammainc_elem(p, x), 3, 1.5),
+    ("log_gammaincc_elem", lambda p, x: chebax.log_gammaincc_elem(p, x), 3, 1.5),
     ("hyp1f1_fn", lambda p, x: chebax.hyp1f1_fn(p, 3, x), 2, 1.5),
     ("matern", lambda p, x: chebax.matern(p, x), 2, 1.5),
     ("stdtr", lambda p, x: chebax.stdtr(p, x), 4, 1.0),

@@ -45,6 +45,32 @@ betainc: ln F degrees (claims: x <= 19, a <= 58, b <= 20)
   a-dir b=0.1 x=0.5: last>1e-15 at k=58  a[58]=1.3e-15  a[64]=4.4e-17
   a-dir b=10 x=0.5: last>1e-15 at k=46  a[58]=3.2e-19  a[64]=5.8e-21
   b-dir a=0.1 x=0.5: last>1e-15 at k=20  a[20]=1.7e-15  a[24]=1.2e-18
+== gammainc ==
+gammainc: L and T degrees (claims: L x <= 23, a <= 53; T t <= 20, a <= 20)
+  L x-dir a=0.1: last>1e-15 at k=21  a[23]=8.7e-17  a[26]=4.3e-19
+  L x-dir a=1.0: last>1e-15 at k=23  a[23]=1.5e-15  a[26]=2.4e-17
+  L x-dir a=10.0: last>1e-15 at k=15  a[23]=3.5e-22  a[26]=2.2e-25
+  L a-dir x=0.01: last>1e-15 at k=53  a[53]=1.5e-15  a[58]=5.7e-17
+  L a-dir x=8.0: last>1e-15 at k=46  a[53]=9.8e-18  a[58]=3.4e-19
+  T t-dir a=0.1: last>1e-15 at k=18  a[20]=8.9e-17  a[24]=3.1e-19
+  T t-dir a=10.0: last>1e-15 at k=19  a[20]=7.3e-16  a[24]=1.6e-18
+  T a-dir t=1: last>1e-15 at k=20  a[20]=1.0e-15  a[24]=1.5e-18
+== gammainc_elem ==
+gammainc_elem: L's a-direction in u = ln(1 + a) against linear a, a in [0.1, 10] (claims: u 17 vs a 53 at x = 0.01, 33 vs 46 at x = 8)
+  L a-dir x=0.01: last>1e-15 at k=53  a[46]=1.5e-13  a[53]=1.5e-15
+  L u-dir x=0.01: last>1e-15 at k=17  a[17]=1.7e-15  a[33]=5.8e-28
+  L a-dir x=8.0: last>1e-15 at k=46  a[46]=1.1e-15  a[53]=9.8e-18
+  L u-dir x=8.0: last>1e-15 at k=33  a[17]=5.9e-09  a[33]=1.5e-15
+== stdtr ==
+stdtr slices: L at a or b = 1/2 (claims: A x 18/53 b 21/35; B x 18/18 param 53/45)
+  A x-dir b=10: last>1e-15 at k=18  a[53]=9.7e-41  a[60]=9.5e-41
+  A b-dir [0.1,10]: last>1e-15 at k=21  a[35]=2.9e-24  a[40]=2.4e-28
+  B x-dir a=10: last>1e-15 at k=18  a[18]=3.9e-15  a[22]=2.7e-18
+  B a-dir [0.1,10]: last>1e-15 at k=53  a[53]=1.7e-15  a[58]=8.1e-17
+  A x-dir b=100: last>1e-15 at k=53  a[53]=1.1e-15  a[60]=1.9e-17
+  A b-dir [10,100]: last>1e-15 at k=35  a[35]=4.3e-15  a[40]=2.0e-16
+  B x-dir a=100: last>1e-15 at k=18  a[18]=4.9e-15  a[22]=3.4e-18
+  B a-dir [10,100]: last>1e-15 at k=45  a[53]=4.2e-18  a[58]=1.4e-19
 == vonmises ==
 vonmises: H degrees (claims: w <= 90 at kappa=50, r <= 87 at w=9)
   w-dir kappa=10.0: last>1e-15 at k=46  a[90]=5.6e-39  a[100]=2.7e-40

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Per-element gammainc: gammainc_elem against jax's gammainc and against
-the uniform-a path vmapped over a.
+"""Per-element gammainc: gammainc_array against jax's gammainc and against
+the scalar path vmapped over a.
 
 WHAT THIS MEASURES
 ------------------
@@ -18,8 +18,8 @@ Three implementations, values and value_and_grad in (a, x) of the sum:
 - jax:   jax.scipy.special.gammainc, the per-element op numpyro and
          pytensor's JAX backend lower to (series and continued fraction
          in while loops run to the worst lane's count);
-- elem:  chebax.gammainc_elem;
-- vmap:  jax.vmap(chebax.gammainc_fn), the uniform-a path with a per
+- array: chebax.gammainc_array;
+- vmap:  jax.vmap(chebax.gammainc_scalar), the scalar path with a per
          element (its table collapse then runs per element).
 
 Times are ns per element (median), on one CPU core (run under taskset) at
@@ -27,37 +27,37 @@ N = 2^16 and on the GPU at N = 2^20; vmap runs N = 2^12 on both, since
 its gradient costs ~0.2 ms per element on the CPU and its GPU gradient
 program did not finish compiling in 20 min at 2^20 (ptxas; 25 s at 2^12).
 float64, or float32 with x64 off.
-Also: max |P_elem - P_jax| and the number of while loops in elem's
-compiled program.
+Also: max |P_array - P_jax| and the number of while loops in the array
+path's compiled program.
 
 FINDINGS (2026-11-01, RTX 3080 Laptop, reproduced by this script)
 -----------------------------------------------------------------
-- elem costs the same on every layout: float64 0.74-0.78 us per value and
-  1.1-1.2 us per value_and_grad on one CPU core, 12.5-12.8 / 22.8-23.3 ns
-  on the GPU; float32 0.20-0.21 / 0.21-0.23 us and 1.1 / 1.7 ns.
-- Against jax's gammainc, float64: 1.0-8.9x on values and 1.6-15x on
-  value_and_grad on the CPU, 2.3-18x and 2.8-24x on the GPU, growing with
-  the spread of a. float32 on the GPU: 4.5-67x and 6.8-96x. float32 on the
-  CPU: jax's value is 1.8x faster at a = 2.5 each, elem 1.4-8.0x faster on
+- gammainc_array costs the same on every layout: float64 0.67-0.70 us per
+  value and 0.98-1.06 us per value_and_grad on one CPU core, 12.3-12.6 /
+  22.8-22.9 ns on the GPU; float32 0.19 / 0.21 us and 1.1 / 1.7 ns.
+- Against jax's gammainc, float64: 1.1-9.5x on values and 1.8-15x on
+  value_and_grad on the CPU, 2.3-18x and 2.8-23x on the GPU, growing with
+  the spread of a. float32 on the GPU: 4.5-66x and 6.6-95x. float32 on the
+  CPU: jax's value is 1.8x faster at a = 2.5 each, the array path 1.5-8.3x on
   the other two; value_and_grad 1.4-19x.
-- Against vmap of gammainc_fn, float64: 1.5x on values and 71-78x on
-  value_and_grad on the CPU, 9x and 53-57x on the GPU.
+- Against vmap of gammainc_scalar, float64: 1.5-1.6x on values and 73-77x
+  on value_and_grad on the CPU, 9x and 54x on the GPU.
 - On "wide", jax's gammainc is off by up to 1.4e-11 (float64) and 7e-3
-  (float32) near x ~ a ~ 1e4, against mpmath; elem is within 2e-16 and
+  (float32) near x ~ a ~ 1e4, against mpmath; gammainc_array is within 2e-16 and
   5e-8 at those points, so "agree" there is jax's error.
-- No while loops in elem's compiled program.
-- The load average was 1.8-2.4 during the run (other work on the laptop);
+- No while loops in the array path's compiled program.
+- The load average was 1.4-1.6 during the run (other work on the laptop);
   the CPU numbers are on one pinned core.
 
 WHAT IT DOES NOT ESTABLISH
 --------------------------
 Anything about other hardware (consumer fp64 at 1:64), multi-core CPU
 scaling, or whole models. jax's gammainc cost depends on the worst lane's
-loop count, so its numbers move with the layout; elem's do not. Compile
+loop count, so its numbers move with the layout; the array path's do not. Compile
 time is not raced.
 
-Run:  taskset -c 3 python experiments/22_gammainc_elem_race.py f64   (~10 min)
-      taskset -c 3 python experiments/22_gammainc_elem_race.py f32
+Run:  taskset -c 3 python experiments/22_gammainc_array_race.py f64   (~10 min)
+      taskset -c 3 python experiments/22_gammainc_array_race.py f32
 """
 
 import sys
@@ -95,8 +95,8 @@ def methods():
 
     return {
         "jax": total(jax.scipy.special.gammainc),
-        "elem": total(chebax.gammainc_elem),
-        "vmap": total(jax.vmap(chebax.gammainc_fn)),
+        "array": total(chebax.gammainc_array),
+        "vmap": total(jax.vmap(chebax.gammainc_scalar)),
     }
 
 
@@ -145,14 +145,14 @@ def main():
                 tv = timed(lambda: v(am, xm), m)
                 tg = timed(lambda: g(am, xm), m)
                 row.append(f"{mname} {tv:7.1f} / {tg:8.1f}")
-            p_elem = jax.jit(chebax.gammainc_elem)(a, x)
+            p_arr = jax.jit(chebax.gammainc_array)(a, x)
             p_jax = jax.jit(jax.scipy.special.gammainc)(a, x)
-            agree = float(jnp.max(jnp.abs(p_elem - p_jax)))
-            hlo = jax.jit(chebax.gammainc_elem).lower(a, x).compile().as_text()
+            agree = float(jnp.max(jnp.abs(p_arr - p_jax)))
+            hlo = jax.jit(chebax.gammainc_array).lower(a, x).compile().as_text()
             loops = hlo.count(" while(")
             print(
                 f"{dname} {lname:13s} | " + " | ".join(row)
-                + f" | agree {agree:.1e}, elem while loops {loops}",
+                + f" | agree {agree:.1e}, array while loops {loops}",
                 flush=True,
             )
 

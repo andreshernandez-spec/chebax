@@ -13,7 +13,7 @@ project's own regenerability rule — this script fixes that.
 
 Run everything:      python experiments/03_degree_measurement.py
 One family:          python experiments/03_degree_measurement.py besselk
-Families: besselj besselk besseli bessely betainc gammainc gammainc_elem
+Families: besselj besselk besseli bessely betainc gammainc gammainc_array
 stdtr vonmises erf
 
 WHAT THIS DOES NOT ESTABLISH
@@ -147,9 +147,9 @@ def gammainc():
            fit_axis(lambda a: T(a, mp.mpf(1)), 32, 0.1, 10), [20, 24])
 
 
-def gammainc_elem():
+def gammainc_array():
     L = lambda a, x: mp.log(mp.hyp1f1(1, a + 1, x))
-    print("gammainc_elem: L's a-direction in u = ln(1 + a) against linear a, "
+    print("gammainc_array: L's a-direction in u = ln(1 + a) against linear a, "
           "a in [0.1, 10] (claims: u 17 vs a 53 at x = 0.01, 33 vs 46 at x = 8)")
     for x in ["0.01", "8.0"]:
         xm = mp.mpf(x)
@@ -204,7 +204,7 @@ def erf():
 
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
             "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
-            "gammainc_elem": gammainc_elem, "stdtr": stdtr,
+            "gammainc_array": gammainc_array, "stdtr": stdtr,
             "vonmises": vonmises, "erf": erf}
 
 if __name__ == "__main__":

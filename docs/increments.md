@@ -966,11 +966,11 @@ far tails (x to 1e300, x/a underflowing) values and slopes in both modes
 are within 2.2e-16 in float64 and 1.0e-7 in float32.
 
 Speed (`experiments/22`, x drawn from Gamma(a)): the cost does not depend
-on how a is spread. float64 runs at 12.5-12.8 ns per value and 23 ns per
-value_and_grad on the GPU, and 0.74-0.78 / 1.1-1.2 us on one CPU core. That
-is 2.3-18x jax's gammainc on GPU values and 2.8-24x on value_and_grad, and
-53-57x vmap of gammainc_scalar on value_and_grad. float32 on the GPU is
-1.1 / 1.7 ns, 4.5-67x and 6.8-96x jax's. jax's own gammainc is off by 1.4e-11 (float64)
+on how a is spread. float64 runs at 12.3-12.6 ns per value and 23 ns per
+value_and_grad on the GPU, and 0.67-0.70 / 0.98-1.06 us on one CPU core.
+That is 2.3-18x jax's gammainc on GPU values and 2.8-23x on value_and_grad,
+and 54x vmap of gammainc_scalar on value_and_grad. float32 on the GPU is
+1.1 / 1.7 ns, 4.5-66x and 6.6-95x jax's. jax's own gammainc is off by 1.4e-11 (float64)
 and 7e-3 (float32) near x ~ a ~ 1e4.
 
 ## 36. One naming convention (2026-11-01)

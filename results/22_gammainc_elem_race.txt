@@ -1,0 +1,17 @@
+run 2026-11-01 18:58, load average 3.04 at start
+float64, ns per element (value / value_and_grad in a and x); cpu N = 65536 (cpu), gpu N = 1048576 (NVIDIA GeForce RTX 3080 Laptop GPU)
+cpu a = 2.5 each  | jax   767.0 /   1869.6 | elem   700.8 /   1022.2 | vmap  1107.6 /  80071.8 | agree 1.7e-15, elem while loops 0
+cpu spread        | jax  1996.5 /   5428.5 | elem   703.4 /   1029.5 | vmap  1104.7 /  79766.8 | agree 6.3e-14, elem while loops 0
+cpu wide          | jax  6666.3 /  16845.1 | elem   691.9 /   1114.8 | vmap  1259.0 /  80588.9 | agree 1.4e-11, elem while loops 0
+gpu a = 2.5 each  | jax    29.2 /     64.0 | elem    12.3 /     21.3 | vmap   112.8 /   1234.7 | agree 2.7e-15, elem while loops 0
+gpu spread        | jax    69.6 /    168.3 | elem    12.4 /     21.8 | vmap   116.9 /   1238.1 | agree 1.2e-13, elem while loops 0
+gpu wide          | jax   229.3 /    538.1 | elem    12.5 /     21.5 | vmap   113.9 /   1233.3 | agree 2.2e-11, elem while loops 0
+
+float32, ns per element (value / value_and_grad in a and x); cpu N = 65536 (cpu), gpu N = 1048576 (NVIDIA GeForce RTX 3080 Laptop GPU)
+cpu a = 2.5 each  | jax   110.0 /    305.6 | elem   233.1 /    212.7 | vmap   608.5 /  56718.3 | agree 4.2e-07, elem while loops 0
+cpu spread        | jax   279.4 /    798.5 | elem   232.1 /    207.1 | vmap   589.7 /  53674.0 | agree 2.5e-05, elem while loops 0
+cpu wide          | jax  1593.1 /   4126.8 | elem   242.0 /    208.3 | vmap   601.5 /  55014.8 | agree 7.1e-03, elem while loops 0
+gpu a = 2.5 each  | jax     5.0 /     11.4 | elem     0.9 /      1.6 | vmap    25.5 /     84.9 | agree 6.6e-07, elem while loops 0
+gpu spread        | jax    13.5 /     35.9 | elem     0.9 /      1.7 | vmap    25.4 /     85.1 | agree 8.6e-05, elem while loops 0
+gpu wide          | jax    73.0 /    170.2 | elem     0.9 /      1.6 | vmap    25.5 /     85.0 | agree 9.1e-03, elem while loops 0
+load average 2.32 at end

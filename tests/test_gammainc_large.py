@@ -70,14 +70,22 @@ def test_values_factory_and_traced():
     for a in AS:
         xs = _grid(a)
         pref, qref = _prefs(a, xs), _qrefs(a, xs)
-        assert np.max(np.abs(np.asarray(chebax.gammainc(a)(xs)) - pref)) <= 1.2e-15, a
-        assert np.max(np.abs(np.asarray(chebax.gammaincc(a)(xs)) - qref)) <= 1.2e-15, a
         assert (
-            np.max(np.abs(np.asarray(chebax.gammainc_fn(a, jnp.asarray(xs))) - pref))
+            np.max(np.abs(np.asarray(chebax.gammainc_frozen(a)(xs)) - pref)) <= 1.2e-15
+        ), a
+        assert (
+            np.max(np.abs(np.asarray(chebax.gammaincc_frozen(a)(xs)) - qref)) <= 1.2e-15
+        ), a
+        assert (
+            np.max(
+                np.abs(np.asarray(chebax.gammainc_scalar(a, jnp.asarray(xs))) - pref)
+            )
             <= 1.2e-15
         ), a
         assert (
-            np.max(np.abs(np.asarray(chebax.gammaincc_fn(a, jnp.asarray(xs))) - qref))
+            np.max(
+                np.abs(np.asarray(chebax.gammaincc_scalar(a, jnp.asarray(xs))) - qref)
+            )
             <= 1.2e-15
         ), a
 
@@ -101,8 +109,8 @@ def test_log_forms_and_deep_tails():
                 for x in xs
             ]
         )
-        glp = np.asarray(chebax.log_gammainc_fn(a, jnp.asarray(xs)))
-        glq = np.asarray(chebax.log_gammaincc_fn(a, jnp.asarray(xs)))
+        glp = np.asarray(chebax.log_gammainc_scalar(a, jnp.asarray(xs)))
+        glq = np.asarray(chebax.log_gammaincc_scalar(a, jnp.asarray(xs)))
         assert np.max(np.abs(glp - lp) / np.maximum(1.0, np.abs(lp))) <= 6e-14, a
         assert np.max(np.abs(glq - lq) / np.maximum(1.0, np.abs(lq))) <= 6e-14, a
 
@@ -112,21 +120,21 @@ def test_dispatch_seam_at_ten():
     xs = np.linspace(0.5, 60.0, 21)
     for a in (10.0 - 1e-9, 10.0 + 1e-9):
         ref = _prefs(a, xs)
-        got = np.asarray(chebax.gammainc_fn(a, jnp.asarray(xs)))
+        got = np.asarray(chebax.gammainc_scalar(a, jnp.asarray(xs)))
         assert np.max(np.abs(got - ref)) <= 1.2e-15, a
 
 
 def test_complement_and_endpoints():
     for a in (40.0, 700.0):
         xs = _grid(a)
-        s = np.asarray(chebax.gammainc_fn(a, jnp.asarray(xs))) + np.asarray(
-            chebax.gammaincc_fn(a, jnp.asarray(xs))
+        s = np.asarray(chebax.gammainc_scalar(a, jnp.asarray(xs))) + np.asarray(
+            chebax.gammaincc_scalar(a, jnp.asarray(xs))
         )
         assert np.max(np.abs(s - 1.0)) <= 3e-15, a
-    f = chebax.gammainc(123.0)
+    f = chebax.gammainc_frozen(123.0)
     assert float(f(0.0)) == 0.0
     assert np.isnan(float(f(np.nan)))
-    assert float(chebax.gammaincc(123.0)(0.0)) == 1.0
+    assert float(chebax.gammaincc_frozen(123.0)(0.0)) == 1.0
 
 
 def test_dPda_and_log_grads():
@@ -138,7 +146,7 @@ def test_dPda_and_log_grads():
                     lambda t: mp.gammainc(t, 0, mp.mpf(x), regularized=True), mp.mpf(a)
                 )
             )
-            g = float(jax.grad(chebax.gammainc_fn)(jnp.float64(a), jnp.float64(x)))
+            g = float(jax.grad(chebax.gammainc_scalar)(jnp.float64(a), jnp.float64(x)))
             assert abs(g - ref) / max(1.0, abs(ref)) <= 1e-15, (a, lam)
             rlq = float(
                 mp.diff(
@@ -149,7 +157,7 @@ def test_dPda_and_log_grads():
                 )
             )
             glq = float(
-                jax.grad(chebax.log_gammaincc_fn)(jnp.float64(a), jnp.float64(x))
+                jax.grad(chebax.log_gammaincc_scalar)(jnp.float64(a), jnp.float64(x))
             )
             assert abs(glq - rlq) / max(1.0, abs(rlq)) <= 4e-15, (a, lam)
 
@@ -170,7 +178,7 @@ def test_dx_against_density():
             ]
         )
         g = np.asarray(
-            jax.vmap(jax.grad(chebax.gammainc_fn, argnums=1), in_axes=(None, 0))(
+            jax.vmap(jax.grad(chebax.gammainc_scalar, argnums=1), in_axes=(None, 0))(
                 jnp.float64(a), jnp.asarray(xs)
             )
         )
@@ -234,8 +242,8 @@ def test_unbounded_shape():
             x = a * lam
             lp_ref, lq_ref = _ref_logs(a, x)
             for got, ref in (
-                (float(chebax.log_gammainc_fn(a, x)), lp_ref),
-                (float(chebax.log_gammaincc_fn(a, x)), lq_ref),
+                (float(chebax.log_gammainc_scalar(a, x)), lp_ref),
+                (float(chebax.log_gammaincc_scalar(a, x)), lq_ref),
             ):
                 r = float(ref)
                 assert np.isfinite(got), (a, x, got)
@@ -259,7 +267,7 @@ def test_gammaincinv_and_chi2inv_high_a():
     for a in (50.0, 500.0, 1000.0):
         ps = np.array([1e-12, 1e-4, 0.05, 0.5, 0.95, 1 - 1e-6])
         x = np.asarray(chebax.gammaincinv(a, jnp.asarray(ps)))
-        rt = np.asarray(chebax.gammainc_fn(a, jnp.asarray(x)))
+        rt = np.asarray(chebax.gammainc_scalar(a, jnp.asarray(x)))
         assert np.max(np.abs(rt - ps) / np.maximum(ps, 1e-300)) <= 2e-13, a
     # chi-squared at 1000 and 2000 dof against mp
     for k in (1000.0, 2000.0):
@@ -383,15 +391,15 @@ def test_quantile_density_below_huge():
 def test_param_out_of_range():
     # there is no upper end any more; the lower one still bites
     with pytest.raises(ValueError, match="table covers"):
-        chebax.gammainc(0.05)
+        chebax.gammainc_frozen(0.05)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.gammaincc(0.0)
+        chebax.gammaincc_frozen(0.0)
     for a in (1001.0, 1e6, 1e12):
-        assert float(chebax.gammainc(a)(a)) > 0.0
+        assert float(chebax.gammainc_frozen(a)(a)) > 0.0
 
 
 def test_jit_and_pytree():
-    f = chebax.gammainc(77.0)
+    f = chebax.gammainc_frozen(77.0)
     xs = jnp.asarray(_grid(77.0)[:6])
     y = jax.jit(lambda q, x: q(x))(f, xs)
     np.testing.assert_allclose(np.asarray(y), np.asarray(f(xs)), rtol=0, atol=1e-15)

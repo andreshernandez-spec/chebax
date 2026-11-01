@@ -22,12 +22,12 @@ What gets registered, and the contracts:
 - BetaIncInv: chebax.betaincinv for scalar (a, b) inside chebax's
   domain box (a, b) in [0.1, 100]^2; outside the box the result is nan
   (loud, never silently wrong). Batched shapes fall back as above.
-- Ive: chebax.besseli_fn(scaled=True) for a scalar order v in [0, 10]
+- Ive: chebax.besseli_scalar(scaled=True) for a scalar order v in [0, 10]
   and x >= 0; nan outside (I_{-v} differs from I_v, so negative orders
   are not folded). Batched orders fall back as above.
-- Kve: besselk_fn(|v|, x, scaled=True) for scalar |v| <= 10, x >= 1e-6
+- Kve: besselk_scalar(|v|, x, scaled=True) for scalar |v| <= 10, x >= 1e-6
   (K_{-v} = K_v). nan outside; batched orders fall back as above.
-- GammaInc, GammaIncC: chebax.gammainc_fn / gammaincc_fn for a SCALAR
+- GammaInc, GammaIncC: chebax.gammainc_scalar / gammaincc_scalar for a SCALAR
   shape from a = 0.1 up, jax's own igamma below that through a lax.cond
   (never a select, which would evaluate the loop on every lane). These
   are plain forward functions a user may call anywhere, so unlike the
@@ -37,7 +37,7 @@ What gets registered, and the contracts:
   Measured (experiments/19, RTX 3080, f64, N = 4.2M): values 1.3-9.8x
   vs jax's igamma depending on the shape, dP/da 2.1-13.7x, the cond
   itself free (0.97-1.03x on values). Batched shapes fall back as above.
-- BetaInc: chebax.betainc_fn for scalar (a, b) in [0.1, 100]^2, jax's
+- BetaInc: chebax.betainc_scalar for scalar (a, b) in [0.1, 100]^2, jax's
   own betainc outside the box, through the same lax.cond as the gamma
   pair and for the same reason. A custom_jvp adds the a/b derivatives
   (the "Betainc gradient with respect to a and b not supported" gap)
@@ -45,7 +45,7 @@ What gets registered, and the contracts:
   derivative is the exact Beta density and is right everywhere.
   Measured (same run): values 108-131x vs jax's betainc, agreement
   <= 3.8e-14, the cond free again (0.95-1.02x). The a-derivative runs
-  6-7x faster than jax.grad of chebax.betainc_fn itself, because the
+  6-7x faster than jax.grad of chebax.betainc_scalar itself, because the
   rule pushes one forward-mode tangent through the reconstruction
   where reverse mode transposes the whole contraction.
   Batched shapes keep the plain jax op (values fine, a/b gradients
@@ -96,7 +96,7 @@ def _as_scalar(p):
 def _out_dtype(*args):
     """The dtype plain jax would have given this call.
 
-    The tables are f64, so gammainc_fn and betainc_fn answer in f64
+    The tables are f64, so gammainc_scalar and betainc_scalar answer in f64
     whatever they are handed. Feeding that straight into a lax.cond
     against jax's own branch does not trace at all on a float32 graph
     (the two branches disagree), and widening to f64 to make it trace
@@ -164,13 +164,15 @@ def _jax_funcify_GammaIncCInv(op, **kwargs):
 
 @jax_funcify.register(GammaInc)
 def _jax_funcify_GammaInc(op, **kwargs):
-    return _forward_gamma(op, "igamma", chebax.gammainc_fn, jax.scipy.special.gammainc)
+    return _forward_gamma(
+        op, "igamma", chebax.gammainc_scalar, jax.scipy.special.gammainc
+    )
 
 
 @jax_funcify.register(GammaIncC)
 def _jax_funcify_GammaIncC(op, **kwargs):
     return _forward_gamma(
-        op, "igammac", chebax.gammaincc_fn, jax.scipy.special.gammaincc
+        op, "igammac", chebax.gammaincc_scalar, jax.scipy.special.gammaincc
     )
 
 
@@ -241,7 +243,7 @@ def _jax_funcify_Ive(op, **kwargs):
             return _tfp_fallback(op, "bessel_ive", (jnp.shape(v), jnp.shape(x)))(v, x)
         v = _as_scalar(v)
         ok = (v >= 0.0) & (v <= 10.0) & (x >= 0.0)
-        out = chebax.besseli_fn(
+        out = chebax.besseli_scalar(
             jnp.clip(v, 0.0, 10.0), jnp.where(x >= 0.0, x, 0.0), scaled=True
         )
         return jnp.where(ok, out, jnp.nan)
@@ -257,7 +259,7 @@ def _jax_funcify_Kve(op, **kwargs):
         v = jnp.abs(_as_scalar(v))  # K_{-v} = K_v
         ok = (v <= 10.0) & (x >= 1e-6)
         xs = jnp.where(x >= 1e-6, x, 1e-6)
-        out = chebax.besselk_fn(jnp.clip(v, 0.0, 10.0), xs, scaled=True)
+        out = chebax.besselk_scalar(jnp.clip(v, 0.0, 10.0), xs, scaled=True)
         return jnp.where(ok, out, jnp.nan)
 
     return kve
@@ -272,7 +274,7 @@ def _betainc_scalar_ab(a, b, x):
     dt = _out_dtype(a, b, x)
     return jax.lax.cond(
         _in_box(a, b),
-        lambda: chebax.betainc_fn(_clip_box(a), _clip_box(b), x).astype(dt),
+        lambda: chebax.betainc_scalar(_clip_box(a), _clip_box(b), x).astype(dt),
         lambda: _jax_betainc(a, b, x, dt),
     )
 
@@ -306,8 +308,8 @@ def _betainc_scalar_ab_jvp(primals, tangents):
         # value and both shape derivatives off the same tables, forward mode
         ac, bc = _clip_box(a), _clip_box(b)
         one = jnp.ones_like(ac)
-        p, ga = jax.jvp(lambda t: chebax.betainc_fn(t, bc, x), (ac,), (one,))
-        _, gb = jax.jvp(lambda t: chebax.betainc_fn(ac, t, x), (bc,), (one,))
+        p, ga = jax.jvp(lambda t: chebax.betainc_scalar(t, bc, x), (ac,), (one,))
+        _, gb = jax.jvp(lambda t: chebax.betainc_scalar(ac, t, x), (bc,), (one,))
         return p.astype(dt), ga.astype(dt), gb.astype(dt)
 
     def out_of_box():

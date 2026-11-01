@@ -133,12 +133,12 @@ def _refs(v):
 @pytest.mark.parametrize("v", [2.5, 9.97])
 def test_jax_module_standalone(tmp_path, v):
     mod = tmp_path / "baked.py"
-    name = bake.jax_module(chebax.besselj(v), mod)
+    name = bake.jax_module(chebax.besselj_frozen(v), mod)
     assert name == "besselj"
     src = mod.read_text()
     assert "import chebax" not in src and "from chebax" not in src
     mod32 = tmp_path / "baked32.py"
-    bake.jax_module(chebax.besselj(v), mod32, dtype="float32")
+    bake.jax_module(chebax.besselj_frozen(v), mod32, dtype="float32")
 
     J, Jp = _refs(v)
     npz = tmp_path / "refs.npz"
@@ -163,7 +163,7 @@ def test_jax_module_f32_artifact_vs_f32_runtime(tmp_path):
     # to but not the same as chebax under x64 off: measured worst 4.4e-8
     # sup-normalized, bar 2e-7
     mod = tmp_path / "baked32.py"
-    bake.jax_module(chebax.besselj(2.5), mod, dtype="float32")
+    bake.jax_module(chebax.besselj_frozen(2.5), mod, dtype="float32")
     runner = tmp_path / "runner32.py"
     runner.write_text(RUNNER_F32)
     src = os.path.dirname(os.path.dirname(os.path.abspath(chebax.__file__)))
@@ -201,7 +201,7 @@ def _load(path, modname):
 
 
 def test_jax_module_rejects_untraced_dtype(tmp_path):
-    inst = chebax.besselj(2.5)
+    inst = chebax.besselj_frozen(2.5)
     xs = np.linspace(0.05, 30.0, 15)
     mods = {}
     for dt in ("float64", "float32"):
@@ -224,7 +224,7 @@ def test_xsf_header_compiles_and_matches(tmp_path):
     if shutil.which("g++") is None:
         pytest.skip("g++ not available")
     hdr = tmp_path / "baked.h"
-    name = bake.xsf_header(chebax.besselj(2.5), hdr)
+    name = bake.xsf_header(chebax.besselj_frozen(2.5), hdr)
     main = tmp_path / "main.cpp"
     main.write_text(
         '#include "baked.h"\n#include <cstdio>\n'
@@ -247,15 +247,19 @@ def test_xsf_header_compiles_and_matches(tmp_path):
 
 
 BAKEABLE = [
-    ("besselj", lambda: chebax.besselj(2.5), np.linspace(0.05, 100.0, 20)),
-    ("besselk", lambda: chebax.besselk(1.5), np.logspace(-5, 2, 20)),
-    ("besseli", lambda: chebax.besseli(2.5, scaled=True), np.linspace(0.0, 100.0, 20)),
-    ("bessely", lambda: chebax.bessely(1.5), np.logspace(-5, 3, 20)),
-    ("betainc", lambda: chebax.betainc(2.0, 3.0), np.linspace(0.0, 1.0, 21)),
-    ("gammainc", lambda: chebax.gammainc(2.5), np.linspace(0.0, 50.0, 21)),
+    ("besselj", lambda: chebax.besselj_frozen(2.5), np.linspace(0.05, 100.0, 20)),
+    ("besselk", lambda: chebax.besselk_frozen(1.5), np.logspace(-5, 2, 20)),
+    (
+        "besseli",
+        lambda: chebax.besseli_frozen(2.5, scaled=True),
+        np.linspace(0.0, 100.0, 20),
+    ),
+    ("bessely", lambda: chebax.bessely_frozen(1.5), np.logspace(-5, 3, 20)),
+    ("betainc", lambda: chebax.betainc_frozen(2.0, 3.0), np.linspace(0.0, 1.0, 21)),
+    ("gammainc", lambda: chebax.gammainc_frozen(2.5), np.linspace(0.0, 50.0, 21)),
     (
         "spherical",
-        lambda: __import__("chebax").spherical_jn(2),
+        lambda: __import__("chebax").spherical_jn_frozen(2),
         np.linspace(0.1, 40.0, 20),
     ),
 ]
@@ -310,7 +314,7 @@ def test_generic_bake_cpp_matches_runtime(tmp_path, family, make, xs):
 
 
 def test_emission_deterministic(tmp_path):
-    jv = chebax.besselj(2.5)
+    jv = chebax.besselj_frozen(2.5)
     a, b = tmp_path / "a.py", tmp_path / "b.py"
     bake.jax_module(jv, a)
     bake.jax_module(jv, b)
@@ -329,7 +333,7 @@ def test_bake_rejects_non_besselj(tmp_path):
 def test_truncate_drops_converged_tail():
     # measured: besselk(1.5) inner degree 79 -> 26 at tol 1e-7 with
     # 1.7e-7 worst relative deviation from the full instance
-    k = chebax.besselk(1.5)
+    k = chebax.besselk_frozen(1.5)
     kt = k.truncate(1e-7)
     assert kt.ltil.degree < k.ltil.degree // 2
     xs = np.logspace(-5, 2, 40)
@@ -346,7 +350,7 @@ def test_truncate_drops_converged_tail():
 def test_jax_module_truncate_tol(tmp_path):
     import importlib.util
 
-    inst = chebax.besselk(1.5)
+    inst = chebax.besselk_frozen(1.5)
     mod = tmp_path / "baked32.py"
     name = bake.jax_module(inst, mod, truncate_tol=1e-7)
     spec = importlib.util.spec_from_file_location("baked32_gen", mod)
@@ -401,7 +405,7 @@ def test_bake_cpp_float32(tmp_path, family, make, xs):
 
 def test_xsf_header_dtype_validation(tmp_path):
     with pytest.raises(ValueError, match="dtype"):
-        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h", dtype="half")
+        bake.xsf_header(chebax.besselk_frozen(1.5), tmp_path / "x.h", dtype="half")
 
 
 @jax.tree_util.register_pytree_node_class
@@ -457,7 +461,7 @@ BAD_NAMES = ["foo bar", "1x", "x); evil()", "", "lambda", "a-b", "f\nx", 7]
 
 @pytest.mark.parametrize("bad", BAD_NAMES, ids=[repr(b) for b in BAD_NAMES])
 def test_bake_rejects_bad_names(tmp_path, bad):
-    inst = chebax.besselk(1.5)
+    inst = chebax.besselk_frozen(1.5)
     with pytest.raises(ValueError, match="identifier"):
         bake.jax_module(inst, tmp_path / "x.py", name=bad)
     with pytest.raises(ValueError, match="identifier"):
@@ -567,20 +571,22 @@ def test_bake_rejects_names_the_artifact_uses(tmp_path, taken):
     # replaced the import, "_clenshaw" the helper, and the artifact failed
     # when called (review, 2026-10-26)
     with pytest.raises(ValueError, match="used by the emitted source"):
-        bake.jax_module(chebax.besselk(1.5), tmp_path / "x.py", name=taken)
+        bake.jax_module(chebax.besselk_frozen(1.5), tmp_path / "x.py", name=taken)
     assert not (tmp_path / "x.py").exists()
 
 
 def test_bake_rejects_the_header_macro_as_a_name(tmp_path):
     with pytest.raises(ValueError, match="used by the emitted source"):
-        bake.xsf_header(chebax.besselk(1.5), tmp_path / "x.h", name="XSF_HOST_DEVICE")
+        bake.xsf_header(
+            chebax.besselk_frozen(1.5), tmp_path / "x.h", name="XSF_HOST_DEVICE"
+        )
 
 
 def test_default_header_name_encodes_a_tuple_static(tmp_path):
     # besselj's domain static is a tuple, and its parentheses and comma
     # went straight into the default name, which the identifier check
     # then rejected (review, 2026-10-26)
-    inst = chebax.besselj(2.5, domain=(0, 8))
+    inst = chebax.besselj_frozen(2.5, domain=(0, 8))
     hdr = tmp_path / "jd.h"
     name = bake.xsf_header(inst, hdr)
     assert name == "besselj_v2p5_domain0p0_8p0", name
@@ -596,7 +602,7 @@ def test_default_header_name_encodes_a_tuple_static(tmp_path):
 def test_bake_rejects_nonfinite_table(tmp_path, bad):
     # repr(nan) / repr(inf) inside a coefficient array is a NameError in the
     # emitted python and an undeclared identifier in C++, so refuse the table
-    k = chebax.besselk(1.5)
+    k = chebax.besselk_frozen(1.5)
     coef = np.asarray(k.ltil.coef).copy()
     coef[3] = bad
     broken = type(k)(
@@ -702,11 +708,11 @@ def test_bake_refuses_a_foreign_zero_custom_jvp():
 def test_baked_artifact_discloses_a_dropped_endpoint_slope(tmp_path):
     # the flag was recorded and never reached the generated documentation
     p = tmp_path / "g.py"
-    bake.jax_module(chebax.gammainc(1.0), str(p), name="g")
+    bake.jax_module(chebax.gammainc_frozen(1.0), str(p), name="g")
     head = p.read_text()[:1200]
     assert "one-sided slope" in head, head[:400]
     q = tmp_path / "b.py"
-    bake.jax_module(chebax.besselj(2.5), str(q), name="b")
+    bake.jax_module(chebax.besselj_frozen(2.5), str(q), name="b")
     assert "one-sided slope" not in q.read_text()[:1200]
 
 
@@ -714,24 +720,24 @@ def test_baked_artifact_discloses_a_dropped_endpoint_slope(tmp_path):
 # besseli_dnu hit a dead `empty` equation and the large-a gammainc hit an
 # unsupported erfc, both of which the old coverage missed)
 _ALL_RECIPES = [
-    ("besselj", lambda: chebax.besselj(2.5)),
-    ("besselj_dnu", lambda: chebax.besselj_dnu(2.5)),
-    ("besselj_narrow", lambda: chebax.besselj(2.5, domain=(0.0, 8.0))),
-    ("besselk", lambda: chebax.besselk(1.5)),
-    ("besselk_dnu", lambda: chebax.besselk_dnu(1.5)),
-    ("besseli", lambda: chebax.besseli(2.0)),
-    ("besseli_dnu", lambda: chebax.besseli_dnu(2.5)),
-    ("bessely", lambda: chebax.bessely(1.0)),
-    ("bessely_dnu", lambda: chebax.bessely_dnu(1.0)),
-    ("betainc", lambda: chebax.betainc(2.0, 3.0)),
-    ("betainc_wide", lambda: chebax.betainc(30.0, 3.0)),
-    ("gammainc", lambda: chebax.gammainc(2.5)),
-    ("gammaincc", lambda: chebax.gammaincc(2.5)),
-    ("gammainc_large", lambda: chebax.gammainc(50.0)),
-    ("gammaincc_large", lambda: chebax.gammaincc(50.0)),
-    ("hyp1f1", lambda: chebax.hyp1f1(2.0, 3.0)),
-    ("spherical_jn", lambda: chebax.spherical_jn(2)),
-    ("spherical_yn", lambda: chebax.spherical_yn(2)),
+    ("besselj", lambda: chebax.besselj_frozen(2.5)),
+    ("besselj_dnu", lambda: chebax.besselj_dnu_frozen(2.5)),
+    ("besselj_narrow", lambda: chebax.besselj_frozen(2.5, domain=(0.0, 8.0))),
+    ("besselk", lambda: chebax.besselk_frozen(1.5)),
+    ("besselk_dnu", lambda: chebax.besselk_dnu_frozen(1.5)),
+    ("besseli", lambda: chebax.besseli_frozen(2.0)),
+    ("besseli_dnu", lambda: chebax.besseli_dnu_frozen(2.5)),
+    ("bessely", lambda: chebax.bessely_frozen(1.0)),
+    ("bessely_dnu", lambda: chebax.bessely_dnu_frozen(1.0)),
+    ("betainc", lambda: chebax.betainc_frozen(2.0, 3.0)),
+    ("betainc_wide", lambda: chebax.betainc_frozen(30.0, 3.0)),
+    ("gammainc", lambda: chebax.gammainc_frozen(2.5)),
+    ("gammaincc", lambda: chebax.gammaincc_frozen(2.5)),
+    ("gammainc_large", lambda: chebax.gammainc_frozen(50.0)),
+    ("gammaincc_large", lambda: chebax.gammaincc_frozen(50.0)),
+    ("hyp1f1", lambda: chebax.hyp1f1_frozen(2.0, 3.0)),
+    ("spherical_jn", lambda: chebax.spherical_jn_frozen(2)),
+    ("spherical_yn", lambda: chebax.spherical_yn_frozen(2)),
 ]
 
 

@@ -45,9 +45,9 @@ def worst(err_fn):
 def test_values_f64(refs):
     def err(v):
         J, _ = refs[v]
-        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XS)) - J)) / np.max(
-            np.abs(J)
-        )
+        return np.max(
+            np.abs(np.asarray(chebax.besselj_frozen(float(v))(XS)) - J)
+        ) / np.max(np.abs(J))
 
     assert worst(err) <= 5e-15
 
@@ -55,7 +55,7 @@ def test_values_f64(refs):
 def test_dx_f64(refs):
     def err(v):
         _, Jp = refs[v]
-        g = jax.vmap(jax.grad(chebax.besselj(float(v))))(jnp.asarray(XS))
+        g = jax.vmap(jax.grad(chebax.besselj_frozen(float(v))))(jnp.asarray(XS))
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
 
     assert worst(err) <= 1e-14
@@ -66,7 +66,7 @@ def test_values_f32(refs):
 
     def err(v):
         J, _ = refs[v]
-        y = chebax.besselj(float(v)).astype(jnp.float32)(x32)
+        y = chebax.besselj_frozen(float(v)).astype(jnp.float32)(x32)
         assert y.dtype == jnp.float32
         return np.max(np.abs(np.asarray(y) - J)) / np.max(np.abs(J))
 
@@ -78,7 +78,7 @@ def test_dx_f32(refs):
 
     def err(v):
         _, Jp = refs[v]
-        g = jax.vmap(jax.grad(chebax.besselj(float(v)).astype(jnp.float32)))(x32)
+        g = jax.vmap(jax.grad(chebax.besselj_frozen(float(v)).astype(jnp.float32)))(x32)
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
 
     assert worst(err) <= 5e-6
@@ -90,7 +90,7 @@ def test_dnu():
         ref = np.array(
             [float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v))) for x in xd]
         )
-        got = np.asarray(chebax.besselj_dnu(v)(xd))
+        got = np.asarray(chebax.besselj_dnu_frozen(v)(xd))
         assert np.max(np.abs(got - ref)) / np.max(np.abs(ref)) <= 5e-15
 
 
@@ -100,10 +100,10 @@ def test_digamma_helper():
 
 
 def test_x_zero():
-    assert float(chebax.besselj(0.0)(0.0)) == 1.0
-    assert float(chebax.besselj(2.5)(0.0)) == 0.0
+    assert float(chebax.besselj_frozen(0.0)(0.0)) == 1.0
+    assert float(chebax.besselj_frozen(2.5)(0.0)) == 0.0
     for v in (0, 1, 2, 3):
-        derivative = chebax.besselj(v)
+        derivative = chebax.besselj_frozen(v)
         for order in range(5):
             expected = float(mp.besselj(v, 0, order))
             np.testing.assert_allclose(
@@ -114,20 +114,22 @@ def test_x_zero():
 
 def test_order_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
-        chebax.besselj(10.5)
+        chebax.besselj_frozen(10.5)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.besselj_dnu(-0.1)
+        chebax.besselj_dnu_frozen(-0.1)
 
 
 def test_factory_is_cached():
-    assert chebax.besselj(2.5) is chebax.besselj(2.5)
+    assert chebax.besselj_frozen(2.5) is chebax.besselj_frozen(2.5)
 
 
 def test_jit_with_static_order():
     xs = jnp.linspace(0.1, 8.0, 32)
-    jv = chebax.besselj(2.5)
+    jv = chebax.besselj_frozen(2.5)
     y_arg = jax.jit(lambda q, x: q(x))(jv, xs)  # instance as pytree argument
-    y_closed = jax.jit(lambda x: chebax.besselj(2.5)(x))(xs)  # built at trace time
+    y_closed = jax.jit(lambda x: chebax.besselj_frozen(2.5)(x))(
+        xs
+    )  # built at trace time
     ref = np.asarray(jv(xs))
     np.testing.assert_allclose(np.asarray(y_arg), ref, rtol=0, atol=1e-15)
     np.testing.assert_allclose(np.asarray(y_closed), ref, rtol=0, atol=1e-15)
@@ -147,8 +149,8 @@ def test_table_regenerates_bit_for_bit(tmp_path):
 
 def test_factory_accepts_jax_scalars_and_bounds_cache():
     # eager jax scalar orders used to raise (unhashable) before normalization
-    a = chebax.besselj(jnp.asarray(2.5))
-    b = chebax.besselj(2.5)
+    a = chebax.besselj_frozen(jnp.asarray(2.5))
+    b = chebax.besselj_frozen(2.5)
     assert a is b
     from chebax._src.recipes.besselj import _besselj_cached
 

@@ -25,17 +25,15 @@ axis of all three tables, reaching v = 0 (a = inf) where each kernel
 tends to its asymptotic limit; jax.grad in a flows through it, eta, and
 gammaln (dP/da for every a > 10, jax's igamma_grad_a's territory).
 
-Shared machinery for gammainc.py, which owns the public dispatch at
-a = 10; nothing here is exported.
+Numerics only, shared by gammainc_scalar.py (which owns the traced
+dispatch at a = 10), gammainc_frozen.py and gammaincinv.py; nothing here
+is exported.
 """
-
-import functools
 
 import jax
 import jax.numpy as jnp
 
 from chebax import domains
-from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large_table as _glt
 from chebax._src.recipes._common import param_coefs, traced_coefs
 from chebax._src.recipes.erf_family import erfcx
@@ -169,31 +167,3 @@ def series_traced(a):
         ChebSeries(traced_coefs(_glt.TABLE_LOW, _glt.VLO, 1.0, v), (0.0, _glt.LHI)),
         ChebSeries(traced_coefs(_glt.TABLE_UP, _glt.VLO, 1.0, v), (0.0, _glt.SHI)),
     )
-
-
-@jax.tree_util.register_pytree_node_class
-class GammaIncLargeP(Recipe):
-    """Callable P(a, x), a > 10. Built by gammainc(a)."""
-
-    _static_fields = ("a",)
-    _series_fields = ("temme", "dlow", "dup")
-
-    def _post_init(self):
-        self.a = float(self.a)
-
-    def __call__(self, x):
-        return eval_large(self.a, x, self.temme, self.dlow, self.dup, "p")
-
-
-@jax.tree_util.register_pytree_node_class
-class GammaIncLargeQ(Recipe):
-    """Callable Q(a, x), a > 10. Built by gammaincc(a)."""
-
-    _static_fields = ("a",)
-    _series_fields = ("temme", "dlow", "dup")
-
-    def _post_init(self):
-        self.a = float(self.a)
-
-    def __call__(self, x):
-        return eval_large(self.a, x, self.temme, self.dlow, self.dup, "q")

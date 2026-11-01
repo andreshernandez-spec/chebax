@@ -4,7 +4,7 @@
 
 Unit variance (k(0) = 1 exactly); multiply by a signal variance for a
 covariance. Learning nu by gradient needs dK_nu/dnu, a derivative in the
-ORDER of the Bessel function, which is what besselk_fn's traced order
+ORDER of the Bessel function, which is what besselk_scalar's traced order
 supplies; no mainstream GP stack offers it.
 """
 
@@ -13,7 +13,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import besselk_table as _kt
 from chebax._src.recipes._common import canon_param
-from chebax._src.recipes.besselk import besselk_fn
+from chebax._src.recipes.besselk import besselk_scalar
 
 
 def matern(nu, r, lengthscale=1.0):
@@ -46,7 +46,7 @@ def matern(nu, r, lengthscale=1.0):
     z = jnp.sqrt(2.0 * nu) * rs / lengthscale
     z = jnp.maximum(z, _kt.XMIN)
     log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
-    k = jnp.exp(log_c + nu * jnp.log(z)) * besselk_fn(nu, z)
+    k = jnp.exp(log_c + nu * jnp.log(z)) * besselk_scalar(nu, z)
     # r = inf is zero correlation, not the nan the K tail produces there,
     # and a NEGATIVE distance is a domain error rather than the r = 0
     # branch it used to fall into and answer 1 for (review, 2026-08-02)

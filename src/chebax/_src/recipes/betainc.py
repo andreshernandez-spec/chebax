@@ -19,8 +19,8 @@ lax.switch on the scalar parameters; only the taken branch executes and
 each panel keeps its own degrees. Panel edges are ordinary points to
 ~1e-14 (both neighbors fit the same function).
 
-betainc(a, b) is the eager instance (cached, numpy reconstruction).
-betainc_fn(a, b, x) takes a and b as traced scalars (uniform per call,
+betainc_frozen(a, b) is the eager instance (cached, numpy reconstruction).
+betainc_scalar(a, b, x) takes a and b as traced scalars (uniform per call,
 inside [0.1, 100], unchecked under trace): jax.grad works with respect to
 both shape parameters — dI/da and dI/db, which jax itself lacks
 (jax#38610) — flowing through gammaln/digamma and chebder along the
@@ -47,7 +47,13 @@ from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import betainc_table as _bt
 from chebax._src.recipes import betainc_wide_table as _bw
-from chebax._src.recipes._common import canon_param, canon_tag, check_range, edge_slope
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_tag,
+    check_range,
+    deprecated_factory,
+    edge_slope,
+)
 from chebax._src.recipes.betainc_kernel import eval_betainc, log_direct
 from chebax._src.series import ChebSeries, _chebval
 
@@ -151,7 +157,7 @@ def _edge_density(a, b, x):
 
     Both endpoint values are picked by a hard select, so AD reads a slope
     of 0 there even where the density is exact and finite: grad of
-    betainc_fn(1, 3, .) at x = 0 gave 0 for a true 3 (review,
+    betainc_scalar(1, 3, .) at x = 0 gave 0 for a true 3 (review,
     2026-08-02). f(0) = 1/B(1, b) = b when a = 1, and f(1) = 1/B(a, 1) = a
     when b = 1; either side is 0 above its 1 and infinite below it."""
     d0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, b))
@@ -161,7 +167,7 @@ def _edge_density(a, b, x):
 
 @jax.tree_util.register_pytree_node_class
 class BetaInc(Recipe):
-    """Callable I_x(a, b) on x in [0, 1]. Build with betainc(a, b)."""
+    """Callable I_x(a, b) on x in [0, 1]. Build with betainc_frozen(a, b)."""
 
     _static_fields = ("a", "b")
     _series_fields = ("cab", "cba")
@@ -183,37 +189,37 @@ def _betainc_cached(a, b, _tag):
     return BetaInc(a, b, *_eager_series_pair(a, b))
 
 
-def betainc_fn(a, b, x):
+def betainc_scalar(a, b, x):
     """I_x(a, b) with a, b as (traceable) scalars, differentiable in all three.
 
     a and b must be uniform per call and inside [0.1, 100] (unchecked
     under trace). Reconstruction costs two tensor contractions per call
     (of the panel the parameters land in), not per point; jit
     constant-folds them when a, b are static."""
-    a = canon_param(a, "betainc_fn", "a")
-    b = canon_param(b, "betainc_fn", "b")
+    a = canon_param(a, "betainc_scalar", "a")
+    b = canon_param(b, "betainc_scalar", "b")
     x = jnp.asarray(x)
     out = with_panel_series(a, b, lambda cab, cba: eval_betainc(a, b, x, cab, cba))
     return with_edge_slopes(a, b, x, out)
 
 
-def log_betainc_fn(a, b, x):
-    """ln I_x(a, b), same contract as betainc_fn but with no underflow
+def log_betainc_scalar(a, b, x):
+    """ln I_x(a, b), same contract as betainc_scalar but with no underflow
     floor in the lower tail.
 
-    For x <= 1/2 the tables already hold the log (betainc_fn exponentiates
+    For x <= 1/2 the tables already hold the log (betainc_scalar exponentiates
     it), so ln I evaluates directly: valid to arbitrarily negative values
     (ln I ~ a ln x as x -> 0), differentiable in a, b and x, shapes
     uniform per call in [0.1, 100]^2. For x > 1/2 the reflection gives
     ln(1 - exp(.)) via log1p: absolutely accurate in I, so the error in
     ln I is ~eps/I there - fine where I is O(1), NOT a deep-tail path.
     Both deep tails at full log accuracy: lower tail directly (x <= 1/2),
-    upper tail ln(1 - I_x(a, b)) = log_betainc_fn(b, a, 1 - x), where
+    upper tail ln(1 - I_x(a, b)) = log_betainc_scalar(b, a, 1 - x), where
     1 - x is exact in f64 for x >= 1/2. x <= 0 returns -inf, x >= 1
     returns 0. This is the log-CDF a censored likelihood wants when the
-    censored mass is tiny (log(betainc_fn(...)) underflows first)."""
-    a = canon_param(a, "log_betainc_fn", "a")
-    b = canon_param(b, "log_betainc_fn", "b")
+    censored mass is tiny (log(betainc_scalar(...)) underflows first)."""
+    a = canon_param(a, "log_betainc_scalar", "a")
+    b = canon_param(b, "log_betainc_scalar", "b")
     x = jnp.asarray(x)
     return with_panel_series(a, b, lambda cab, cba: _log_eval(a, b, x, cab, cba))
 
@@ -230,7 +236,23 @@ def _log_eval(a, b, x, cab, cba):
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
-def betainc(a, b):
+def betainc(a, b, x=None):
+    """I_x(a, b) for one pair a, b in [0.1, 100]: betainc_scalar, which has
+    no per-element form (chebax.pergroup gives one pair per group).
+
+    betainc(a, b) with no x is the 0.4 factory and returns
+    betainc_frozen(a, b), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("betainc", betainc_frozen, a, b)
+    return betainc_scalar(a, b, x)
+
+
+def log_betainc(a, b, x):
+    """ln I_x(a, b) for one pair a, b in [0.1, 100]: log_betainc_scalar."""
+    return log_betainc_scalar(a, b, x)
+
+
+def betainc_frozen(a, b):
     """I_x(a, b) for a, b in [0.1, 100]. Cached per (a, b); no mpmath.
 
     a, b may be python numbers or concrete jax scalars; the bounded cache

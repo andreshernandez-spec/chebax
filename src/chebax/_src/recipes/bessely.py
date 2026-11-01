@@ -36,6 +36,7 @@ from chebax._src.recipes import bessely_table as _yt
 from chebax._src.recipes._common import (
     canon_tag,
     check_range,
+    deprecated_factory,
     param_coefs,
     param_coefs_der,
 )
@@ -77,7 +78,7 @@ class _YBase(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class BesselY(_YBase):
-    """Callable Y_v on [1e-6, inf). Build with bessely(v)."""
+    """Callable Y_v on [1e-6, inf). Build with bessely_frozen(v)."""
 
     _static_fields = ("v",)
     _series_fields = ("ta", "tb", "ymid", "p", "q")
@@ -105,7 +106,7 @@ class BesselY(_YBase):
 
 @jax.tree_util.register_pytree_node_class
 class BesselYdnu(_YBase):
-    """Callable dY_v/dv on [1e-6, inf). Build with bessely_dnu().
+    """Callable dY_v/dv on [1e-6, inf). Build with bessely_dnu_frozen().
 
     Inner region: differentiate the base pair (chebder in mu, minus the
     ln(x/2) prefactor term) and carry (Y, dY) through the paired recurrence
@@ -191,7 +192,19 @@ def _bessely_dnu_cached(v, _tag):
     )
 
 
-def bessely(v):
+def bessely(v, x=None):
+    """Y_v(x) for one concrete order v in [0, 10]: bessely_frozen(v)(x).
+    The order is not traceable here (its integer part sets the recurrence
+    depth).
+
+    bessely(v) with no x is the 0.4 factory and returns bessely_frozen(v),
+    with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("bessely", bessely_frozen, v)
+    return bessely_frozen(v)(x)
+
+
+def bessely_frozen(v):
     """Y_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath.
 
     v may be a python number or a concrete jax scalar; the bounded cache
@@ -199,6 +212,16 @@ def bessely(v):
     return _bessely_cached(float(v), canon_tag())
 
 
-def bessely_dnu(v):
+def bessely_dnu(v, x=None):
+    """dY_v/dv at x for one concrete order v: bessely_dnu_frozen(v)(x).
+
+    bessely_dnu(v) with no x is the 0.4 factory and returns
+    bessely_dnu_frozen(v), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("bessely_dnu", bessely_dnu_frozen, v)
+    return bessely_dnu_frozen(v)(x)
+
+
+def bessely_dnu_frozen(v):
     """dY_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
     return _bessely_dnu_cached(float(v), canon_tag())

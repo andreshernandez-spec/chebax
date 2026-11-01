@@ -58,9 +58,9 @@ def worst(err_fn):
 def test_values_f64(refs):
     def err(v):
         J, _ = refs[v]
-        return np.max(np.abs(np.asarray(chebax.besselj(float(v))(XF)) - J)) / np.max(
-            np.abs(J)
-        )
+        return np.max(
+            np.abs(np.asarray(chebax.besselj_frozen(float(v))(XF)) - J)
+        ) / np.max(np.abs(J))
 
     assert worst(err) <= 5e-15
 
@@ -68,7 +68,7 @@ def test_values_f64(refs):
 def test_dx_f64(refs):
     def err(v):
         _, Jp = refs[v]
-        g = jax.vmap(jax.grad(chebax.besselj(float(v))))(jnp.asarray(XF))
+        g = jax.vmap(jax.grad(chebax.besselj_frozen(float(v))))(jnp.asarray(XF))
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
 
     assert worst(err) <= 1e-14
@@ -79,7 +79,7 @@ def test_values_f32(refs):
 
     def err(v):
         J, _ = refs[v]
-        y = chebax.besselj(float(v)).astype(jnp.float32)(x32)
+        y = chebax.besselj_frozen(float(v)).astype(jnp.float32)(x32)
         return np.max(np.abs(np.asarray(y) - J)) / np.max(np.abs(J))
 
     assert worst(err) <= 1e-5
@@ -90,7 +90,7 @@ def test_dx_f32(refs):
 
     def err(v):
         _, Jp = refs[v]
-        g = jax.vmap(jax.grad(chebax.besselj(float(v)).astype(jnp.float32)))(x32)
+        g = jax.vmap(jax.grad(chebax.besselj_frozen(float(v)).astype(jnp.float32)))(x32)
         return np.max(np.abs(np.asarray(g) - Jp)) / np.max(np.abs(Jp))
 
     assert worst(err) <= 2e-5
@@ -102,7 +102,7 @@ def test_dnu_full_domain():
         ref = np.array(
             [float(mp.diff(lambda w: mp.besselj(w, mp.mpf(x)), mp.mpf(v))) for x in xd]
         )
-        got = np.asarray(chebax.besselj_dnu(v)(xd))
+        got = np.asarray(chebax.besselj_dnu_frozen(v)(xd))
         assert np.max(np.abs(got - ref)) / np.max(np.abs(ref)) <= 5e-15
 
 
@@ -111,7 +111,7 @@ def test_seam_jumps():
     # the sum of their errors (values at seam +- eps would instead be
     # dominated by the true slope, |J'| * 2eps).
     for v in [0.5, 7.77]:
-        jv = chebax.besselj(v)
+        jv = chebax.besselj_frozen(v)
         x8 = jnp.asarray(8.0)
         assert abs(float(jv._inner(x8)) - float(jv._mid(x8))) <= 1e-13
         x30 = jnp.asarray(30.0)
@@ -127,7 +127,7 @@ def test_grad_at_seam_points(refs):
     # branch-input arrangement must keep the derivative exact AT 8 and 30.
     v = NUS[4]
     J, Jp = refs[v]
-    jv = chebax.besselj(float(v))
+    jv = chebax.besselj_frozen(float(v))
     for seam in (8.0, 30.0):
         i = np.nonzero(XF == seam)[0][0]
         g = float(jax.grad(jv)(seam))
@@ -136,7 +136,7 @@ def test_grad_at_seam_points(refs):
 
 def test_x_large_smoke():
     ref = float(mp.besselj(mp.mpf(2.5), mp.mpf(1e6)))
-    assert abs(float(chebax.besselj(2.5)(1e6)) - ref) <= 1e-16
+    assert abs(float(chebax.besselj_frozen(2.5)(1e6)) - ref) <= 1e-16
 
 
 # regeneration of besselj_table_ext.py is covered by the full-file test in
@@ -152,7 +152,7 @@ def test_x_large_smoke():
 
 def test_domain_matches_the_full_instance_exactly():
     for v in (0.0, 2.5, 9.97):
-        full = chebax.besselj(float(v))
+        full = chebax.besselj_frozen(float(v))
         for lo, hi, regions in [
             (0.0, 8.0, ("in",)),
             (1e-6, 7.9, ("in",)),
@@ -161,7 +161,7 @@ def test_domain_matches_the_full_instance_exactly():
             (2.0, 20.0, ("in", "mid")),
             (20.0, 100.0, ("mid", "out")),
         ]:
-            trimmed = chebax.besselj(float(v), domain=(lo, hi))
+            trimmed = chebax.besselj_frozen(float(v), domain=(lo, hi))
             assert trimmed.regions == regions, (v, lo, hi, trimmed.regions)
             xs = np.linspace(lo, hi, 97)
             got = np.asarray(trimmed(xs))
@@ -170,7 +170,7 @@ def test_domain_matches_the_full_instance_exactly():
 
 
 def test_domain_is_nan_outside():
-    t = chebax.besselj(2.5, domain=(2.0, 8.0))
+    t = chebax.besselj_frozen(2.5, domain=(2.0, 8.0))
     xs = np.array([0.0, 1.0, 1.999, 2.0, 5.0, 8.0, 8.001, 40.0])
     got = np.asarray(t(xs))
     assert np.all(np.isnan(got[[0, 1, 2, 6, 7]])), got
@@ -178,8 +178,8 @@ def test_domain_is_nan_outside():
 
 
 def test_domain_gradients_and_jit():
-    full = chebax.besselj(3.0)
-    trimmed = chebax.besselj(3.0, domain=(0.0, 8.0))
+    full = chebax.besselj_frozen(3.0)
+    trimmed = chebax.besselj_frozen(3.0, domain=(0.0, 8.0))
     for x in (0.5, 3.0, 7.5):
         assert float(jax.grad(trimmed)(x)) == float(jax.grad(full)(x)), x
     # a nan lane must not poison the gradient of a live one
@@ -196,11 +196,11 @@ def test_domain_gradients_and_jit():
 
 
 def test_domain_dnu_and_validation():
-    full = chebax.besselj_dnu(2.5)
-    trimmed = chebax.besselj_dnu(2.5, domain=(0.1, 8.0))
+    full = chebax.besselj_dnu_frozen(2.5)
+    trimmed = chebax.besselj_dnu_frozen(2.5, domain=(0.1, 8.0))
     xs = np.linspace(0.1, 8.0, 33)
     assert np.array_equal(np.asarray(trimmed(xs)), np.asarray(full(xs)))
     assert np.isnan(float(trimmed(20.0)))
     for bad in [(8.0, 2.0), (-1.0, 5.0), (3.0, 3.0)]:
         with pytest.raises(ValueError, match="domain"):
-            chebax.besselj(2.5, domain=bad)
+            chebax.besselj_frozen(2.5, domain=bad)

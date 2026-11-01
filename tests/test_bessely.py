@@ -44,7 +44,7 @@ def _refs(v):
 def test_values():
     for v in NUS:
         Y, M = _refs(v)
-        e = np.abs(np.asarray(chebax.bessely(v)(XY)) - Y) / M
+        e = np.abs(np.asarray(chebax.bessely_frozen(v)(XY)) - Y) / M
         assert e.max() <= 1e-13, v
 
 
@@ -56,7 +56,7 @@ def test_dx():
         Jp = np.array(
             [float(mp.diff(lambda t: mp.besselj(mp.mpf(v), t), mp.mpf(x))) for x in XY]
         )
-        g = np.asarray(jax.vmap(jax.grad(chebax.bessely(v)))(jnp.asarray(XY)))
+        g = np.asarray(jax.vmap(jax.grad(chebax.bessely_frozen(v)))(jnp.asarray(XY)))
         assert np.max(np.abs(g - Yp) / np.hypot(Jp, Yp)) <= 1e-13, v
 
 
@@ -66,17 +66,17 @@ def test_dnu():
             [float(mp.diff(lambda t: mp.bessely(t, mp.mpf(x)), mp.mpf(v))) for x in XY]
         )
         _, M = _refs(v)
-        got = np.asarray(chebax.bessely_dnu(v)(XY))
+        got = np.asarray(chebax.bessely_dnu_frozen(v)(XY))
         assert np.max(np.abs(got - Yn) / (np.abs(Yn) + M)) <= 1e-13, v
 
 
 def test_clamp_below_xmin():
-    yv = chebax.bessely(1.5)
+    yv = chebax.bessely_frozen(1.5)
     assert float(yv(1e-8)) == float(yv(yt.XMIN))
 
 
 def test_jit_and_pytree():
-    yv = chebax.bessely(2.5)
+    yv = chebax.bessely_frozen(2.5)
     xs = jnp.asarray(XY[:10])
     y = jax.jit(lambda f, x: f(x))(yv, xs)
     np.testing.assert_allclose(np.asarray(y), np.asarray(yv(xs)), rtol=1e-14)
@@ -84,7 +84,7 @@ def test_jit_and_pytree():
 
 def test_order_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
-        chebax.bessely(10.5)
+        chebax.bessely_frozen(10.5)
 
 
 @pytest.mark.slow

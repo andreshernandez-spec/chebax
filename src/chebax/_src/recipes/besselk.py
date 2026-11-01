@@ -25,8 +25,8 @@ at v = 0 by evenness (K_{-v} = K_v). Near the underflow edge (x beyond
 dependent: backends that flush subnormals (XLA CPU) lose small correction
 terms like the 1/(2x) piece of dK/dx once products dip under 1e-308.
 
-besselk(v)/besselk_dnu(v) mirror the besselj API (v fixed at instantiation,
-cached, no mpmath). besselk_fn(nu, x) additionally takes nu as a traced jax
+besselk_frozen(v)/besselk_dnu_frozen(v) mirror the besselj API (v fixed at
+instantiation, cached, no mpmath). besselk_scalar(nu, x) additionally takes nu as a traced jax
 scalar (uniform per call): the coefficient reconstruction happens inside
 the computation, so jax.grad works with respect to nu directly — this is
 what lets a Matern kernel learn its smoothness by gradient descent. For
@@ -46,6 +46,7 @@ from chebax._src.recipes._common import (
     canon_float,
     canon_tag,
     check_range,
+    deprecated_factory,
     param_coefs,
     param_coefs_der,
     traced_coefs,
@@ -107,7 +108,7 @@ def _eval_k_dnu(v, x, ltil, ltail, ltil_nu, ltail_nu):
 
 @jax.tree_util.register_pytree_node_class
 class BesselK(Recipe):
-    """Callable K_v on [1e-6, inf). Build with besselk(v)."""
+    """Callable K_v on [1e-6, inf). Build with besselk_frozen(v)."""
 
     _static_fields = ("v",)
     _series_fields = ("ltil", "ltail")
@@ -121,7 +122,7 @@ class BesselK(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class BesselKdnu(Recipe):
-    """Callable dK_v/dv on [1e-6, inf). Build with besselk_dnu(v)."""
+    """Callable dK_v/dv on [1e-6, inf). Build with besselk_dnu_frozen(v)."""
 
     _static_fields = ("v",)
     _series_fields = ("ltil", "ltail", "ltil_nu", "ltail_nu")
@@ -167,7 +168,7 @@ def _traced_series(nu):
     return (ChebSeries(c_in, (_kt.U0, _kt.U1)), ChebSeries(c_tl, (0.0, 1.0)))
 
 
-def besselk_fn(nu, x, scaled=False):
+def besselk_scalar(nu, x, scaled=False):
     """K_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
 
     nu must be uniform per call and inside [0, 10] (unchecked under trace).
@@ -179,22 +180,22 @@ def besselk_fn(nu, x, scaled=False):
     table's own quantity, not exp(log K + x): that product cancels its
     -x against +x and loses the -1/2 ln x underneath.
     """
-    nu = canon_param(nu, "besselk_fn", "nu")
+    nu = canon_param(nu, "besselk_scalar", "nu")
     ltil, ltail = _traced_series(nu)
     return _eval_k(nu, canon_float(x), ltil, ltail, bool(scaled))
 
 
-def log_besselk_fn(nu, x):
-    """ln K_nu(x), same contract as besselk_fn but with no underflow ceiling.
+def log_besselk_scalar(nu, x):
+    """ln K_nu(x), same contract as besselk_scalar but with no underflow ceiling.
 
-    besselk_fn returns K itself, which underflows to 0 past x ~ 746. The
+    besselk_scalar returns K itself, which underflows to 0 past x ~ 746. The
     tables store ln K, so the log evaluates directly: finite for every
     finite x up to the largest double (ln K ~ -x), -inf at x = inf,
     differentiable in nu and x, nu uniform per call in [0, 10]. This is
     the log_kve shape that entropy and log-likelihood pipelines want
     (e.g. a GIG log-normalizer needs ln K_p and its order derivative).
     """
-    nu = canon_param(nu, "log_besselk_fn", "nu")
+    nu = canon_param(nu, "log_besselk_scalar", "nu")
     x = jnp.asarray(x)
     ltil, ltail = _traced_series(nu)
     xi = _xin(x)
@@ -204,7 +205,23 @@ def log_besselk_fn(nu, x):
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
-def besselk(v):
+def besselk(nu, x=None, scaled=False):
+    """K_nu(x) for one order nu in [0, 10]: besselk_scalar, which has no
+    per-element form (chebax.pergroup gives one order per group).
+
+    besselk(nu) with no x is the 0.4 factory and returns besselk_frozen(nu),
+    with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("besselk", besselk_frozen, nu)
+    return besselk_scalar(nu, x, scaled)
+
+
+def log_besselk(nu, x):
+    """ln K_nu(x) for one order nu in [0, 10]: log_besselk_scalar."""
+    return log_besselk_scalar(nu, x)
+
+
+def besselk_frozen(v):
     """K_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath.
 
     v may be a python number or a concrete jax scalar; the bounded cache
@@ -212,6 +229,17 @@ def besselk(v):
     return _besselk_cached(float(v), canon_tag())
 
 
-def besselk_dnu(v):
+def besselk_dnu(v, x=None):
+    """dK_v/dv at x for one concrete order v: besselk_dnu_frozen(v)(x). For
+    a traced order, differentiate besselk_scalar instead.
+
+    besselk_dnu(v) with no x is the 0.4 factory and returns
+    besselk_dnu_frozen(v), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("besselk_dnu", besselk_dnu_frozen, v)
+    return besselk_dnu_frozen(v)(x)
+
+
+def besselk_dnu_frozen(v):
     """dK_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
     return _besselk_dnu_cached(float(v), canon_tag())

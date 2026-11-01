@@ -23,11 +23,11 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.pytree import Recipe
-from chebax._src.recipes._common import canon_tag
+from chebax._src.recipes._common import canon_tag, deprecated_factory
 from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes import bessely_table as _yt
-from chebax._src.recipes.besselj import besselj
-from chebax._src.recipes.bessely import bessely
+from chebax._src.recipes.besselj import besselj_frozen
+from chebax._src.recipes.bessely import bessely_frozen
 
 _NMAX = 9  # n + 1/2 must stay inside the cylindrical tables' [0, 10]
 
@@ -84,19 +84,39 @@ def _check_n(n):
 
 @functools.lru_cache(maxsize=128)
 def _spherical_jn_cached(n, _tag):
-    return _SphericalJ(n, besselj(n + 0.5))
+    return _SphericalJ(n, besselj_frozen(n + 0.5))
 
 
-def spherical_jn(n):
+def spherical_jn(n, x=None):
+    """j_n(x) for integer n in [0, 9]: spherical_jn_frozen(n)(x).
+
+    spherical_jn(n) with no x is the 0.4 factory and returns
+    spherical_jn_frozen(n), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("spherical_jn", spherical_jn_frozen, n)
+    return spherical_jn_frozen(n)(x)
+
+
+def spherical_jn_frozen(n):
     """j_n on x >= 0 for integer n in [0, 9]. Exact values and gradients at 0."""
     return _spherical_jn_cached(_check_n(n), canon_tag())
 
 
 @functools.lru_cache(maxsize=128)
 def _spherical_yn_cached(n, _tag):
-    return _SphericalY(n, bessely(n + 0.5))
+    return _SphericalY(n, bessely_frozen(n + 0.5))
 
 
-def spherical_yn(n):
+def spherical_yn(n, x=None):
+    """y_n(x) for integer n in [0, 9]: spherical_yn_frozen(n)(x).
+
+    spherical_yn(n) with no x is the 0.4 factory and returns
+    spherical_yn_frozen(n), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("spherical_yn", spherical_yn_frozen, n)
+    return spherical_yn_frozen(n)(x)
+
+
+def spherical_yn_frozen(n):
     """y_n for integer n in [0, 9]; x clamps at 1e-6, x <= 0 returns -inf."""
     return _spherical_yn_cached(_check_n(n), canon_tag())

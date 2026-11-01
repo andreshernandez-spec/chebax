@@ -36,7 +36,7 @@ EXPECTED = {
     "chebax._src.recipes.erf_family": {"erf_table"},
     "chebax._src.recipes.besselk": {"besselk_table"},
     "chebax._src.recipes.matern": {"besselk_table"},
-    # dI/dnu at nu = 0 is -K_0, which besseli_fn's order derivative uses
+    # dI/dnu at nu = 0 is -K_0, which besseli_scalar's order derivative uses
     "chebax._src.recipes.besseli": {"besseli_table", "besselk_table"},
     "chebax._src.recipes.besselj": {"besselj_table", "besselj_table_ext"},
     # Y's tail shares J's modulus and phase tables
@@ -48,9 +48,10 @@ EXPECTED = {
     },
     "chebax._src.recipes.betainc": _BETA,
     "chebax._src.recipes.betaincinv": _BETA,
-    "chebax._src.recipes.gammainc": _GAMMA,
+    # each gammainc path imports its implementation when first called
+    # (test_gammainc_paths_load_only_their_tables)
+    "chebax._src.recipes.gammainc": set(),
     "chebax._src.recipes.gammaincinv": _GAMMA,
-    "chebax._src.recipes.gammainc_elem": {"gammainc_elem_table", "erf_table"},
     "chebax._src.recipes.hyp1f1": {"hyp1f1_table"},
     # the betainc kernel without betainc's tensor (betainc_kernel.py)
     "chebax._src.recipes.stdtr": {"stdtr_table"},
@@ -121,6 +122,22 @@ def test_names_load_only_their_tables(module):
             getattr(chebax, name)
     """)
     assert _tables(mods) == EXPECTED[module], (module, sorted(_tables(mods)))
+
+
+# calling one gammainc path loads its own tables and not the other path's
+_GAMMA_PATHS = {
+    "gammainc_scalar(2.5, 3.0)": _GAMMA,
+    "gammainc_frozen(2.5)(3.0)": _GAMMA,
+    "log_gammaincc(2.5, 3.0)": _GAMMA,
+    "gammainc_array([2.5, 30.0], 3.0)": {"gammainc_array_table", "erf_table"},
+    "log_gammaincc([2.5, 30.0], 3.0)": {"gammainc_array_table", "erf_table"},
+}
+
+
+@pytest.mark.parametrize("call", sorted(_GAMMA_PATHS))
+def test_gammainc_paths_load_only_their_tables(call):
+    mods = _loaded(f"import chebax\nchebax.{call}")
+    assert _tables(mods) == _GAMMA_PATHS[call], sorted(_tables(mods))
 
 
 @pytest.mark.parametrize("name", sorted(DOMAIN_TABLES))

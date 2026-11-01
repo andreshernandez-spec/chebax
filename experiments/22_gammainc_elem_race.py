@@ -32,21 +32,21 @@ compiled program.
 
 FINDINGS (2026-11-01, RTX 3080 Laptop, reproduced by this script)
 -----------------------------------------------------------------
-- elem costs the same on every layout: float64 0.69-0.70 us per value and
-  1.0-1.1 us per value_and_grad on one CPU core, 12.3-12.5 / 21.3-21.8 ns
-  on the GPU; float32 0.23-0.24 / 0.21 us and 0.9 / 1.6-1.7 ns.
-- Against jax's gammainc, float64: 1.1-9.6x on values and 1.8-15x on
-  value_and_grad on the CPU, 2.4-18x and 3.0-25x on the GPU, growing with
-  the spread of a. float32 on the GPU: 5.6-81x and 7-106x. float32 on the
-  CPU: jax's value is 2.1x faster at a = 2.5 each, elem 1.2-6.6x faster on
-  the other two; value_and_grad 1.4-20x.
-- Against vmap of gammainc_fn, float64: 1.6-1.8x on values and 72-78x on
-  value_and_grad on the CPU, 9x and 57x on the GPU.
+- elem costs the same on every layout: float64 0.74-0.78 us per value and
+  1.1-1.2 us per value_and_grad on one CPU core, 12.5-12.8 / 22.8-23.3 ns
+  on the GPU; float32 0.20-0.21 / 0.21-0.23 us and 1.1 / 1.7 ns.
+- Against jax's gammainc, float64: 1.0-8.9x on values and 1.6-15x on
+  value_and_grad on the CPU, 2.3-18x and 2.8-24x on the GPU, growing with
+  the spread of a. float32 on the GPU: 4.5-67x and 6.8-96x. float32 on the
+  CPU: jax's value is 1.8x faster at a = 2.5 each, elem 1.4-8.0x faster on
+  the other two; value_and_grad 1.4-19x.
+- Against vmap of gammainc_fn, float64: 1.5x on values and 71-78x on
+  value_and_grad on the CPU, 9x and 53-57x on the GPU.
 - On "wide", jax's gammainc is off by up to 1.4e-11 (float64) and 7e-3
   (float32) near x ~ a ~ 1e4, against mpmath; elem is within 2e-16 and
   5e-8 at those points, so "agree" there is jax's error.
 - No while loops in elem's compiled program.
-- The load average was 2.3-3.0 during the run (other work on the laptop);
+- The load average was 1.8-2.4 during the run (other work on the laptop);
   the CPU numbers are on one pinned core.
 
 WHAT IT DOES NOT ESTABLISH

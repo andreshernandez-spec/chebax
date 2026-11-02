@@ -39,6 +39,7 @@ chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#
 | Matérn | — | `matern(nu, r, lengthscale)` | via `grad` | unit-variance correlation, LEARNABLE smoothness ν ∈ (0, 10] |
 | `betainc` | `betainc(a, b)` | `betainc_fn`, `log_betainc_fn` | via `grad` of `_fn` | (a, b) ∈ [0.1, 100]² (panels, split at 10); the log form resolves the lower tail with no underflow floor |
 | `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ≥ 0.1 (above 10 via Temme-zone tables, whose v = 10/a axis reaches a = ∞), x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`) |
+| `gammainc`, a per element | — | `gammainc_elem`, `gammaincc_elem`, `log_gammainc_elem`, `log_gammaincc_elem` | via `grad` | a and x broadcast, a ≥ 0.1 on each element, x ≥ 0; one small 2-D patch per element (144 coefficients, 49 in float32), no loops; vs jax's gammainc 2.3–18x on values and 2.8–24x on value_and_grad on GPU f64, 4.5–67x / 6.8–96x f32 (`experiments/22`) |
 | `hyp1f1` | `hyp1f1(a, b)` | `hyp1f1_fn`, `log_hyp1f1_fn` | via `grad` of `_fn` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
 | spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
 | quantiles | — | `betaincinv`, `gammaincinv`, `gammainccinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
@@ -103,6 +104,8 @@ Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
 are uniform per call, meaning one value whatever its shape: a scalar or any
 size-1 array, which is what numpyro and pytensor hand back after broadcasting.
 Per-element parameter arrays are out of scope by design and say so by name.
+The one exception is gammainc, which has a separate per-element path
+(`gammainc_elem` and its siblings).
 The middle ground is `chebax.pergroup(fn, group_idx)`: a static integer array
 assigns each element to a group, each group gets its own (traceable) parameter
 set — one group per chain, mixture component, or plate level.

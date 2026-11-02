@@ -38,6 +38,8 @@ CASES = {
     "betainc_fn": ("chebax.betainc_fn(2.0, 3.0, 0.4)", 0.5248),
     "log_betainc_fn": ("chebax.log_betainc_fn(2.0, 3.0, 0.01)", -7.4319532486885614),
     "gammainc_fn": ("chebax.gammainc_fn(2.5, 3.0)", 0.6937810815867216),
+    "gammainc_elem": ("chebax.gammainc_elem(2.5, 3.0)", 0.6937810815867216),
+    "log_gammaincc_elem": ("chebax.log_gammaincc_elem(2.5, 40.0)", -34.714103456537936),
     "gammaincc_fn": ("chebax.gammaincc_fn(2.5, 9.0)", 0.0029464045878802904),
     "log_gammaincc_fn": ("chebax.log_gammaincc_fn(2.5, 40.0)", -34.714103456537936),
     "stdtr": ("chebax.stdtr(4.0, 1.2)", 0.85182430334382328),
@@ -106,7 +108,8 @@ def test_dtype_is_float32_not_promoted():
     _run(
         "for v in [chebax.besselk(1.5)(2.0), chebax.betaincinv(2.0, 3.0, 0.4),\n"
         "          chebax.gammaincinv(2.5, 0.4), chebax.stdtrit(4.0, 0.25),\n"
-        "          chebax.besseli_ratio(0.0, 3.0), chebax.stdtr(4.0, 1.2)]:\n"
+        "          chebax.besseli_ratio(0.0, 3.0), chebax.stdtr(4.0, 1.2),\n"
+        "          chebax.log_gammainc_elem(jnp.asarray([0.5, 30.0]), 2.0)]:\n"
         "    assert v.dtype == jnp.float32, v.dtype\n"
     )
 
@@ -119,7 +122,8 @@ def test_gradients_are_finite_under_x64_off():
         "      jax.grad(chebax.gammaincinv, argnums=1)(2.5, 0.4),\n"
         "      jax.grad(chebax.stdtrit, argnums=1)(4.0, 0.25),\n"
         "      jax.grad(chebax.besseli_ratio, argnums=1)(0.0, 0.0),\n"
-        "      jax.grad(chebax.vonmises_cdf, argnums=0)(2.0, 0.5)]\n"
+        "      jax.grad(chebax.vonmises_cdf, argnums=0)(2.0, 0.5),\n"
+        "      jax.grad(chebax.log_gammaincc_elem, argnums=0)(30.0, 25.0)]\n"
         "for g in gs:\n"
         "    assert np.isfinite(float(g)), g\n"
         "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n"

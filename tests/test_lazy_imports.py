@@ -50,6 +50,7 @@ EXPECTED = {
     "chebax._src.recipes.betaincinv": _BETA,
     "chebax._src.recipes.gammainc": _GAMMA,
     "chebax._src.recipes.gammaincinv": _GAMMA,
+    "chebax._src.recipes.gammainc_elem": {"gammainc_elem_table", "erf_table"},
     "chebax._src.recipes.hyp1f1": {"hyp1f1_table"},
     # the betainc kernel without betainc's tensor (betainc_kernel.py)
     "chebax._src.recipes.stdtr": {"stdtr_table"},

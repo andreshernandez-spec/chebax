@@ -905,3 +905,70 @@ did not move, since their worst is the direct sum's, below the split. Below
 the mean it is log(y/mu) now (the ratio is within [1/e, 3/4]): 7.6e-14, and
 3.9e-13 for that density. A test of the half-deviance and its y-partial
 against mpmath in each form catches it directly.
+
+## 35. gammainc with a per element (2026-11-01)
+
+Every table here collapses its parameter axis once per call. A Gamma
+likelihood with a shape per observation therefore paid that collapse per
+element through vmap: about 4,300 coefficients per element, counting both
+sides of the a = 10 dispatch. `gammainc_elem`, `gammaincc_elem` and their
+logs take a per element and evaluate one small 2-D patch instead
+(`gammainc_elem_gen.py`, `gammainc_elem.py`).
+
+The pieces, each measured on its own first (generator docstring):
+
+- The parameter is u = ln(1 + a) up to a = 10. 1F1(1; a+1; .)'s pole at
+  a = -1 goes to infinity, and the a-axis needs 37 coefficients globally
+  instead of 53 in linear a.
+- a < 1 splits at x = a + 1, with x scaled by a + 1 on each side, so the
+  transition sits at a fixed coordinate. This also removes the uniform
+  recipe's x = 8 seam, below which ln Q comes from 1 - P down to Q ~ 1e-6;
+  here the far side never sees Q below 0.024.
+- a >= 1 keeps gammainc_large's three zones and its Temme function,
+  refitted in w = 1/a down to a = 1. The a-only prefactor (lnGamma(a+1),
+  or its Stirling remainder above a = 1) is folded into each table, so no
+  lgamma runs.
+- Each zone is a tensor grid, halved until every patch's coefficients
+  outside 12 x 12 sum to at most 1e-15: 65 patches, 9,360 coefficients.
+  float32 reads the leading 7 x 7 of each.
+
+Float traps, the last three found in review:
+
+- XLA's float64 log1p (increment 34) again, through phi = d - log1p(d) at
+  d ~ -0.4: 5.5e-14 in ln P. The uniform large-a path has the same exposure
+  (w_eta and temme_log_pq's far side; its 6e-14 bars hold it). Here it is
+  log(1 + x) below x = -1/4. The textbook fix, x log(u)/(u - 1), is undone
+  by XLA's simplifier (u - 1 becomes x): 1.4e-13 in float64, 1.7e-4 in
+  float32.
+- w_eta switches to its series at |d| = 1e-3, a float64 choice: in float32
+  the direct form loses about 4 digits next to lambda = 1. phi comes from
+  z = d/(2 + d) instead (log1p(d) = 2 atanh z), with no cancellation in
+  either dtype.
+- An unused branch must not divide by x. A select zeroes its cotangent, but
+  a partial that overflows turns that 0 into nan: jax.grad of gammainc_elem
+  in x at (1, 1e-20) in float32 was nan. Each branch now gets x masked off
+  its own lanes.
+- Differentiating -a phi as a product cancels two terms of size x/a in the
+  upper tail. d ln Q/da at (2.5, 1e8) was 13.6 for 17.7 in float32, and
+  4e83 at x = 1e100 in float64. Written as -(x - a) + a ln lambda, d/da
+  stays at ln lambda. ln lambda's slope is written out (through the ratio,
+  x/a^2 and 1/lambda leave the float range at its ends).
+- x/a underflows deep in the lower tail: ln P at (1000, 1e-36) was -inf in
+  float32. ln lambda is log(x/a) only where that ratio is a normal number,
+  and ln x - ln a below. P = exp(ln P) gets slope 0 where P is 0, since
+  forward mode otherwise multiplies 0 by an overflowed a/x.
+
+Measured against mpmath on 2,300 points: float64 ln P 8.9e-16 and ln Q
+8.4e-15. The ln Q floor is the far side of a < 1, x <= a + 1, where
+Q = 1 - P and Q gets down to 0.024; elsewhere it is 7.8e-16. Gradients are
+within 2e-13, and float32 is 4.5e-7 for ln P and 2.9e-6 for ln Q. In the
+far tails (x to 1e300, x/a underflowing) values and slopes in both modes
+are within 2.2e-16 in float64 and 1.0e-7 in float32.
+
+Speed (`experiments/22`, x drawn from Gamma(a)): the cost does not depend
+on how a is spread. float64 runs at 12.5-12.8 ns per value and 23 ns per
+value_and_grad on the GPU, and 0.74-0.78 / 1.1-1.2 us on one CPU core. That
+is 2.3-18x jax's gammainc on GPU values and 2.8-24x on value_and_grad, and
+53-57x vmap of gammainc_fn on value_and_grad. float32 on the GPU is
+1.1 / 1.7 ns, 4.5-67x and 6.8-96x jax's. jax's own gammainc is off by 1.4e-11 (float64)
+and 7e-3 (float32) near x ~ a ~ 1e4.

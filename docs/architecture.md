@@ -72,6 +72,11 @@ The runtime path is:
 uniform parameter -> reconstruct coefficients -> ChebSeries -> array of values
 ```
 
+gammainc also has a per-element path, `gammainc_elem` and its siblings: each
+element finds its patch of a tensor grid over (parameter, argument) and
+evaluates that patch's small 2-D polynomial directly, with no reconstruction
+and no ChebSeries (increment 35).
+
 All fit stages in a recipe generator stay in mpmath at the recorded precision
 before one final float64 conversion. Tables record axes, parameter domains,
 node counts, working precision, mpmath version, and the generator/shared-helper
@@ -100,6 +105,9 @@ value. Normalize them through `canon_param`; reject larger arrays with the
 parameter name and guidance to `pergroup`. Evaluation points may be arrays.
 Some direct functions, notably Tweedie, additionally broadcast parameters such
 as mean and dispersion; their own docstrings state which arguments broadcast.
+The `*_elem` gammainc functions broadcast a with x on purpose: they are a
+separate path with their own table, and the uniform functions keep refusing
+per-element arrays.
 The NumPyro constructors follow the same rule for shape parameters.
 
 Public entry points must apply the same normalization to positional and

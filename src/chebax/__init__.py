@@ -84,7 +84,17 @@ _LAZY = {
         "log_gammaincc_array",
         "log_gammaincc_scalar",
     ),
-    "chebax._src.recipes.gammaincinv": ("chi2inv", "gammainccinv", "gammaincinv"),
+    "chebax._src.recipes.gammaincinv": (
+        "chi2inv",
+        "chi2inv_array",
+        "chi2inv_scalar",
+        "gammainccinv",
+        "gammainccinv_array",
+        "gammainccinv_scalar",
+        "gammaincinv",
+        "gammaincinv_array",
+        "gammaincinv_scalar",
+    ),
     "chebax._src.recipes.hyp1f1": (
         "hyp1f1",
         "hyp1f1_frozen",
@@ -128,6 +138,8 @@ __all__ = [
     "betaincinv",
     "ChebSeries",
     "chi2inv",
+    "chi2inv_array",
+    "chi2inv_scalar",
     "dawsn",
     "erfcx",
     "fit",
@@ -140,7 +152,11 @@ __all__ = [
     "gammaincc_frozen",
     "gammaincc_scalar",
     "gammainccinv",
+    "gammainccinv_array",
+    "gammainccinv_scalar",
     "gammaincinv",
+    "gammaincinv_array",
+    "gammaincinv_scalar",
     "hyp1f1",
     "hyp1f1_frozen",
     "hyp1f1_scalar",
@@ -285,7 +301,17 @@ if TYPE_CHECKING:
         log_gammaincc_array,
         log_gammaincc_scalar,
     )
-    from chebax._src.recipes.gammaincinv import chi2inv, gammainccinv, gammaincinv
+    from chebax._src.recipes.gammaincinv import (
+        chi2inv,
+        chi2inv_array,
+        chi2inv_scalar,
+        gammainccinv,
+        gammainccinv_array,
+        gammainccinv_scalar,
+        gammaincinv,
+        gammaincinv_array,
+        gammaincinv_scalar,
+    )
     from chebax._src.recipes.hyp1f1 import (
         hyp1f1,
         hyp1f1_frozen,

@@ -1,8 +1,9 @@
 """The naming convention: one name per function, and one per path.
 
 name(params, x) takes any parameter shape: one value runs name_scalar,
-an array runs name_array where the family has a per-element path (only
-gammainc so far) and raises naming chebax.pergroup where it does not.
+an array runs name_array where the family has a per-element path
+(gammainc and its inverses) and raises naming chebax.pergroup where it
+does not.
 name_frozen(params) is the cached callable. The checks here are that the
 plain name and the path it picks give the same numbers, and that the 0.4
 spellings (the *_fn names, the one-argument factory calls) still work
@@ -42,32 +43,48 @@ SAME_AS_SCALAR = [
     ("besseli_dnu", lambda p, x: chebax.besseli_dnu_frozen(*p)(x), (1.5,)),
     ("spherical_jn", lambda p, x: chebax.spherical_jn_frozen(*p)(x), (2,)),
     ("spherical_yn", lambda p, x: chebax.spherical_yn_frozen(*p)(x), (2,)),
+    ("gammaincinv", lambda p, x: chebax.gammaincinv_scalar(*p, x / 61.0), (2.5,)),
+    ("gammainccinv", lambda p, x: chebax.gammainccinv_scalar(*p, x / 61.0), (2.5,)),
+    ("chi2inv", lambda p, x: chebax.chi2inv_scalar(*p, x / 61.0), (3.0,)),
 ]
+
+# the functions whose argument is a probability, not a point on [0, inf)
+_UNIT = ("betainc", "log_betainc", "gammaincinv", "gammainccinv", "chi2inv")
 
 
 @pytest.mark.parametrize(
     "name,path,params", SAME_AS_SCALAR, ids=[c[0] for c in SAME_AS_SCALAR]
 )
 def test_one_value_runs_the_scalar_path(name, path, params):
-    x = X / 61.0 if "betainc" in name else X
+    x = X / 61.0 if name in _UNIT else X
     got = getattr(chebax, name)(*params, x)
     np.testing.assert_array_equal(np.asarray(got), np.asarray(path(params, X)))
 
 
 @pytest.mark.parametrize(
-    "name", ["gammainc", "gammaincc", "log_gammainc", "log_gammaincc"]
+    "name",
+    [
+        "gammainc",
+        "gammaincc",
+        "log_gammainc",
+        "log_gammaincc",
+        "gammaincinv",
+        "gammainccinv",
+        "chi2inv",
+    ],
 )
 def test_an_array_runs_the_array_path(name):
     f, arr = getattr(chebax, name), getattr(chebax, name + "_array")
-    np.testing.assert_array_equal(np.asarray(f(A, X)), np.asarray(arr(A, X)))
+    x = X / 61.0 if name in _UNIT else X
+    np.testing.assert_array_equal(np.asarray(f(A, x)), np.asarray(arr(A, x)))
     # a size-one array is one value, whatever its shape
     np.testing.assert_array_equal(
-        np.asarray(f(jnp.asarray([[2.5]]), X)),
-        np.asarray(getattr(chebax, name + "_scalar")(2.5, X)),
+        np.asarray(f(jnp.asarray([[2.5]]), x)),
+        np.asarray(getattr(chebax, name + "_scalar")(2.5, x)),
     )
     # gradients follow the path, per element
-    g = jax.grad(lambda a: f(a, X).sum())(A)
-    ga = jax.grad(lambda a: arr(a, X).sum())(A)
+    g = jax.grad(lambda a: f(a, x).sum())(A)
+    ga = jax.grad(lambda a: arr(a, x).sum())(A)
     np.testing.assert_array_equal(np.asarray(g), np.asarray(ga))
 
 
@@ -79,14 +96,26 @@ def test_an_array_runs_the_array_path(name):
         ("betainc", lambda f: f(A, 3.0, X / 61.0)),
         ("hyp1f1", lambda f: f(1.5, A, X)),
         ("gammainc_scalar", lambda f: f(A, X)),
+        ("gammaincinv_scalar", lambda f: f(A, X / 61.0)),
+        ("gammainccinv_scalar", lambda f: f(A, X / 61.0)),
+        ("chi2inv_scalar", lambda f: f(A, X / 61.0)),
     ],
-    ids=["besselk", "besseli", "betainc", "hyp1f1", "gammainc_scalar"],
+    ids=[
+        "besselk",
+        "besseli",
+        "betainc",
+        "hyp1f1",
+        "gammainc_scalar",
+        "gammaincinv_scalar",
+        "gammainccinv_scalar",
+        "chi2inv_scalar",
+    ],
 )
 def test_no_array_path_names_the_way_out(name, call):
     with pytest.raises(ValueError, match="pergroup") as e:
         call(getattr(chebax, name))
-    if name.startswith("gammainc"):
-        assert "gammainc_array" in str(e.value)
+    if name.endswith("_scalar"):
+        assert name.replace("_scalar", "_array") in str(e.value)
 
 
 @pytest.mark.parametrize("old,new", sorted(chebax._RENAMED.items()))

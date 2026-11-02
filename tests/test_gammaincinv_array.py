@@ -171,52 +171,118 @@ def test_gradients_against_mpmath(name):
         assert abs(d2a[i] / ref_a2 - 1) <= 2e-11, pt
 
 
+def test_exponential_case_is_exact():
+    # At a = 1 the quantile is -log1p(-p) (Q-target: -log y), so dx/dp is
+    # 1/(1 - p) and d2x/dp2 1/(1 - p)^2. Differentiating 1/pdf as
+    # 1/(p L_x) put two terms of size 1/x against each other: d2x/dp2 was
+    # 98304 for 1 at p = 1e-20 (review of #44). Measured worst 2.4e-14 in
+    # x, dx/dp and d2x/dp2 (float32 in test_float32_in_a_child), bar 1e-13
+    p = np.array([1e-300, 1e-100, 1e-20, 1e-5, 0.3, 0.5, 0.99, 1 - 1e-12])
+    one = jnp.ones_like(jnp.asarray(p))
+    for name, f in FUNCS.items():
+        x = np.asarray(f(one, p))
+        d1 = np.asarray(jax.grad(lambda q: f(one, q).sum())(jnp.asarray(p)))
+        d2 = np.asarray(
+            jax.grad(lambda q: jax.grad(lambda r: f(one, r).sum())(q).sum())(
+                jnp.asarray(p)
+            )
+        )
+        with mp.workdps(40):
+            for i, pi in enumerate(p):
+                q = mp.mpf(pi)
+                if name == "inv":
+                    refs = (-mp.log1p(-q), 1 / (1 - q), 1 / (1 - q) ** 2)
+                else:
+                    refs = (-mp.log(q), -1 / q, 1 / q**2)
+                for got, ref in zip((x[i], d1[i], d2[i]), refs):
+                    if abs(ref) > np.finfo(np.float64).max:
+                        assert np.isinf(got), (name, pi, got)
+                    else:
+                        assert abs(got / ref - 1) <= 1e-13, (name, pi, got, ref)
+
+
 def test_density_in_closed_form_above_1e3():
-    # above a = 1e3 dx/dp is 1/pdf in closed form at the unrounded root (a
-    # Halley step from x in ln(x/a)), since L_x at the float x is off by its
-    # change over one float step, about eps sqrt(a) (1 + |z|). Against
-    # mpmath, measured worst 2.0e-13 (a = 2e3, p = 1e-300), bar 8e-13
+    # above a = 1e3 both derivatives come from the root found again,
+    # unrounded (Halley steps in ln(x/a) on _log_pq given d = x/a - 1
+    # exactly), since L_x at the float x is off by its change over one
+    # float step, about eps sqrt(a) (1 + |z|). Against mpmath, measured
+    # worst 2.3e-13 in dx/dp (a = 2e3, p = 1e-300) and 3.6e-16 in dx/da;
+    # bars 8e-13 and 1.5e-15
     pts = [(1e3, 1e-300), (2e3, 1e-300), (2e3, 0.5), (1e4, 1e-100)]
     pts += [(1e5, 1e-200), (1e5, 0.9)]
     a = jnp.asarray([q[0] for q in pts])
     t = jnp.asarray([q[1] for q in pts])
     for name, f in FUNCS.items():
         g = np.asarray(jax.grad(lambda t: f(a, t).sum())(t))
+        ga = np.asarray(jax.grad(lambda a: f(a, t).sum())(a))
         for i, (ai, ti) in enumerate(pts):
             x = _root(ai, ti, name == "cinv")
             am = mp.mpf(ai)
             pdf = mp.exp((am - 1) * mp.log(x) - x - mp.loggamma(am))
             ref = (-1 if name == "cinv" else 1) / pdf
             assert abs(g[i] / ref - 1) <= 8e-13, (name, ai, ti, g[i], float(ref))
+            ref_a = _dxda(am, ti, name == "cinv")
+            assert abs(ga[i] / ref_a - 1) <= 1.5e-15, (name, ai, ti, ga[i])
 
 
 def test_huge_shape_gradients_match_the_scalar_path():
     # above a = 1e10 the scalar path differentiates in Temme's variable,
-    # checked against the uniform expansion in test_gammainc_large. Here
-    # the Halley step that reaches the root from the float x is exact to
-    # its third-order term, which grows like a^(3/2): against that
-    # expansion dx/dp measured within 2.3e-13 up to a = 1e25, and 5.7e-6
-    # at a = 1e30, where one float step of x is 0.2 standard deviations.
-    # Bars 1e-12 and 2e-5; dx/da (~1) agrees to 2.2e-16
-    cases = [(1e12, 1e-12), (1e20, 1e-12), (1e25, 1e-12), (1e30, 2e-5)]
-    aa = np.repeat([c[0] for c in cases], 3)
+    # checked against the uniform expansion in test_gammainc_large. A
+    # single Halley step from the float x left dx/dp 5.7e-6 off at
+    # a = 1e30 and 2e17 times too small at a = 1e35, p = 1e-20, where x
+    # rounds to a nine standard deviations from the root (review of #44).
+    # Measured worst 1.1e-13 in dx/dp and 2.2e-16 in dx/da; bars 4.4e-13
+    # and 1e-15
+    shapes = [1e12, 1e20, 1e25, 1e30, 1e35]
+    aa = np.repeat(shapes, 3)
     for name, scalar, ts in (
         ("inv", chebax.gammaincinv_scalar, [1e-20, 0.3, 0.9]),
         ("cinv", chebax.gammainccinv_scalar, [1e-300, 1e-20, 0.3]),
     ):
-        tt = np.tile(ts, len(cases))
+        tt = np.tile(ts, len(shapes))
         f = FUNCS[name]
         ga = np.asarray(jax.grad(lambda a: f(a, tt).sum())(jnp.asarray(aa)))
         gt = np.asarray(jax.grad(lambda t: f(aa, t).sum())(jnp.asarray(tt)))
         grad_a, grad_t = jax.jit(jax.grad(scalar)), jax.jit(jax.grad(scalar, 1))
         for i, (a, t) in enumerate(zip(aa, tt)):
-            bar = dict(cases)[a]
             sa, st = float(grad_a(a, t)), float(grad_t(a, t))
             assert abs(ga[i] / sa - 1) <= 1e-15, (name, a, t, ga[i], sa)
             if np.isinf(st):  # the density underflows at the root
                 assert gt[i] == st, (name, a, t, gt[i], st)
             else:
-                assert abs(gt[i] / st - 1) <= bar, (name, a, t, gt[i], st)
+                assert abs(gt[i] / st - 1) <= 4.4e-13, (name, a, t, gt[i], st)
+
+
+def test_largest_shapes():
+    # every finite a, both paths: above 1e36 the quantile is a itself, and both
+    # derivatives come from the unrounded root in d, since slopes in a and
+    # x carry tangents of size 1/a, flushed to zero from a ~ 2e307. Under
+    # jit, as users run it: gammaincinv_array(1e306, 0.3) was nan (the
+    # lnGamma(a + 1) start overflowed), and from 4.5e307 jit flushed 1/a
+    # inside (x - a)/a. Against the normal limit, exact to O(a^-1/2) here:
+    # measured worst 4.8e-14 in dx/dp, bar 2e-13
+    big = np.finfo(np.float64).max
+    aa = np.repeat([1e306, 1.7e308, big], 3)
+    pp = np.tile([1e-20, 0.3, 0.9], 3)
+    z = np.asarray(jax.scipy.special.ndtri(jnp.asarray(pp)))
+    pdf = 1.0 / (np.sqrt(2.0 * np.pi) * np.sqrt(aa) * np.exp(0.5 * z * z))
+    # y = p in the upper tail has the same |z| and density
+    for f, q, sign in ((FUNCS["inv"], pp, 1.0), (FUNCS["cinv"], pp, -1.0)):
+        x = np.asarray(jax.jit(f)(aa, q))
+        np.testing.assert_array_equal(x, aa)
+        gp = np.asarray(jax.jit(jax.grad(lambda t: f(aa, t).sum()))(jnp.asarray(q)))
+        ga = np.asarray(jax.jit(jax.grad(lambda a: f(a, q).sum()))(jnp.asarray(aa)))
+        np.testing.assert_allclose(gp * pdf * sign, 1.0, rtol=2e-13)
+        np.testing.assert_allclose(ga, 1.0, rtol=1e-15)
+    # the scalar path's Temme solve, whose dx/dp was 0 from a = 2.9e307
+    # (sqrt(2 pi a) overflowed, and 2/a was flushed from 9e307)
+    for scalar, sign in (
+        (chebax.gammaincinv_scalar, 1.0),
+        (chebax.gammainccinv_scalar, -1.0),
+    ):
+        grad_p = jax.jit(jax.grad(scalar, 1))
+        gp = np.array([float(grad_p(a, q)) for a, q in zip(aa, pp)])
+        np.testing.assert_allclose(gp * pdf * sign, 1.0, rtol=2e-13)
 
 
 def test_endpoints_and_domain():
@@ -322,6 +388,19 @@ for name in ("gammaincinv", "gammainccinv"):
     # with its tables baked in (17 minutes and 15 GB)
     scalar = jax.jit(getattr(chebax, name + "_scalar"))
     out[name + "_scalar"] = [float(scalar(ai, ti)) for ai, ti in zip(a, t)]
+# the exponential case, a = 1: x and its first two derivatives in p
+pe = jnp.asarray([1e-37, 1e-20, 1e-7, 1e-3, 0.3, 0.5, 0.99, 1 - 2**-20], jnp.float32)
+one = jnp.ones_like(pe)
+for name in ("gammaincinv", "gammainccinv"):
+    f = getattr(chebax, name + "_array")
+    g = lambda q: f(one, q).sum()
+    d2 = jax.grad(lambda q: jax.grad(g)(q).sum())(pe)
+    out["exp_" + name] = [
+        np.asarray(pe).tolist(),
+        np.asarray(f(one, pe)).tolist(),
+        np.asarray(jax.grad(g)(pe)).tolist(),
+        np.asarray(d2).tolist(),
+    ]
 print(json.dumps(out))
 """
 
@@ -353,6 +432,18 @@ def test_float32_in_a_child(tmp_path):
     res = json.loads(out.stdout.strip().splitlines()[-1])
     a64, t64 = aa.astype(np.float64), tt.astype(np.float64)
     tiny = float(np.finfo(np.float32).tiny)
+    # a = 1: -log1p(-p) or -log y, against the float32 inputs. Measured
+    # worst 1.3e-6 in x and dx/dp and 1.9e-6 in d2x/dp2 (d2x/dp2 was -3
+    # for 1 at p = 1e-7), bar 8e-6
+    for name in ("gammaincinv", "gammainccinv"):
+        pe, *got = (np.asarray(v, np.float64) for v in res.pop("exp_" + name))
+        if name == "gammaincinv":
+            refs = (-np.log1p(-pe), 1 / (1 - pe), 1 / (1 - pe) ** 2)
+        else:
+            refs = (-np.log(pe), -1 / pe, 1 / pe**2)
+        for g, r in zip(got, refs):
+            live = np.abs(r) < float(np.finfo(np.float32).max)
+            assert np.all(np.abs(g[live] / r[live] - 1) <= 8e-6), (name, g, r)
     worst = {}
     for key, xs in res.items():
         x = np.asarray(xs, np.float64)

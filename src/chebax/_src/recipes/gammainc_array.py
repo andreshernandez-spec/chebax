@@ -154,8 +154,14 @@ def _exp0_jvp(primals, tangents):
     return e, jnp.where(e == 0.0, 0.0, e * t)
 
 
-def _log_pq(a, x):
-    """(ln P, ln Q) for a, x of one shape and float dtype; no x = 0 slope."""
+def _log_pq(a, x, d=None):
+    """(ln P, ln Q) for a, x of one shape and float dtype; no x = 0 slope.
+
+    d, if given, is x/a - 1 held exactly: the zones for a >= 1 then read it
+    instead of x, so the logs are those at a (1 + d) unrounded. The
+    derivative of gammaincinv_array needs that where one float step of x
+    is wider than the distribution (a ~ 1e35). x still sets the endpoint
+    lanes."""
     tab, pcuts, ycuts = (jnp.asarray(v) for v in _tables(a.dtype.name))
     ky, kp = tab.shape[1:]
     npar, narg, offset = (jnp.asarray(v) for v in (_t.NPAR, _t.NARG, _t.OFFSET))
@@ -166,7 +172,7 @@ def _log_pq(a, x):
     xx = jnp.where(ok, x, 1.0)
     # lam only picks the zone: where x/a underflows (x = 1e-36, a = 1000 in
     # float32) it still reads as the lower zone
-    lam = xx / a
+    lam = xx / a if d is None else 1.0 + d
     big = a > _t.ASPLIT
     zone = jnp.where(
         a < 1.0,
@@ -192,14 +198,25 @@ def _log_pq(a, x):
     x_up = jnp.where(is_up, xx, a)
     x_lu = jnp.where(is_low | is_up, xx, a)
     x_t = jnp.where(in_t, xx, a)
-
-    # Temme coordinates from d = (x - a)/a, which keeps x - a exact
-    phi_t, eta = _phi_eta((x_t - a) / a)
+    if d is None:
+        # Temme coordinates from d = (x - a)/a, which keeps x - a exact
+        d_t = (x_t - a) / a
+        lam_lo, lam_up = x_lo / a, a / x_up
+        ln_lam = _log_ratio(x_lu, a)
+        x_less_a = x_lu - a
+    else:
+        d_t = jnp.where(in_t, d, 0.0)
+        d_lu = jnp.where(is_low | is_up, d, 0.0)
+        lam_lo = jnp.where(is_low, 1.0 + d_lu, 1.0)
+        lam_up = jnp.where(is_up, 1.0 / (1.0 + d_lu), 1.0)
+        ln_lam = _log1p(d_lu)
+        x_less_a = a * d_lu
+    phi_t, eta = _phi_eta(d_t)
 
     par = jnp.select([uses_u, in_t], [_log1p(a), 1.0 / a], _t.ASPLIT / a)
     arg = jnp.select(
         [in_a0, in_b0, is_low, is_up],
-        [x_a0 / (a + 1.0), (a + 1.0) / x_b0, x_lo / a, a / x_up],
+        [x_a0 / (a + 1.0), (a + 1.0) / x_b0, lam_lo, lam_up],
         eta,
     )
     i, sp = _locate(par, pcuts[zone], npar[zone])
@@ -214,23 +231,32 @@ def _log_pq(a, x):
     # for y >= 0, ln P the same with -y and -T; y^2 = a phi
     y = eta * jnp.sqrt(0.5 * a)
     sign = jnp.where(y < 0.0, -1.0, 1.0)
-    rt = jnp.sqrt(2.0 * math.pi * a)
+    # sqrt(2 pi) sqrt(a): 2 pi a overflows from a = 2.9e307
+    rt = math.sqrt(2.0 * math.pi) * jnp.sqrt(a)
     yt = jnp.where(in_t, jnp.abs(y), 0.0)
     ft = jnp.where(in_t, f, 0.0)
-    temme = -a * phi_t + jnp.log(0.5 * erfcx(yt) + sign * ft / rt)
+    # With d exact, a phi as y^2: phi = d^2/2 is subnormal for |d| < 2e-154,
+    # which a = 1e307 reaches within 0.2 sd of the median, and flushed to 0.
+    # The barrier stops XLA reassociating y * y into a eta^2 when a is a
+    # compile-time constant.
+    if d is None:
+        a_phi = a * phi_t
+    else:
+        yb = jax.lax.optimization_barrier(y)
+        a_phi = yb * yb
+    temme = -a_phi + jnp.log(0.5 * erfcx(yt) + sign * ft / rt)
 
     # Below and above the Temme zone, -a phi = -(x - a) + a ln lambda. In
     # this form d/da is ln lambda up to O(1) terms; differentiating -a phi
     # as a product cancels two terms of size x/a, which at x = 1e8 in
     # float32 left 13.6 for 17.7.
-    ln_lam = _log_ratio(x_lu, a)
     direct = jnp.select(
         [in_a0, in_b0, is_low, is_up],
         [
             a * jnp.log(x_a0) - x_a0 + f,
             (a - 1.0) * jnp.log(x_b0) - x_b0 + ln_a + f,
-            a * ln_lam - (x_lu - a) - half_ln_2pi_a + f,
-            (a - 1.0) * ln_lam - (x_lu - a) - half_ln_2pi_a + f,
+            a * ln_lam - x_less_a - half_ln_2pi_a + f,
+            (a - 1.0) * ln_lam - x_less_a - half_ln_2pi_a + f,
         ],
         temme,
     )

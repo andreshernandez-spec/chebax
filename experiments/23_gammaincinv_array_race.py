@@ -35,22 +35,26 @@ tail, for array and tfp.
 
 FINDINGS (2026-11-02, RTX 3080 Laptop, reproduced by this script)
 -----------------------------------------------------------------
-- gammaincinv_array costs the same on every layout: float64 5.7-6.0 us
-  per value and 7.3-7.4 us per value_and_grad on one CPU core, 180-184 /
-  219-226 ns on the GPU; float32 2.4-2.5 / 4.1-4.3 us and 12.7 / 19.2 ns.
+- gammaincinv_array's values cost the same on every layout: float64
+  5.6-5.8 us on one CPU core and 188-195 ns on the GPU, float32 2.4-2.5 us
+  and 13.3 ns. value_and_grad is 7.4-7.5 us / 229-237 ns until some a
+  passes 1e3, where the derivatives find the unrounded root again:
+  10.6 us / 358 ns on "wide" (float32 7.4 us / 37.6 ns).
 - TFP's cost follows the spread of a. Against it (a = 2.5 each / spread /
-  wide): GPU float64 0.98x / 2.4x / 7.7x on values and 0.95x / 2.4x / 7.6x
-  on value_and_grad; GPU float32 2.7x / 7.3x / 36x and 2.1x / 6.0x / 28x.
-  One CPU core float64 0.61x / 1.6x / 5.1x and 0.59x / 1.6x / 4.9x; CPU
-  float32 0.19x / 0.51x / 2.7x and 0.14x / 0.40x / 2.0x.
+  wide): GPU float64 0.93x / 2.3x / 7.3x on values and 0.91x / 2.3x / 4.8x
+  on value_and_grad; GPU float32 2.6x / 7.0x / 34x and 2.0x / 5.8x / 14x.
+  One CPU core float64 0.61x / 1.6x / 5.2x and 0.57x / 1.6x / 3.4x; CPU
+  float32 0.19x / 0.50x / 2.8x and 0.14x / 0.38x / 1.1x.
 - Round trips: the array path is within 1.0e-14 (float64) and 8.4e-6
   (float32); TFP is 2.0e-11 and 1.1e-2 on "wide", and 3.0e-5 in float32 on
   "spread".
 - When a is one value the scalar path is faster (GPU float64 136 vs
-  180 ns, float32 2.7 vs 12.7 ns, CPU float64 5.1 vs 6.0 us); the plain
+  188 ns, float32 2.7 vs 13.3 ns, CPU float64 4.9 vs 5.7 us); the plain
   name runs it whenever a is passed as one value.
-- Compile, CPU: 2-3 s for the array path's values and ~30 s for its
-  value_and_grad (TFP 1-2 s); GPU 6-8 s and 9-12 s.
+- Compile, one pinned CPU core: 3 s for the array path's values and
+  93-99 s for its value_and_grad (TFP 1-2 s); unpinned, value_and_grad
+  takes ~42 s, 26 s of it without the large-a root (2^14 elements). GPU
+  6-10 s and 14-18 s.
 
 WHAT IT DOES NOT ESTABLISH
 --------------------------

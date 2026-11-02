@@ -1067,14 +1067,31 @@ The array path:
   converged solve sits at the rounding of its target's log, and one that
   stopped short returns nan.
 - Derivatives from the implicit function theorem on the same ln P and
-  ln Q, by AD, so they work in both modes and to any order, d2x/da2
-  included. Above a = 1e3, dx/dp is the density in closed form at the root
-  itself: L_x at the float x is off by its change over one float step,
-  eps sqrt(a) (1 + |z|), 0.3% at a = 1e30. The root is one Halley step
-  from x in t, with the exact curvature L'' = L' (g' - L') of
-  g = ln(x pdf); a Newton step left 3.4e-4. Against the uniform expansion
-  dx/dp is within 2.3e-13 up to a = 1e25 and 5.7e-6 at 1e30 (the scalar
-  path, in Temme's variable, keeps full accuracy there).
+  ln Q, by AD, in both modes and to second order, d2x/da2 included.
+  1/pdf takes its value from exp(ln p) |L_x| and its derivatives from the
+  closed-form density, whose x-derivative (a - 1)/x - 1 has no
+  cancellation: differentiating ln p + ln L_x puts two terms of size 1/x
+  against each other, and d2x/dp2 at a = 1, p = 1e-20 was 98304 for 1
+  (-3 at p = 1e-7 in float32).
+- Above a = 1e3 both derivatives are taken at the root found again,
+  unrounded. L_x at the float x is off by its change over one float
+  step, eps sqrt(a) (1 + |z|): 0.3% at a = 1e30, and at a = 1e35,
+  p = 1e-20 x rounds to a, nine standard deviations from the root, where
+  one Halley step from x gave dx/dp 2e17 times too small. `_log_pq` takes
+  d = x/a - 1 exactly instead of x, and Halley steps in t from the
+  Wilson-Hilferty point (O(z^3/a) off there) converge in at most 3 on 2e4
+  random lanes; the result is nan if they did not. dx/da there is
+  (1 + d) - (dL/d ln a)/(dL/dd): slopes in a and x carry tangents of size
+  1/a, flushed to zero from a ~ 2e307. With d exact, a phi = y^2: phi
+  alone is subnormal for |d| < 2e-154.
+- Every finite a. Above a = 1e36 (1e18 in float32) every p in (0, 1) has
+  |z|/sqrt(a) < eps/4, so the quantile is a itself; the solve there met
+  1/a subnormal from 4.5e307, which jit flushed inside (x - a)/a. The
+  lower-tail start takes lnGamma(a + 1)/a - ln a by Stirling above
+  a = 100 (lnGamma overflowed, and gammaincinv_array(1e306, 0.3) was
+  nan), the bracket's top is at least x = a, and sqrt(2 pi a) is
+  sqrt(2 pi) sqrt(a) here and in the scalar path's Temme solve, whose
+  dx/dp was 0 from a = 2.9e307 (and from 9e307 through 2/a, flushed).
 - The masks sit in the tangent coefficients: a nan or 0 placed on the
   tangent is not linear in it, and reverse mode returned 0 where x is nan.
 
@@ -1091,21 +1108,28 @@ XLA on the CPU (jax 0.11):
   emitter, 0.5 s with the old one (`--xla_cpu_use_fusion_emitters=false`):
   LLVM spends it on one elementwise fusion. Which fusions trip it depends
   on their shape, not on one operation: its gradients compile in 0.8 s,
-  the array quantile's values in ~1 s and its value_and_grad in ~25 s.
+  the array quantile's values in ~1 s and its value_and_grad in ~42 s
+  (26 s of it without the large-a root; 93-99 s on one pinned core).
 
 Accuracy (`tests/test_gammaincinv_array.py`): the float64 round trip
 against mpmath is 6.2e-13 for a <= 1000 (the gammainc tables' own floor
 there; the scalar path gives 9.3e-13 at the same point) and 2.3e-12 at
 a = 1e6, p = 1e-300 (where one float step of x moves P by 8e-12).
 Gradients 7.9e-15, d2x/dp2 1.4e-13, d2x/da2 4.6e-12; float32 3.3e-5.
+Above a = 1e3 against mpmath dx/dp is within 2.3e-13 and dx/da 3.6e-16,
+and against the scalar path's Temme solve to a = 1e35, 1.1e-13 and
+2.2e-16. The exponential case a = 1 is exact to 2.4e-14 through
+d2x/dp2 (1.9e-6 in float32).
 
 Speed (`experiments/23`, p uniform, against TFP's igammainv, which is
 what pytensor's JAX backend falls back to for a per element; TFP 0.25
-does not import under jax 0.11, tfp-nightly does): the array path costs
-the same on every layout of a, and TFP's cost follows the spread. GPU
-float64 0.98x / 2.4x / 7.7x on values for a = 2.5 each / spread / wide,
-float32 2.7x / 7.3x / 36x; one CPU core float64 0.61x / 1.6x / 5.1x,
-float32 0.19x / 0.51x / 2.7x. TFP's round trip is 2.0e-11 in float64 and
-1.1e-2 in float32 on the wide layout, against 1.0e-14 and 8.4e-6 here.
-When a is one value the scalar path is faster (GPU float32 2.7 vs
-12.7 ns), and the plain name runs it.
+does not import under jax 0.11, tfp-nightly does): the array path's
+values cost the same on every layout of a, and TFP's cost follows the
+spread. GPU float64 0.93x / 2.3x / 7.3x on values for a = 2.5 each /
+spread / wide, float32 2.6x / 7.0x / 34x; one CPU core float64
+0.61x / 1.6x / 5.2x, float32 0.19x / 0.50x / 2.8x. value_and_grad costs
+more once some a passes 1e3, where the root is found again (GPU float64
+358 ns on "wide" against 229 ns), and is 4.8x TFP there. TFP's round trip
+is 2.0e-11 in float64 and 1.1e-2 in float32 on the wide layout, against
+1.0e-14 and 8.4e-6 here. When a is one value the scalar path is faster
+(GPU float32 2.7 vs 13.3 ns), and the plain name runs it.

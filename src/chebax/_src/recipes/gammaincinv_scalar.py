@@ -166,12 +166,17 @@ def _huge_parts(a, s, temme):
     dP/ds is x^a e^-x / Gamma(a) times dx/ds, which is
     e^(-s^2) / sqrt(pi) e^(-1/(12 a)) eta / (lambda - 1), Stirling's
     remainder kept to 1/(12 a) (the next term is below 1e-33 here)."""
-    eta = s * jnp.sqrt(2.0 / a)
+    # sqrt(2)/sqrt(a): 2/a is subnormal from a = 9e307, flushed to 0, and
+    # dx/dp was 0 there
+    eta = s * (math.sqrt(2.0) / jnp.sqrt(a))
     r = _LAM_SERIES[-1]
     for c in _LAM_SERIES[-2::-1]:
         r = r * eta + c
     r = 1.0 + eta * r  # (lambda - 1) / eta
-    lp, lq = _gl.temme_log_pq(s, s * s, temme(eta), jnp.sqrt(2.0 * jnp.pi * a))
+    # sqrt(2 pi) sqrt(a): 2 pi a overflows from a = 2.9e307, and dx/dp was
+    # 0 there
+    rt = math.sqrt(2.0 * math.pi) * jnp.sqrt(a)
+    lp, lq = _gl.temme_log_pq(s, s * s, temme(eta), rt)
     lden = -s * s - 0.5 * math.log(math.pi) - 1.0 / (12.0 * a) - jnp.log(r)
     return lp, lq, lden, eta * r
 
@@ -273,7 +278,16 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
 
     small = use_recipe != "large"
     return _k.solve(
-        a, ltp, ltq, z, upper, log_pq, lim.n_gamma, ceiling, seam, small=small
+        a,
+        ltp,
+        ltq,
+        z,
+        upper,
+        log_pq,
+        lim.n_gamma,
+        ceiling=ceiling,
+        seam=seam,
+        small=small,
     )
 
 

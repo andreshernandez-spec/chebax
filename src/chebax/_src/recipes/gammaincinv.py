@@ -126,13 +126,14 @@ def gammaincinv_array(a, p):
     below the smallest normal float return 0.0, and a solve that is
     neither within the residual bar nor one float step from the root
     returns nan. The upper half is solved against Q, so p within rounding
-    of 1 still resolves; any finite a keeps its resolution (the solve
-    works in ln(x/a)).
+    of 1 still resolves.
 
-    Differentiable in a and p, in both AD modes and to any order (second
-    derivatives in a included): the implicit function theorem on the same
-    per-element ln P and ln Q the solve inverted (gammainc_array's).
-    Active jax float dtype."""
+    Differentiable in a and p, in both AD modes and to second order
+    (second derivatives in a included): the implicit function theorem on
+    the same per-element ln P and ln Q the solve inverted
+    (gammainc_array's), and above a = 1e3 at the root found again,
+    unrounded. Every finite a: above 1e36 (1e18 in float32) the quantile
+    is a itself. Active jax float dtype."""
     from chebax._src.recipes import gammaincinv_array as _array
 
     return _array.inv(*_broadcast(a, p))

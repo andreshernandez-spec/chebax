@@ -41,6 +41,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes._common import canon_tag, newton_bisect, solver_limits
 
+_LN2PI = math.log(2.0 * math.pi)
 # |t| below this, x = a + a expm1(t): x/a in (0.6, 1.65)
 _NEAR = 0.5
 # e^t - 1 - t = t^2 (1/2! + t/3! + ...): on |t| < 1/2 the terms past
@@ -60,14 +61,20 @@ def cinv_targets(yc):
     return (jnp.log1p(-yc), jnp.log(yc), -jax.scipy.special.ndtri(yc), yc < 0.5)
 
 
-def _phi(t):
-    """e^t - 1 - t, without the cancellation near t = 0."""
+def _a_phi(a, t):
+    """a (e^t - 1 - t), without the cancellation near t = 0, and as
+    (sqrt(a) t)^2 times its series there: e^t - 1 - t alone is subnormal
+    for |t| < 2e-154, which a = 1e307 reaches at the median, and is
+    flushed to zero."""
     near = jnp.abs(t) < _NEAR
     tn = jnp.where(near, t, 0.0)
     s = _PHI[-1]
     for c in _PHI[-2::-1]:
         s = s * tn + c
-    return jnp.where(near, tn * tn * s, jnp.expm1(t) - t)
+    # the barrier stops XLA reassociating st * st into a t^2 when a is a
+    # compile-time constant: t^2 is the subnormal this avoids
+    st = jax.lax.optimization_barrier(jnp.sqrt(a) * tn)
+    return jnp.where(near, st * st * s, a * (jnp.expm1(t) - t))
 
 
 def log_xpdf(a, t, small=False):
@@ -87,7 +94,7 @@ def log_xpdf(a, t, small=False):
     am = jnp.where(stir, 1.0, a)
     lga = jax.scipy.special.gammaln(am)
     direct = am * (t + jnp.log(am)) - am * jnp.exp(t) - lga
-    return jnp.where(stir, lead - ab * _phi(t), direct)
+    return jnp.where(stir, lead - _a_phi(ab, t), direct)
 
 
 def _start(a, ltp, ltq, z, upper, ln_a):
@@ -112,7 +119,18 @@ def _start(a, ltp, ltq, z, upper, ln_a):
     c = z / (3.0 * jnp.sqrt(a)) - 1.0 / (9.0 * a)
     pos = c > -1.0
     t_wh = 3.0 * jnp.log1p(jnp.where(pos, c, 0.0))
-    t_lo = (ltp + gammaln(a + 1.0)) / a - ln_a
+    # (ln p + lnGamma(a + 1))/a - ln a; above a = 100 by Stirling, since
+    # lnGamma(a + 1) overflows from a ~ 1e305 (gammaincinv_array(1e306,
+    # 0.3) was nan)
+    big = a > 100.0
+    ab = jnp.where(big, a, 1e3)
+    am = jnp.where(big, 1.0, a)
+    stirling = (_LN2PI + jnp.log(ab)) / (2.0 * ab) + 1.0 / (12.0 * ab * ab)
+    t_lo = jnp.where(
+        big,
+        ltp / ab - 1.0 + stirling,
+        (ltp + gammaln(am + 1.0)) / am - jnp.log(am),
+    )
     r = -ltq - gammaln(a)
     xa = jnp.maximum(r, 1.0)
     for _ in range(3):
@@ -130,6 +148,7 @@ def solve(
     upper,
     log_pq,
     iters,
+    *,
     ceiling=False,
     seam=None,
     rtol=None,
@@ -198,7 +217,9 @@ def solve(
 
     shape = jnp.shape(ltp)
     lo0 = jnp.broadcast_to(lim.lo - ln_a, shape)
-    hi0 = jnp.broadcast_to(lim.v_hi - ln_a, shape)
+    # at least x = a: for a within 4 ulps of the largest float the ceiling
+    # would sit below the mode, and gammaincinv(max, 0.3) was nan
+    hi0 = jnp.broadcast_to(jnp.maximum(lim.v_hi - ln_a, 0.0), shape)
     t0 = jnp.clip(_start(a, ltp, ltq, z, upper, ln_a), lo0, hi0)
     if not small:
         t = snap(newton_bisect(f_and_df, t0, lo0, hi0, iters, snap=snap))

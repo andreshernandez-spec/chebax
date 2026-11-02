@@ -1009,3 +1009,103 @@ through `chebax.__getattr__` and return the `_scalar` function, and the
 one-argument factory calls warn and return the `_frozen` object (a bool in
 x's place is besseli's 0.4 positional `scaled`). `gammainc_elem` was never
 released and has no alias.
+
+## 37. Gamma quantiles with a per element (2026-11-02)
+
+gammaincinv, gammainccinv and chi2inv took one a per call, and a shape
+per element went through vmap of that path, whose lax.conds on a then
+run every branch for every element, jax's gammainc among them (a
+6-element call did not finish compiling in 12 minutes on the CPU). They
+now have the two paths gammainc has: `_scalar` (one traced a, any a > 0)
+and `_array` (a per element, a >= 0.1), and the plain names pick one from
+the shape of a. Both run one Newton solve, `gammaincinv_kernel.py`, on
+their own ln P and ln Q: the scalar path on the tables its a-box picks,
+the array path on `gammainc_array`'s patches.
+
+The solve, changed for both paths:
+
+- It is in t = ln(x/a) instead of v = ln x. v carries eps ln a of
+  absolute error, which in float32 is 1e-6 relative to x at a = 1e5: the
+  scalar path returned nan in the deep tails from there and for every p
+  from a = 1e7 to 1e10. Near the mode x = a + a expm1(t), which reaches
+  every float (a e^t steps two floats at a time), and each Newton step
+  starts from the t the rounded x stands for, so the slope and the
+  residual describe one point; at a = 5e14 in float32 one float step of x
+  is 1.5 standard deviations.
+- The lower tail starts from the larger of Wilson-Hilferty and the
+  asymptotic x^a / Gamma(a+1) = p, which is never above the root since
+  P <= x^a / Gamma(a+1). Below p = 0.01 the asymptotic alone started at
+  x ~ a/e at a = 1e17, where ln P is -1e16 and the slope has no digits.
+- A solve is accepted when its residual is within the bar or changes
+  sign across the next float, which makes x the root to within one float
+  step. From a ~ 1e20 in float64 one float step moves ln P by more than
+  the bar.
+- Everything after the loop (x, both neighbours, and the ceiling for
+  gammainccinv) is one stacked call, so the program holds the residual
+  twice instead of five times. The floor needs no residual: at the smallest normal x,
+  P = x^a / Gamma(a+1) to rounding.
+
+The scalar path keeps judging its bar on the side its tables compute
+directly. Below a = 10 they give Q as 1 - P under x = 8, which in float32
+is up to 1e-2 off once Q is small; judged on Q, those solves came back
+nan. The array path computes Q there directly. Its small-a mode skips the
+near-mode x and the Stirling density, which cost 28% of its GPU time; it
+is 4-5% slower than the v = ln x solve below a = 10 and 7-11% above
+(`experiments/09`).
+
+The array path:
+
+- Halley steps, at the price of a Newton step: the curvature is exact
+  and free, since with g = ln(x pdf) either side's log S has
+  S'' = S' (g' - S') and g' = -a expm1(t), so newton_bisect takes the
+  slope df (1 - f f''/(2 df^2)). 8 steps in float64 and 6 in float32,
+  twice the most any of 1e5 random lanes needed for the tail probability
+  (a to 1e30, p down to the smallest normal); Newton needed 7 and 4 by a
+  looser measure. The scalar path stays on Newton: its 40 steps are
+  fixed, so Halley would only add work per step (19% on the GPU).
+- A tighter bar, 256 eps |ln target|: both logs are accurate there, so a
+  converged solve sits at the rounding of its target's log, and one that
+  stopped short returns nan.
+- Derivatives from the implicit function theorem on the same ln P and
+  ln Q, by AD, so they work in both modes and to any order, d2x/da2
+  included. Above a = 1e3, dx/dp is the density in closed form at the root
+  itself: L_x at the float x is off by its change over one float step,
+  eps sqrt(a) (1 + |z|), 0.3% at a = 1e30. The root is one Halley step
+  from x in t, with the exact curvature L'' = L' (g' - L') of
+  g = ln(x pdf); a Newton step left 3.4e-4. Against the uniform expansion
+  dx/dp is within 2.3e-13 up to a = 1e25 and 5.7e-6 at 1e30 (the scalar
+  path, in Temme's variable, keeps full accuracy there).
+- The masks sit in the tangent coefficients: a nan or 0 placed on the
+  tangent is not linear in it, and reverse mode returned 0 where x is nan.
+
+XLA on the CPU (jax 0.11):
+
+- On AVX-512 CPUs, XLA hoisting the a-only work of `_log_pq` out of the
+  Newton loop (while-loop invariant code motion) gave wrong roots, 8e-9
+  off at a = 30, p = 0.956 among 128 lanes and depending on the array
+  length, and nan on other lanes. Capping the ISA at AVX2, the old CPU
+  fusion emitter, or disabling that pass each avoid it; the array path
+  hands `_log_pq` a + 0 x, which XLA cannot fold, so nothing is hoisted.
+  gammainc_array alone and inside loops agrees between AVX-512 and AVX2.
+- gammainc_array's values take ~23 s to compile with the new CPU fusion
+  emitter, 0.5 s with the old one (`--xla_cpu_use_fusion_emitters=false`):
+  LLVM spends it on one elementwise fusion. Which fusions trip it depends
+  on their shape, not on one operation: its gradients compile in 0.8 s,
+  the array quantile's values in ~1 s and its value_and_grad in ~25 s.
+
+Accuracy (`tests/test_gammaincinv_array.py`): the float64 round trip
+against mpmath is 6.2e-13 for a <= 1000 (the gammainc tables' own floor
+there; the scalar path gives 9.3e-13 at the same point) and 2.3e-12 at
+a = 1e6, p = 1e-300 (where one float step of x moves P by 8e-12).
+Gradients 7.9e-15, d2x/dp2 1.4e-13, d2x/da2 4.6e-12; float32 3.3e-5.
+
+Speed (`experiments/23`, p uniform, against TFP's igammainv, which is
+what pytensor's JAX backend falls back to for a per element; TFP 0.25
+does not import under jax 0.11, tfp-nightly does): the array path costs
+the same on every layout of a, and TFP's cost follows the spread. GPU
+float64 0.98x / 2.4x / 7.7x on values for a = 2.5 each / spread / wide,
+float32 2.7x / 7.3x / 36x; one CPU core float64 0.61x / 1.6x / 5.1x,
+float32 0.19x / 0.51x / 2.7x. TFP's round trip is 2.0e-11 in float64 and
+1.1e-2 in float32 on the wide layout, against 1.0e-14 and 8.4e-6 here.
+When a is one value the scalar path is faster (GPU float32 2.7 vs
+12.7 ns), and the plain name runs it.

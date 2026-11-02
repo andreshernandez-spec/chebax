@@ -55,9 +55,10 @@ Keep these API conventions:
 | `scaled=True` | The family's documented exponential scaling |
 
 The plain name always exists. A family exposes a suffixed name for every
-path it has and only for those: gammainc has all three, besselk has
-`_scalar` and `_frozen`, besselj only `_frozen`, and a function with a single
-path (stdtr, the quantiles) has only its plain name. The plain name never
+path it has and only for those: gammainc has all three, gammaincinv
+`_scalar` and `_array`, besselk `_scalar` and `_frozen`, besselj only
+`_frozen`, and a function with a single path (stdtr, betaincinv) has only
+its plain name. The plain name never
 picks `_frozen`; where `_frozen` is the only path it calls it, and the
 parameters must then be concrete. Shape decides between `_scalar` and
 `_array`: a parameter holding one value, whatever its shape, is one value.
@@ -77,8 +78,9 @@ A family's public entry points live in its `<family>.py`. Where its paths
 have separate implementations, each gets its own module named after the
 suffix (`gammainc_scalar.py`, `gammainc_array.py`, `gammainc_frozen.py`), and
 the entry points import them when first called, so a program loads only the
-tables of the paths it uses. A family whose paths share one implementation
-keeps it beside the entry points.
+tables of the paths it uses. Code the paths share and that reads no table
+goes in `<family>_kernel.py` (gammaincinv's solve). A family whose paths
+share one implementation keeps it beside the entry points.
 
 ## Functions and module organization
 

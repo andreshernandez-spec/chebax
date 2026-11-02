@@ -40,8 +40,8 @@ and one name per path for callers who know which path they want:
 
 The plain name picks `_scalar` for a parameter holding one value and `_array`
 for an array, from the shape, so the choice is fixed at trace time. Only
-gammainc has an `_array` path so far; for the other families an array of
-parameters raises and names `chebax.pergroup`. Log forms are `log_name...`.
+gammainc and its inverses have an `_array` path so far; for the other
+families an array of parameters raises and names `chebax.pergroup`. Log forms are `log_name...`.
 The 0.4 spellings (`besselk_fn`, the one-argument `besselk(nu)`) still work
 for now, with a DeprecationWarning naming the replacement.
 
@@ -58,7 +58,8 @@ for now, with a DeprecationWarning naming the replacement.
 | `gammainc` | `gammainc(a, x)`, `gammaincc`, `log_gammainc`, `log_gammaincc` | `_scalar`, `_array`, `_frozen` (P and Q) | via `grad` | a ≥ 0.1 (above 10 via Temme-zone tables, whose v = 10/a axis reaches a = ∞), x ≥ 0; branchless (no while_loop). `_scalar`: 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`). `_array`: one small 2-D patch per element (144 coefficients, 49 in float32), 2.3–18x vs jax's gammainc on values and 2.8–23x on value_and_grad on GPU f64, 4.5–66x / 6.6–95x f32 (`experiments/22`) |
 | `hyp1f1` | `hyp1f1(a, b, x)`, `log_hyp1f1(a, b, x)` | `_scalar`, `_frozen` | via `grad` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
 | spherical | `spherical_jn/yn(n, x)` | `_frozen` | — | n ∈ [0, 9], via half-integer tables |
-| quantiles | `betaincinv`, `gammaincinv`, `gammainccinv`, `chi2inv`, `stdtr`, `stdtrit` | — | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
+| Gamma quantiles | `gammaincinv(a, p)`, `gammainccinv(a, y)`, `chi2inv(k, p)` | `_scalar`, `_array` | via `grad` (IFT) | jax#5350; `_scalar` any a > 0 (jax's gammainc below 0.1), `_array` a ≥ 0.1 with derivatives to any order, d²/da² included; both keep their resolution to a = 1e30 and beyond. `_array` vs TFP's `igammainv` on GPU: 0.98–7.7x f64 and 2.7–36x f32 on values, growing with the spread of a (`experiments/23`) |
+| quantiles | `betaincinv`, `stdtr`, `stdtrit` | — | via `grad` (IFT) | jax#2399/#20358; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | `vonmises_cdf/icdf` | — | via `grad` | κ ∈ [0, 50] |
 | erf family | `dawsn`, `erfcx` | — | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | Lambert W | `lambertw(x, k)` | — | — | both real branches, jax#13680 |

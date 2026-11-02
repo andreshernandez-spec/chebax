@@ -1,0 +1,21 @@
+float64, ns per element (value / value_and_grad in a and p); cpu N = 16384 (cpu), gpu N = 1048576 (NVIDIA GeForce RTX 3080 Laptop GPU)
+round trip, a = 2.5 each : array 1.4e-15, tfp 2.7e-15
+round trip, spread       : array 2.4e-15, tfp 3.6e-14
+round trip, wide         : array 1.0e-14, tfp 2.0e-11
+cpu a = 2.5 each  | array   5953.1 /   7353.9 (compile 2 / 30 s) | tfp   3643.8 /   4303.3 (compile 1 / 2 s) | scalar   5086.9 /   5091.8 (compile 5 / 12 s)
+cpu spread        | array   5787.2 /   7328.2 (compile 3 / 31 s) | tfp   9243.1 /  11454.6 (compile 1 / 2 s)
+cpu wide          | array   5686.0 /   7258.0 (compile 2 / 31 s) | tfp  29072.9 /  35875.6 (compile 1 / 2 s)
+gpu a = 2.5 each  | array    180.3 /    219.2 (compile 8 / 12 s) | tfp    176.2 /    207.6 (compile 4 / 3 s) | scalar    135.9 /    141.5 (compile 13 / 32 s)
+gpu spread        | array    183.7 /    226.4 (compile 8 / 9 s) | tfp    439.2 /    534.7 (compile 3 / 3 s)
+gpu wide          | array    181.5 /    223.4 (compile 8 / 9 s) | tfp   1404.1 /   1707.7 (compile 3 / 3 s)
+
+float32, ns per element (value / value_and_grad in a and p); cpu N = 16384 (cpu), gpu N = 1048576 (NVIDIA GeForce RTX 3080 Laptop GPU)
+round trip, a = 2.5 each : array 7.7e-07, tfp 8.8e-07
+round trip, spread       : array 9.1e-07, tfp 3.0e-05
+round trip, wide         : array 8.4e-06, tfp 1.1e-02
+cpu a = 2.5 each  | array   2385.5 /   4182.8 (compile 3 / 30 s) | tfp    452.2 /    578.9 (compile 1 / 2 s) | scalar   1651.7 /   1701.2 (compile 5 / 12 s)
+cpu spread        | array   2373.3 /   4086.7 (compile 3 / 29 s) | tfp   1202.7 /   1647.7 (compile 1 / 2 s)
+cpu wide          | array   2515.6 /   4343.6 (compile 3 / 32 s) | tfp   6765.1 /   8471.1 (compile 1 / 2 s)
+gpu a = 2.5 each  | array     12.7 /     19.3 (compile 6 / 9 s) | tfp     34.3 /     39.9 (compile 6 / 4 s) | scalar      2.7 /      3.1 (compile 14 / 34 s)
+gpu spread        | array     12.7 /     19.2 (compile 6 / 9 s) | tfp     93.0 /    114.8 (compile 3 / 4 s)
+gpu wide          | array     12.7 /     19.2 (compile 6 / 9 s) | tfp    451.2 /    545.6 (compile 3 / 4 s)

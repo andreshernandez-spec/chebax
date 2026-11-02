@@ -3,8 +3,9 @@
 
 WHAT THIS MEASURES
 ------------------
-gammaincinv solves P(a, e^v) = p with 40 fixed safeguarded-Newton
-iterations. The residual CDF used to be jax.scipy.special.gammainc,
+gammaincinv_scalar solves ln P(a, x) = ln p (ln Q on the upper half) in
+t = ln(x/a) with 40 fixed safeguarded-Newton iterations
+(gammaincinv_kernel). The residual CDF used to be jax.scipy.special.gammainc,
 whose XLA lowering re-runs a whole-array while_loop EVERY Newton
 iteration; since 2026-07-31 the residual for a inside [0.1, 10] is the
 chebax gammainc recipe (fixed-degree polynomials, reconstructed once per
@@ -57,7 +58,7 @@ def main():
     jax.config.update("jax_enable_x64", True)
     import jax.numpy as jnp
 
-    from chebax._src.recipes.gammaincinv import _gammaincinv_solve
+    from chebax._src.recipes.gammaincinv_scalar import _gammaincinv_solve
 
     dev = jax.devices()[0]
     print(f"jax {jax.__version__} on {dev}, N = {N}, reps = {REPS} (medians), "
@@ -102,8 +103,8 @@ def main():
     # the JVP's dP/da term: jax's looped igamma_grad_a series vs the
     # recipe's a-directional polynomial (the in-box dispatch added with
     # the solver rewire's follow-up)
-    from chebax._src.recipes.gammaincinv import (_dPda, _dPda_recipe,
-                                                _dPda_recipe_large)
+    from chebax._src.recipes.gammaincinv_scalar import (
+        _dPda, _dPda_recipe, _dPda_recipe_large)
 
     hdr2 = f"{'dP/da term':26s} {'igamma_grad_a':>13s} {'recipe':>9s} {'ratio':>6s}  max|diff|"
     print("\n" + hdr2)
@@ -130,7 +131,7 @@ def main():
               f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")
 
     print("\nBoth columns run the SAME solver; only the residual CDF differs."
-          "\nchebax.gammaincinv end-to-end takes the recipe column for every"
+          "\nchebax.gammaincinv_scalar end-to-end takes the recipe column for every"
           "\na >= 0.1 (one lax.cond, small tables to 10 and the Temme zone"
           "\nabove) and the jax column below that.")
 

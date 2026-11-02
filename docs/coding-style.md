@@ -103,23 +103,18 @@ does not determine the boundary.
 
 ## Docstrings and comments
 
-A public numerical entry point must state what it computes, parameter and
-argument domains, scalar versus broadcasting behavior, dtype policy, endpoint
-and invalid-input behavior, and available derivatives. State a limitation next
-to the affected API, including unsupported higher derivatives. Add a small
-example when the call pattern is otherwise unclear.
+Keep both short: one line where one line works, a few for a public entry
+point, which states what it computes, its domains, its derivatives and any
+limitation. Policy the README and `docs/architecture.md` already give (dtype,
+broadcasting, the `_scalar`/`_array`/`_frozen` forms) is not repeated per
+function. A recipe's module docstring gives the factorization, panels, seams
+and floor in brief; its generator docstring records measured degrees.
 
-A recipe's module docstring explains the factorization, coordinate maps,
-panels, seams, and numerical floor. Its generator docstring records measured
-degrees and their evidence. Put a formula beside the code whose stability
-depends on it, and explain why a tempting rearrangement loses accuracy.
-
-Comments explain a choice, a boundary condition, or an invariant. Use plain
-words and short sentences. Avoid narrating assignments, repeating the code,
-or retaining a review conversation in a helper docstring. Keep review chronology
-and superseded decisions in `docs/increments.md` or a dated review, with a short
-link from the implementation when needed. Current degree measurements, floors,
-and numerical traps stay beside the relevant generator, runtime, or test.
+Comments explain a choice, a boundary condition or an invariant, in one line
+where possible. Say why a tempting rearrangement loses accuracy, with the
+number that shows it. Do not restate the code or the name. Review chronology
+and superseded decisions go in `docs/increments.md` or a dated review, not in
+the code.
 
 ## Numerical expressions
 

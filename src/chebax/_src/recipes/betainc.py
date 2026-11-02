@@ -1,39 +1,15 @@
 """Regularized incomplete beta I_x(a, b) for a, b in [0.1, 100], x in [0, 1].
 
-The library's first two-parameter recipe. Structure (DLMF 8.17.7):
+For x <= 1/2 (DLMF 8.17.7)
 
-    I_x(a, b) = exp( a ln x + b ln(1-x) - ln a - ln B(a,b) + L(a,b,x) )
+    I_x(a, b) = exp( a ln x + b ln(1-x) - ln a - ln B(a,b) + L(a,b,x) ),
 
-for x <= 1/2, where L = ln 2F1(a+b, 1; a+1; x) comes from a baked
-(x, a, b) tensor (each x-coefficient is a 2-D Chebyshev series in (a, b));
-for x > 1/2 the reflection I_x(a,b) = 1 - I_{1-x}(b,a) is used, which
-needs the tensor reconstructed at BOTH parameter orders. 1 - x is exact in
-f64 for x in [1/2, 1], so the reflection costs no accuracy; users who need
-the upper tail 1 - I_x(a, b) to relative accuracy should evaluate
-betainc(b, a)(1 - x) themselves.
-
-The (a, b) box is [0.1, 100]^2 since increment 23: four tensor panels
-split at 10 per axis (the original [0.1, 10]^2 tensor is the low-low
-panel, so in-box evaluation is unchanged to the bit), dispatched by one
-lax.switch on the scalar parameters; only the taken branch executes and
-each panel keeps its own degrees. Panel edges are ordinary points to
-~1e-14 (both neighbors fit the same function).
-
-betainc_frozen(a, b) is the eager instance (cached, numpy reconstruction).
-betainc_scalar(a, b, x) takes a and b as traced scalars (uniform per call,
-inside [0.1, 100], unchecked under trace): jax.grad works with respect to
-both shape parameters — dI/da and dI/db, which jax itself lacks
-(jax#38610) — flowing through gammaln/digamma and chebder along the
-parameter axes of the tensor. dI/dx is AD through the formula; its exact
-value is the Beta density, which the tests use as an oracle.
-
-Endpoints are handled by hard selects (I(0) = 0, I(1) = 1 exactly, interior
-lanes see raw x); gradients at exactly 0 and 1 are masked to the interior
-formula's limits and can be infinite in exact math anyway (a < 1 or b < 1).
-
-This module owns the tables. The kernel that runs on them (evaluation from
-x-series, the inverse solve) is in betainc_kernel.py, shared with
-betaincinv and stdtr, which have tables of their own.
+L = ln 2F1(a+b, 1; a+1; x) from an (x, a, b) tensor; above 1/2 the reflection
+1 - I_{1-x}(b, a), with 1 - x exact. For the upper tail to relative accuracy use
+betainc(b, a, 1 - x). Four tensor panels split at 10 per axis, one lax.switch
+on the scalar parameters; panel edges agree to ~1e-14. Differentiable in a and
+b (jax lacks dI/da, jax#38610) and x. This module owns the tables; the kernel is
+in betainc_kernel.py, shared with betaincinv and stdtr.
 """
 
 import functools
@@ -57,10 +33,8 @@ from chebax._src.recipes._common import (
 from chebax._src.recipes.betainc_kernel import eval_betainc, log_direct
 from chebax._src.series import ChebSeries, _chebval
 
-# panel registry: (a-high?, b-high?) -> (tensor, a-box, b-box). The
-# LOxLO panel is the original tensor, so in-box users pay nothing; the
-# wide panels (increment 23) extend the box to [0.1, 100]^2 and are
-# reached only through the runtime switch below.
+# (a-high?, b-high?) -> (tensor, a-box, b-box); the wide panels are reached
+# only through the runtime switch
 _PANELS = {
     (0, 0): (_bt.TENSOR, (_bt.ALO, _bt.AHI), (_bt.ALO, _bt.AHI)),
     (0, 1): (_bw.TENSOR_LOHI, (_bw.ALO, _bw.ASPLIT), (_bw.ASPLIT, _bw.AHI)),
@@ -117,12 +91,9 @@ def tensor_coefs_traced(a, b):
 
 
 def with_panel_series(a, b, make):
-    """Run make(cab, cba) under the panel switch: a, b traced scalars in
-    [0.1, 100], one lax.switch on which quadrant they sit in (only the
-    taken branch executes; branch-internal series lengths differ freely
-    because make's OUTPUT shape is panel-independent). The reflection
-    needs both orientations, so each branch builds (a, b) and (b, a)
-    from their own, possibly different, panels."""
+    """make(cab, cba) under one lax.switch on the (a, b) quadrant; each branch
+    builds both orientations from their own panels, and make's output shape is
+    panel-independent."""
 
     def branch(pa, pb):
         def f():
@@ -143,23 +114,14 @@ def with_panel_series(a, b, make):
 
 
 def with_edge_slopes(a, b, x, out):
-    """Splice the endpoint densities into an already-evaluated CDF.
-
-    Applied OUTSIDE the panel switch: a custom_jvp inside a lax.switch
-    branch has no transpose under vmap, which is how the per-group path
-    reaches it (measured: pergroup + grad raised a broadcast_in_dim shape
-    error). The values are untouched either way."""
+    """Splice the endpoint densities into a CDF, outside the panel switch: a
+    custom_jvp inside a switch branch has no transpose under vmap (pergroup)."""
     return out + edge_slope(_edge_density(a, b, x), x)
 
 
 def _edge_density(a, b, x):
-    """The Beta density AT an endpoint, 0 in between.
-
-    Both endpoint values are picked by a hard select, so AD reads a slope
-    of 0 there even where the density is exact and finite: grad of
-    betainc_scalar(1, 3, .) at x = 0 gave 0 for a true 3 (review,
-    2026-08-02). f(0) = 1/B(1, b) = b when a = 1, and f(1) = 1/B(a, 1) = a
-    when b = 1; either side is 0 above its 1 and infinite below it."""
+    """The Beta density at an endpoint, 0 in between: f(0) = b at a = 1, f(1) = a
+    at b = 1, 0 above 1 and inf below."""
     d0 = jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, b))
     d1 = jnp.where(b < 1.0, jnp.inf, jnp.where(b > 1.0, 0.0, a))
     return jnp.where(x == 0.0, d0, jnp.where(x == 1.0, d1, 0.0))
@@ -190,12 +152,8 @@ def _betainc_cached(a, b, _tag):
 
 
 def betainc_scalar(a, b, x):
-    """I_x(a, b) with a, b as (traceable) scalars, differentiable in all three.
-
-    a and b must be uniform per call and inside [0.1, 100] (unchecked
-    under trace). Reconstruction costs two tensor contractions per call
-    (of the panel the parameters land in), not per point; jit
-    constant-folds them when a, b are static."""
+    """I_x(a, b) for traceable scalar a, b in [0.1, 100] (unchecked under trace),
+    differentiable in all three; two tensor contractions per call."""
     a = canon_param(a, "betainc_scalar", "a")
     b = canon_param(b, "betainc_scalar", "b")
     x = jnp.asarray(x)
@@ -204,20 +162,10 @@ def betainc_scalar(a, b, x):
 
 
 def log_betainc_scalar(a, b, x):
-    """ln I_x(a, b), same contract as betainc_scalar but with no underflow
-    floor in the lower tail.
-
-    For x <= 1/2 the tables already hold the log (betainc_scalar exponentiates
-    it), so ln I evaluates directly: valid to arbitrarily negative values
-    (ln I ~ a ln x as x -> 0), differentiable in a, b and x, shapes
-    uniform per call in [0.1, 100]^2. For x > 1/2 the reflection gives
-    ln(1 - exp(.)) via log1p: absolutely accurate in I, so the error in
-    ln I is ~eps/I there - fine where I is O(1), NOT a deep-tail path.
-    Both deep tails at full log accuracy: lower tail directly (x <= 1/2),
-    upper tail ln(1 - I_x(a, b)) = log_betainc_scalar(b, a, 1 - x), where
-    1 - x is exact in f64 for x >= 1/2. x <= 0 returns -inf, x >= 1
-    returns 0. This is the log-CDF a censored likelihood wants when the
-    censored mass is tiny (log(betainc_scalar(...)) underflows first)."""
+    """ln I_x(a, b) as betainc_scalar, no underflow floor in the lower tail. For
+    x <= 1/2 the tables hold the log; above, log1p of the reflection errs ~eps/I,
+    so for the upper tail use log_betainc_scalar(b, a, 1 - x). x <= 0 gives -inf,
+    x >= 1 gives 0."""
     a = canon_param(a, "log_betainc_scalar", "a")
     b = canon_param(b, "log_betainc_scalar", "b")
     x = jnp.asarray(x)
@@ -237,11 +185,8 @@ def _log_eval(a, b, x, cab, cba):
 
 
 def betainc(a, b, x=None):
-    """I_x(a, b) for one pair a, b in [0.1, 100]: betainc_scalar, which has
-    no per-element form (chebax.pergroup gives one pair per group).
-
-    betainc(a, b) with no x is the 0.4 factory and returns
-    betainc_frozen(a, b), with a DeprecationWarning."""
+    """I_x(a, b) for one pair a, b in [0.1, 100] (betainc_scalar; no per-element
+    form, use chebax.pergroup). x=None is the deprecated 0.4 factory."""
     if x is None:
         return deprecated_factory("betainc", betainc_frozen, a, b)
     return betainc_scalar(a, b, x)
@@ -253,8 +198,5 @@ def log_betainc(a, b, x):
 
 
 def betainc_frozen(a, b):
-    """I_x(a, b) for a, b in [0.1, 100]. Cached per (a, b); no mpmath.
-
-    a, b may be python numbers or concrete jax scalars; the bounded cache
-    is keyed per x64 mode."""
+    """I_x(a, b) for concrete a, b in [0.1, 100], cached per (a, b)."""
     return _betainc_cached(float(a), float(b), canon_tag())

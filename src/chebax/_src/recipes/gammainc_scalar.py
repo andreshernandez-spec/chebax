@@ -1,12 +1,6 @@
-"""Traced gammainc with one a per call: P, Q and their logs for a scalar a
-(traced or not) and an array x.
-
-One scalar lax.cond at a = 10 picks the small-a tables (gammainc_small) or
-the Temme-zone tables (gammainc_large); only the taken branch executes, and
-each reconstructs its coefficient vectors once per call, not per point
-(jit constant-folds that when a is static). jax.grad works in a through
-the tables' parameter axis and in x through the formulas. Inputs arrive
-normalized from the entry points in gammainc.py.
+"""gammainc with one traceable a per call: P, Q and their logs. One lax.cond at
+a = 10 picks gammainc_small or gammainc_large, each building its coefficients
+once per call. Inputs arrive normalized from gammainc.py.
 """
 
 import jax
@@ -19,9 +13,7 @@ from chebax._src.recipes._common import edge_slope
 
 
 def _dispatch(a, x, small, kind):
-    """One scalar cond at a = 10: the small-a tables or the Temme-zone
-    large-a path. Only the taken branch executes; each builds its own
-    series."""
+    """small() or the large-a path, by one scalar cond at a = 10."""
 
     def large():
         tm, dl, du = _gl.series_traced(a)

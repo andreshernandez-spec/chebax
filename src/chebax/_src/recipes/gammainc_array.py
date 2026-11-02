@@ -1,48 +1,19 @@
-"""Per-element gammainc: P(a, x), Q = 1 - P and their logs with a
-different a >= 0.1 on every element, for chebax.gammainc_array and its
-siblings (inputs arrive normalized and broadcast from gammainc.py).
+"""Per-element gammainc: P, Q and their logs with a different a >= 0.1 on every
+element (chebax.gammainc_array; inputs normalized in gammainc.py). Per element:
+pick the zone, locate one 2-D Chebyshev patch of gammainc_array_gen's table
+(zones and formulas in its docstring), sum its KY x KP block, add the zone's
+prefactor. No lgamma, no loop. float32 uses the leading KY32 x KP32 block.
 
-The scalar path (gammainc_scalar) collapses each table's a-axis once per
-call, which is the right cost when a is one value. With a different a on
-every element that collapse would run per element, so this path evaluates
-one small 2-D Chebyshev patch per element instead, from the table
-gammainc_array_gen builds (zones, variables and formulas are in its
-docstring). Per element: pick the zone, locate the patch (a few compares),
-gather one KY x KP block, sum it against the two Chebyshev bases, add the
-zone's prefactor. No lgamma and no loop.
+Each zone forms its small probability directly as a log and the other as
+log1p(-exp(direct)). That loses only in A0, where Q falls to 0.024 (a = 0.1,
+x = 1.1): ln Q 8.4e-15 there, 7.8e-16 elsewhere (tests/test_gammainc_array.py).
 
-Each zone computes the probability that is small there directly, as a log
-(ln P in A0 and L, ln Q in B0 and U, the Temme zone's smaller side through
-erfcx), and the other one as log1p(-exp(direct)). The far side loses a
-factor of (direct probability)/(far probability), which only matters in A0:
-there Q = 1 - P falls to 0.024 (a = 0.1, x = 1.1), and ln Q is 8.4e-15
-against 7.8e-16 everywhere else (tests/test_gammainc_array.py). The scalar
-path takes 1 - P down to Q ~ 1e-6, in its wedge just below x = 8 at small
-a. Neither log underflows (ln P reaches -1e5 and beyond).
+The Temme zone's phi = d - log1p(d), d = (x - a)/a, cancels near d = 0, so it is
+2 z^2 S(z), z = d/(2 + d), S = 1 + 2/3 z + z^2 + 4/5 z^3 + ..., and eta = 2 z sqrt(S).
 
-The Temme zone needs phi = d - log1p(d), d = (x - a)/a, near d = 0, where
-that form cancels (relative error ~2 eps/|d|). gammainc_large's w_eta
-switches to a series at |d| = 1e-3, which suits float64; float32 would lose
-4 digits there. This path uses z = d/(2 + d), from log1p(d) = 2 atanh(z),
-which gives phi = 2 z^2 S(z) with S = 1 + 2/3 z + z^2 + 4/5 z^3 + ...
-(1 for even powers, (k+1)/(k+2) for odd k), cancellation-free in both
-dtypes; eta = 2 z sqrt(S) then needs no sign and no sqrt(0).
-
-Endpoints as in gammainc: x <= 0 gives P = 0, Q = 1 (ln P = -inf), x = inf
-gives P = 1, Q = 0, and nan propagates. a < 0.1, a = inf and a = nan give
-nan. Gradients in a and x, forward and reverse, are AD through the patch
-polynomial and the prefactors, with two slopes written out: ln(x/a) and an
-exp whose slope is 0 where it underflows. Every branch is fed masked x on
-the lanes it does not own, so nothing outside a lane's own zone can turn
-its slope into nan. The far tails keep their relative accuracy in the
-slopes too (d ln Q/da ~ ln(x/a) at x = 1e100). The one infinity is d ln P/dx
-where its true value, ~ a/x, overflows. At x = 0 the slope in x is spliced
-in by hand (the density, as in gammainc), and x < 0 and x = inf are flat.
-
-Dtype: the active jax float dtype, like every canonicalized chebax
-function. float32 (x64 off) evaluates the leading KY32 x KP32 block of the
-same patches, which the generator picks so the dropped coefficients stay
-under float32's roundoff.
+Endpoints as in gammainc; a < 0.1, inf or nan gives nan. Gradients in a and x are
+AD with masked branches, relatively accurate in the tails (d ln Q/da ~ ln(x/a) at
+x = 1e100), inf only where d ln P/dx ~ a/x overflows; the x = 0 slope is the density.
 """
 
 import functools
@@ -59,8 +30,7 @@ from chebax._src.recipes.erf_family import erfcx
 
 _A0, _B0, _L1, _U1, _L2, _U2, _T = range(len(_t.NAMES))
 _LN2PI = math.log(2.0 * math.pi)
-# the series of S(z) to z^24: on |z| <= 0.2 its tail is below 2e-17, and
-# the direct form beyond loses at most ~10 eps there
+# S(z) to z^24: tail below 2e-17 on |z| <= 0.2; the direct form beyond, ~10 eps
 _Z_SER = 0.2
 _S = tuple(1.0 if k % 2 == 0 else (k + 1) / (k + 2) for k in range(25))
 
@@ -82,8 +52,8 @@ def _basis(s, n):
 
 
 def _locate(val, cuts, n):
-    """Interval index of val in each row of cuts (n intervals, padded by
-    repeating the last cut) and val mapped onto [-1, 1] inside it."""
+    """Interval index of val in each row of cuts (n intervals, last cut repeated
+    as padding) and val mapped onto [-1, 1] inside it."""
     k = jnp.clip(jnp.sum(val[..., None] >= cuts[..., 1:], axis=-1), 0, n - 1)
     lo = jnp.take_along_axis(cuts, k[..., None], axis=-1)[..., 0]
     hi = jnp.take_along_axis(cuts, k[..., None] + 1, axis=-1)[..., 0]
@@ -91,11 +61,9 @@ def _locate(val, cuts, n):
 
 
 def _log1p(x):
-    """log1p for x in (-1, inf). XLA's float64 log1p is up to 128 ulp off
-    on (-0.63, -0.25) (jax 0.11 on CPU, increment 34), which put 5.5e-14
-    into ln P through phi; below -1/4, 1 + x rounds by at most an ulp of
-    0.75 and log is accurate (3.7e-16 measured). The textbook fix,
-    x log(u)/(u - 1), does not survive XLA: it simplifies u - 1 to x."""
+    """log1p for x in (-1, inf). XLA's float64 log1p is up to 128 ulp off on
+    (-0.63, -0.25) (jax 0.11 CPU, increment 34; 5.5e-14 in ln P); log(1 + x) there
+    gives 3.7e-16. XLA simplifies the textbook x log(u)/(u - 1) back to log1p."""
     return jnp.where(x < -0.25, jnp.log(1.0 + x), jnp.log1p(x))
 
 
@@ -119,9 +87,8 @@ def _phi_eta(d):
 
 @jax.custom_jvp
 def _log_ratio(x, a):
-    """ln(x/a) for x, a > 0: the log of the ratio where that is a normal
-    number, else ln x - ln a, so a lower tail whose x/a underflows keeps
-    its log (x = 1e-36, a = 1000 in float32)."""
+    """ln(x/a) for x, a > 0; ln x - ln a where x/a is not normal (x = 1e-36,
+    a = 1000 in float32)."""
     r = x / a
     normal = r >= np.finfo(r.dtype).tiny
     return jnp.where(
@@ -131,9 +98,8 @@ def _log_ratio(x, a):
 
 @_log_ratio.defjvp
 def _log_ratio_jvp(primals, tangents):
-    # written out: through the ratio, AD forms x/a^2 and 1/r, which leave
-    # the float range at its ends and lost the a-term (off by 1 at
-    # x = 1e-306, a = 10, and by 0.6 at x = 1.7e308, a = 2.5)
+    # AD forms x/a^2 and 1/r, which leave the float range at its ends (a-term
+    # off by 1 at x = 1e-306, a = 10)
     x, a = primals
     tx, ta = tangents
     return _log_ratio(x, a), tx / x - ta / a
@@ -147,21 +113,16 @@ def _exp0(v):
 
 @_exp0.defjvp
 def _exp0_jvp(primals, tangents):
-    # where x/a underflows, d ln P/dx = a/x can exceed the float range while
-    # P is 0, and the product rule gives 0 * inf = nan in forward mode
+    # P = 0 with d ln P/dx = a/x overflowing gives 0 * inf in forward mode
     (v,), (t,) = primals, tangents
     e = jnp.exp(v)
     return e, jnp.where(e == 0.0, 0.0, e * t)
 
 
 def _log_pq(a, x, d=None):
-    """(ln P, ln Q) for a, x of one shape and float dtype; no x = 0 slope.
-
-    d, if given, is x/a - 1 held exactly: the zones for a >= 1 then read it
-    instead of x, so the logs are those at a (1 + d) unrounded. The
-    derivative of gammaincinv_array needs that where one float step of x
-    is wider than the distribution (a ~ 1e35). x still sets the endpoint
-    lanes."""
+    """(ln P, ln Q) for a, x of one shape; no x = 0 slope. d, if given, is x/a - 1
+    held exactly, read instead of x for a >= 1 (gammaincinv_array's derivative
+    needs it where one float step of x spans the distribution, a ~ 1e35)."""
     tab, pcuts, ycuts = (jnp.asarray(v) for v in _tables(a.dtype.name))
     ky, kp = tab.shape[1:]
     npar, narg, offset = (jnp.asarray(v) for v in (_t.NPAR, _t.NARG, _t.OFFSET))
@@ -170,8 +131,6 @@ def _log_pq(a, x, d=None):
     a = jnp.where(good_a, a, 1.0)
     ok = (x > 0.0) & (x < jnp.inf)
     xx = jnp.where(ok, x, 1.0)
-    # lam only picks the zone: where x/a underflows (x = 1e-36, a = 1000 in
-    # float32) it still reads as the lower zone
     lam = xx / a if d is None else 1.0 + d
     big = a > _t.ASPLIT
     zone = jnp.where(
@@ -188,10 +147,8 @@ def _log_pq(a, x, d=None):
     is_up = (zone == _U1) | (zone == _U2)
     uses_u = in_a0 | in_b0 | (zone == _L1) | (zone == _U1)
 
-    # Each branch sees x on its own lanes and a harmless value elsewhere. A
-    # select zeroes an unused branch's cotangent, but 0 * inf is nan, so a
-    # division there that overflows under AD (a/x at x = 1e-20 in float32)
-    # must not happen at all.
+    # a harmless x outside each branch's lanes: a zero cotangent times an
+    # overflowing AD term (a/x at x = 1e-20 in float32) is nan
     x_a0 = jnp.where(in_a0, xx, a + 1.0)
     x_b0 = jnp.where(in_b0, xx, a + 1.0)
     x_lo = jnp.where(is_low, xx, a)
@@ -199,7 +156,7 @@ def _log_pq(a, x, d=None):
     x_lu = jnp.where(is_low | is_up, xx, a)
     x_t = jnp.where(in_t, xx, a)
     if d is None:
-        # Temme coordinates from d = (x - a)/a, which keeps x - a exact
+        # d = (x - a)/a keeps x - a exact
         d_t = (x_t - a) / a
         lam_lo, lam_up = x_lo / a, a / x_up
         ln_lam = _log_ratio(x_lu, a)
@@ -226,19 +183,15 @@ def _log_pq(a, x, d=None):
 
     ln_a = jnp.log(a)
     half_ln_2pi_a = 0.5 * (ln_a + _LN2PI)
-    # the Temme zone's small side in log space, through erfcx so neither
-    # erfc nor e^(-y^2) underflows: ln Q = -y^2 + ln(erfcx(y)/2 + T/rt)
-    # for y >= 0, ln P the same with -y and -T; y^2 = a phi
+    # ln Q = -y^2 + ln(erfcx(y)/2 + T/rt) for y >= 0 (ln P with -y, -T), y^2 = a phi
     y = eta * jnp.sqrt(0.5 * a)
     sign = jnp.where(y < 0.0, -1.0, 1.0)
     # sqrt(2 pi) sqrt(a): 2 pi a overflows from a = 2.9e307
     rt = math.sqrt(2.0 * math.pi) * jnp.sqrt(a)
     yt = jnp.where(in_t, jnp.abs(y), 0.0)
     ft = jnp.where(in_t, f, 0.0)
-    # With d exact, a phi as y^2: phi = d^2/2 is subnormal for |d| < 2e-154,
-    # which a = 1e307 reaches within 0.2 sd of the median, and flushed to 0.
-    # The barrier stops XLA reassociating y * y into a eta^2 when a is a
-    # compile-time constant.
+    # with d exact, a phi as y^2: phi is subnormal for |d| < 2e-154 (a = 1e307);
+    # the barrier stops XLA folding y * y into a eta^2 for a constant a
     if d is None:
         a_phi = a * phi_t
     else:
@@ -246,10 +199,8 @@ def _log_pq(a, x, d=None):
         a_phi = yb * yb
     temme = -a_phi + jnp.log(0.5 * erfcx(yt) + sign * ft / rt)
 
-    # Below and above the Temme zone, -a phi = -(x - a) + a ln lambda. In
-    # this form d/da is ln lambda up to O(1) terms; differentiating -a phi
-    # as a product cancels two terms of size x/a, which at x = 1e8 in
-    # float32 left 13.6 for 17.7.
+    # -a phi as -(x - a) + a ln lambda: as a product its d/da cancels two terms
+    # of size x/a (13.6 for 17.7 at x = 1e8 in float32)
     direct = jnp.select(
         [in_a0, in_b0, is_low, is_up],
         [

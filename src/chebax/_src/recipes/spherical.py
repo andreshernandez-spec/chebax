@@ -1,19 +1,6 @@
-"""Spherical Bessel functions j_n and y_n for integer n in [0, 9].
-
-Wrappers over the half-integer cylindrical tables (jax#18119):
-
-    j_n(x) = sqrt(pi / (2x)) J_{n+1/2}(x),
-    y_n(x) = sqrt(pi / (2x)) Y_{n+1/2}(x).
-
-For j_n the inner region does NOT go through that singular prefactor:
-J_{n+1/2} = (x/2)^{n+1/2} g(x^2) / Gamma(n+3/2) makes
-
-    j_n(x) = sqrt(pi) / (2^{n+1} Gamma(n+3/2)) * x^n * g(x^2)
-
-exact at the origin, values and gradients both (j_1'(0) = 1/3 comes out of
-the integer power, not a mask). Domain x >= 0 for j_n; y_n inherits the
-cylindrical clamp at 1e-6 (both factors clamp together, so the wrapper
-never mixes a raw prefactor with a clamped Y) and returns -inf at x <= 0.
+"""Spherical Bessel j_n, y_n for integer n in [0, 9] (jax#18119), as
+sqrt(pi/(2x)) J_{n+1/2}(x) and sqrt(pi/(2x)) Y_{n+1/2}(x). The inner j_n is
+sqrt(pi) / (2^{n+1} Gamma(n+3/2)) x^n g(x^2), exact at 0 in value and gradient.
 """
 
 import functools
@@ -49,8 +36,7 @@ class _SphericalJ(Recipe):
         xs = jnp.where(inner_region, 1.0, x)  # masked lanes get a safe dummy
         outer = jnp.sqrt(jnp.pi / (2 * xs)) * self.inst(xs)
         out = jnp.where(inner_region, inner, outer)
-        # j_n decays like sin(x - n pi/2)/x, so the limit at +inf is 0;
-        # the masked outer evaluation gave nan there
+        # the masked outer evaluation gives nan at +inf, where j_n -> 0
         out = jnp.where(x == jnp.inf, 0.0, out)
         return jnp.where(jnp.isnan(x), jnp.nan, out)
 
@@ -65,8 +51,7 @@ class _SphericalY(Recipe):
 
     def __call__(self, x):
         x = jnp.asarray(x)
-        # clamp the prefactor together with the cylindrical eval: mixing raw
-        # 1/sqrt(x) with the clamped Y gave -1e13 where y_1(1e-8) ~ -1e16
+        # clamp the prefactor with Y: a raw one gives -1e13 for y_1(1e-8) ~ -1e16
         xc = jnp.where(x < _yt.XMIN, _yt.XMIN, x)
         val = jnp.sqrt(jnp.pi / (2 * xc)) * self.inst(xc)
         out = jnp.where(x > 0, val, -jnp.inf)
@@ -88,10 +73,7 @@ def _spherical_jn_cached(n, _tag):
 
 
 def spherical_jn(n, x=None):
-    """j_n(x) for integer n in [0, 9]: spherical_jn_frozen(n)(x).
-
-    spherical_jn(n) with no x is the 0.4 factory and returns
-    spherical_jn_frozen(n), with a DeprecationWarning."""
+    """j_n(x), n in [0, 9]. Without x it is the deprecated 0.4 factory."""
     if x is None:
         return deprecated_factory("spherical_jn", spherical_jn_frozen, n)
     return spherical_jn_frozen(n)(x)
@@ -108,10 +90,7 @@ def _spherical_yn_cached(n, _tag):
 
 
 def spherical_yn(n, x=None):
-    """y_n(x) for integer n in [0, 9]: spherical_yn_frozen(n)(x).
-
-    spherical_yn(n) with no x is the 0.4 factory and returns
-    spherical_yn_frozen(n), with a DeprecationWarning."""
+    """y_n(x), n in [0, 9]. Without x it is the deprecated 0.4 factory."""
     if x is None:
         return deprecated_factory("spherical_yn", spherical_yn_frozen, n)
     return spherical_yn_frozen(n)(x)

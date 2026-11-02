@@ -1,11 +1,6 @@
-"""Frozen gammainc callables: P(a, .) and Q(a, .) for one concrete a.
-
-The coefficients for that a are reconstructed once in numpy and the
-callable is cached per a and x64 mode, so repeated calls cost only the
-evaluation over x. The callables are Recipe pytrees: they jit,
-differentiate in x and bake. a <= 10 runs on the small-a tables
-(gammainc_small), a > 10 on the Temme-zone tables (gammainc_large).
-Built through chebax.gammainc_frozen and chebax.gammaincc_frozen.
+"""Frozen gammainc: P(a, .) and Q(a, .) for one concrete a, coefficients built
+once in numpy and cached per a and x64 mode. Recipe pytrees: they jit,
+differentiate in x and bake. gammainc_small for a <= 10, gammainc_large above.
 """
 
 import functools

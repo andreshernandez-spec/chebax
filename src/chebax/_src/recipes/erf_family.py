@@ -1,18 +1,7 @@
-"""dawsn and erfcx (recent jax ships both; kept for the C++ bake path).
-
-Parameter-free, so these are plain functions, not factories. Both use one
-hard select at |x| = 6.
-
-- dawsn(x): odd. Inner: x * E(x^2) with E a Chebyshev series on [0, 36] —
-  writing it that way (raw x, even series) makes the oddness and the
-  gradient at 0 exact. Tail: sign(x) * G((6/x)^2) / |x|.
-- erfcx(x): fitted on [0, 6], tail H((6/x)^2) / x; negative x by the
-  reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which correctly overflows
-  to inf past x ~ -26.6. The |x| used for the positive-branch input is
-  built from a select (not jnp.abs) so the derivative at exactly 0 is
-  right; abs would zero it by its tie convention.
-
-Test oracles: D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
+"""dawsn and erfcx (jax ships both; kept for the C++ bake path), split at
+|x| = 6. dawsn is x E(x^2) inside, so oddness and the gradient at 0 are exact.
+erfcx uses erfcx(-x) = 2 e^{x^2} - erfcx(x) for x < 0, and |x| by select,
+since jnp.abs zeroes the derivative at 0.
 """
 
 import functools
@@ -27,11 +16,8 @@ from chebax._src.series import ChebSeries
 
 @functools.lru_cache(maxsize=4)
 def _series_cached(_tag):
-    # built lazily: module-level ChebSeries would initialize the jax backend
-    # (and touch the device) as an import side effect. Built OUTSIDE any
-    # active trace: the first call can come from inside a lax.cond branch
-    # (gammainc's large-a path), and a cached series whose arrays were
-    # created under that trace leaks its tracers into every later call.
+    # lazily, so import does not start the backend, and outside any trace
+    # (gammainc's lax.cond), or the cache leaks tracers
     with jax.ensure_compile_time_eval():
         return (
             ChebSeries(_et.DAWSN_E, (0.0, _et.XS * _et.XS)),
@@ -42,8 +28,7 @@ def _series_cached(_tag):
 
 
 def _series():
-    """The four fitted series, keyed per x64 mode: a cache filled under x64
-    off would otherwise pin float32 coefficients after the flip."""
+    """The four series, keyed per x64 mode."""
     return _series_cached(canon_tag())
 
 
@@ -60,9 +45,7 @@ def dawsn(x):
 
 
 def erfcx(x):
-    """Scaled complementary error function e^{x^2} erfc(x), any real x.
-
-    Overflows to inf (correctly) for x below ~ -26.6."""
+    """e^{x^2} erfc(x), any real x; inf below x ~ -26.6."""
     _, _, C, H = _series()
     x = jnp.asarray(x)
     ax = jnp.where(x >= 0, x, -x)
@@ -71,7 +54,6 @@ def erfcx(x):
     xo = jnp.where(ax <= _et.XS, _et.XS, ax)
     tail = H((_et.XS / xo) ** 2) / xo
     pos = jnp.where(ax <= _et.XS, inner, tail)
-    # clamp the reflection's exp argument for the masked (x >= 0) lanes:
-    # exp(x^2) = inf there would poison gradients via 0 * inf
+    # masked lanes: exp(x^2) = inf would make 0 * inf gradients
     xn = jnp.where(x < 0, x, 0.0)
     return jnp.where(x >= 0, pos, 2.0 * jnp.exp(xn * xn) - pos)

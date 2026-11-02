@@ -1,45 +1,24 @@
-"""Tweedie densities for 1 < p < 2, through Wright's function at beta = 0.
-
-    W(rho, z) = Phi(rho, 0; z) = sum_{n>=1} z^n / (n! Gamma(rho n))
-
-The compound Poisson-gamma Tweedie law with mean mu, dispersion phi and
-power p in (1, 2) puts mass exp(-lambda) at 0 and has, for y > 0,
+"""Tweedie densities for 1 < p < 2, through Wright's function at beta = 0,
+W(rho, z) = Phi(rho, 0; z) = sum_{n>=1} z^n / (n! Gamma(rho n)). For y > 0,
 
     f(y) = exp(-lambda - y/theta) W(rho, z) / y,
     lambda = mu^(2-p) / (phi (2-p)),  theta = phi (p-1) mu^(p-1),
-    rho = (2-p)/(p-1),  z = lambda (y/theta)^rho.
+    rho = (2-p)/(p-1),  z = lambda (y/theta)^rho,
 
-W runs on u = ln z, never on z: near p = 1 the argument overflows a double
-on ordinary data (p = 1.05 is rho = 19, and (y/theta)^19 passes 1e308 at
-y/theta ~ 1e16). Two regions in the saddle scale
+and mass exp(-lambda) at 0. W runs on u = ln z, since z overflows near p = 1
+((y/theta)^19 passes 1e308 at y/theta ~ 1e16). Split at Z1 = ZA + S1 (1+rho)^2
+in Z = y^(2-p) / (phi (2-p) (p-1)) (tweedie_gen has the evidence):
 
-    Z = (1+rho)/rho (rho z)^(1/(1+rho)) = y^(2-p) / (phi (2-p) (p-1)),
+- Z <= Z1: the series, a two-pass logsumexp unrolled at trace time, N_TERMS exp
+  per point.
+- Z > Z1: the saddlepoint form ln f = -d(y, mu)/(2 phi) - ln(2 pi phi y^p)/2
+  plus the tabulated T/Z, which never forms the terms that cancel, so small phi
+  (Z to 1e16 and beyond) keeps its digits if d does (_half_deviance).
 
-split at Z1(rho) = ZA + S1 (1+rho)^2 (tweedie_gen has the measurements
-behind both constants and the reason the split is in Z):
-
-- Z <= Z1: the series itself over n = 1..N_TERMS, as a two-pass logsumexp
-  unrolled at trace time, so the program never builds a (points x terms)
-  array. Only lgamma(rho n) depends on rho, and rho is uniform per call, so
-  those are per call and each point pays N_TERMS exp.
-- Z > Z1: ln W = Z + ln(t0)/2 - ln(2 pi (1+rho))/2 + T/Z, t0 = rho Z/(1+rho),
-  with T(ln rho, Z1/Z) from the baked table. For the density the large
-  terms cancel exactly, Z against lambda + y/theta, leaving
-      ln f = -d(y, mu)/(2 phi) - ln(2 pi phi y^p)/2 + T/Z,
-  the classical saddlepoint approximation (d the unit deviance) with its
-  exact correction. Written that way the cancelling terms are never
-  computed, so a concentrated density (small phi, Z up to 1e16 and beyond)
-  keeps its digits, provided d itself does (see _half_deviance).
-
-The f64 floor is lgamma's rounding in the direct sum: lgamma(rho n) reaches
-~4000 near the split at p = 1.05, and eps |lgamma| survives into ln f
-(1.1e-12 measured just below the split). ln W elsewhere sits at ~1e-15.
-
-Each branch sees the raw arguments in its own region and 1.0 elsewhere, so
-neither poisons the other's gradient. p is traceable
-and uniform per call; jax.grad works in p, mu, phi and y. The box is p in
-[1.05, 1.95] (rho in [1/19, 19]); outside it, and for mu <= 0, phi <= 0 or
-y < 0, the result is nan (not checked eagerly: p may be a tracer).
+The float64 floor is lgamma(rho n) ~ 4000 near the split at p = 1.05: 1.1e-12
+in ln f just below it, ~1e-15 in ln W elsewhere. Each branch sees 1.0 outside
+its lanes so neither poisons the other's gradient. p is traceable, uniform per
+call, in [1.05, 1.95]; outside it, and for mu <= 0, phi <= 0 or y < 0, nan.
 """
 
 import math
@@ -55,14 +34,9 @@ _HALF_LOG_2PI = 0.5 * math.log(2 * math.pi)
 
 
 def _log_series_parts(rho, u):
-    """ln S for S = sum_{n=1..N} exp(n u - lgamma(n+1) - lgamma(rho n)), with
-    its exact derivatives in u and rho, all from one unrolled pass.
-
-    Both derivatives are averages over the same weights e_n / S, so the
-    tangent costs one multiply-add per term. Reverse mode through the
-    unrolled sum instead turned the scalar rho cotangent into one reduction
-    over every point per term: 2.7 s against 20 ms for the value, N = 2^20
-    on CPU."""
+    """ln sum_{n=1..N} exp(n u - lgamma(n+1) - lgamma(rho n)) and its u and rho
+    derivatives in one pass. Reverse mode through the sum took 2.7 s against
+    20 ms for the value (N = 2^20, CPU)."""
     n = jnp.arange(1, _tt.N_TERMS + 1, dtype=u.dtype)
     c = jax.lax.lgamma(n + 1.0) + jax.lax.lgamma(rho * n)
     g = n * jax.lax.digamma(rho * n)  # -d/drho of term n's exponent
@@ -103,13 +77,9 @@ def _in_box(rho):
 
 
 def log_wright_bessel0(rho, z):
-    """ln Phi(rho, 0; z), Wright's generalized Bessel function at beta = 0.
-
-    rho is a (traceable) scalar in [1/19, 19], uniform per call; z >= 0 is
-    any array. Differentiable in both. -inf at z = 0 (Phi(rho, 0; 0) = 0),
-    nan for z < 0 or rho outside the box. This is the slice the Tweedie
-    density needs (see tweedie_logpdf); other beta are not provided.
-    """
+    """ln Phi(rho, 0; z), Wright's generalized Bessel function at beta = 0, for
+    traceable rho in [1/19, 19] and z >= 0 (-inf at 0, nan below or outside the
+    box). Differentiable in both."""
     rho = canon_param(rho, "log_wright_bessel0", "rho")
     z = canon_float(z)
     ok = _in_box(rho)
@@ -119,8 +89,7 @@ def log_wright_bessel0(rho, z):
     zs = jnp.where(pos, z, 1.0)
     u = jnp.log(zs)
     lr = jnp.log(r)
-    # pow, not exp((lr + u)/(1+rho)): that carries eps |ln z| (5e-14 at
-    # z = 1e300) where pow stays at an ulp, and z^e cannot overflow for e < 1
+    # pow, not exp of logs (5e-14 at z = 1e300); z^e cannot overflow for e < 1
     e = 1.0 / (1.0 + r)
     big_z = (1.0 + r) / r * jnp.power(r, e) * jnp.power(zs, e)
     inner = big_z <= z1
@@ -135,8 +104,7 @@ def log_wright_bessel0(rho, z):
     return jnp.where(ok, out, jnp.nan)
 
 
-# |y/mu - 1| up to which d/2 is summed as a series, and the term count:
-# 26 terms leave under 3e-17 relative at |delta| = 1/4 for every a in (0, 1)
+# |y/mu - 1| up to which d/2 is a series; 26 terms leave 3e-17 at 1/4
 _NEAR = 0.25
 _N_NEAR = 26
 
@@ -149,37 +117,23 @@ def _deviance_lanes(mu, y):
 
 
 def _log_ratio(near, mid, mu, y):
-    """ln(y/mu) in the near and mid lanes, 0 elsewhere: log1p(delta), but
-    log(y/mu) in the mid lanes below the mean, where the ratio is within
-    [1/e, 3/4]. There XLA's float64 log1p is up to 128 ulp off (delta in
-    (-0.63, -0.25), jax 0.11 on CPU) and log is within an ulp; elsewhere
-    log1p is, and delta has one rounding fewer than y/mu's log."""
+    """ln(y/mu) in the near and mid lanes: log1p(delta), but log(y/mu) for y/mu
+    in [1/e, 3/4], where XLA's float64 log1p is up to 128 ulp off (jax 0.11)."""
     low = mid & (y < mu)
     d = (jnp.where((near | mid) & ~low, y, mu) - mu) / mu
     return jnp.where(low, jnp.log(jnp.where(low, y, mu) / mu), jnp.log1p(d))
 
 
 def _half_deviance_impl(a, mu, y):
-    """d(y, mu)/2 for power p = 2 - a, a in (0, 1), y > 0, mu > 0.
+    """d(y, mu)/2 for p = 2 - a, a in (0, 1), y, mu > 0, delta = (y - mu)/mu.
 
-    Near the mean, in delta = (y - mu)/mu, whose subtraction is exact there:
-        d/2 = mu^a sum_{k>=2} c_k delta^k,  c_2 = 1/2,  c_{k+1} = c_k (a-k)/(k+1),
-    the binomial series of ((1+delta)^a - 1 - a delta) / (a (a-1)). The
-    closed forms lose this on concentrated data: ln y - ln mu carries
-    eps |ln y| where only delta matters, and expm1(a x) - a expm1(x)
-    cancels two first-order terms down to a quadratic one. In float32,
-    (p, mu, phi, y) = (1.5, 1e6, 1e-12, 1e6 + 1/8) gave 2.53 for a log
-    density of -5.28 (review, 2026-10-26).
-
-    Up to |ln(y/mu)| = 1, mu^a (expm1(a x) - a delta) / (a (a-1)) with
-    x = ln(y/mu), which cancels only first-order terms: about
-    9 eps / (1 - a) at |delta| = 1/4.
-
-    Beyond, y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, which never
-    forms y/mu: that ratio overflowed at y = 1e10, mu = 1e-300 under a
-    finite density. Its terms are O(mu^a / (a (1-a))) and cancel to
-    O(delta^2): 32 eps / (a (1-a)) at |delta| = 1/4, 670 eps at the box
-    edges, but ~50 eps past |ln(y/mu)| = 1."""
+    near: mu^a sum_k c_k delta^k, c_2 = 1/2, c_{k+1} = c_k (a-k)/(k+1). The
+    closed forms lose delta there (float32 gave 2.53 for -5.28 at p = 1.5,
+    mu = 1e6, phi = 1e-12, y = mu + 1/8).
+    mid (|ln(y/mu)| <= 1): mu^a (expm1(a x) - a delta) / (a (a-1)), x = ln(y/mu),
+    ~9 eps / (1 - a) at |delta| = 1/4.
+    far: y^a / (a (a-1)) - y mu^(a-1) / (a-1) + mu^a / a, no y/mu (it overflows
+    at y = 1e10, mu = 1e-300), ~50 eps past |ln(y/mu)| = 1."""
     near, mid = _deviance_lanes(mu, y)
     d = (jnp.where(near | mid, y, mu) - mu) / mu
     dn = jnp.where(near, d, 0.0)
@@ -204,12 +158,9 @@ def _half_deviance(a, mu, y):
 
 @_half_deviance.defjvp
 def _half_deviance_jvp(primals, tangents):
-    """The mu and y partials in closed form, -mu^(a-1) delta and
-    (y^(a-1) - mu^(a-1))/(a-1), the latter through expm1 up to
-    |ln(y/mu)| = 1. AD of the forms above squares mu, in mu^(a-2) and in
-    delta's own derivative, and that overflowed at mu = 1e-220: the mean
-    gradient at y = mu, exactly 0, came out 0 * inf (review follow-up,
-    2026-10-26). The a partial is AD of the value with mu and y held."""
+    """Closed-form mu and y partials, -mu^(a-1) delta and
+    (y^(a-1) - mu^(a-1))/(a-1): AD squares mu and overflows at mu = 1e-220.
+    The a partial is AD of the value."""
     a, mu, y = primals
     da, dmu, dy = tangents
     h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
@@ -226,9 +177,8 @@ def _half_deviance_jvp(primals, tangents):
 
 @jax.custom_jvp
 def _over(h, phi):
-    """h / phi, whose phi-derivative is formed as -(h/phi)/phi. jax's own
-    rule squares phi first, which underflows at phi = 1e-200 and turned
-    a zero deviance into a nan dispersion gradient."""
+    """h / phi with d/dphi = -(h/phi)/phi: jax squares phi, which underflows
+    at phi = 1e-200 and makes a zero deviance a nan gradient."""
     return h / phi
 
 
@@ -240,19 +190,13 @@ def _over_jvp(primals, tangents):
 
 
 def tweedie_logpdf(p, mu, phi, y):
-    """ln of the Tweedie density for power p in [1.05, 1.95].
-
-    p is a (traceable) scalar, uniform per call; mu > 0, phi > 0 and y >= 0
-    broadcast against each other (per-observation means are the GLM case).
-    At y = 0 this is ln P(Y = 0) = -lambda (the point mass); for y > 0 the
-    density. Differentiable in p, mu, phi and y (in y only where y > 0).
-    nan outside the box or for mu <= 0, phi <= 0, y < 0.
-    """
+    """ln of the Tweedie density at y > 0, and ln P(Y = 0) at y = 0, for
+    traceable p in [1.05, 1.95] and broadcasting mu > 0, phi > 0, y >= 0 (nan
+    otherwise). Differentiable in p, mu, phi and y (where y > 0)."""
     p = canon_param(p, "tweedie_logpdf", "p")
     mu, phi, y = (canon_float(v) for v in (mu, phi, y))
     mu, phi, y = jnp.broadcast_arrays(mu, phi, y)
-    # the box is checked on p as given: in float32, p = 1.05 rounds to
-    # 1.04999995 and its rho to 19.000011, just past RHO_MAX
+    # check p, not rho: float32 rounds p = 1.05 to a rho just past RHO_MAX
     ok = (p >= _tt.P_LO) & (p <= _tt.P_HI)
     pp = jnp.where(ok, p, 1.5)
     r = (2.0 - pp) / (pp - 1.0)
@@ -267,24 +211,16 @@ def tweedie_logpdf(p, mu, phi, y):
     inner = pos & (big_z <= z1)
     outer = pos & ~inner
 
-    # Each of the three forms sees its own lanes' arguments and 1.0 in the
-    # others. An unselected form's partials meet a zero cotangent, so one
-    # inf among them is a nan gradient: at phi = 1e-200, lambda / phi alone
-    # overflows (review, 2026-10-26).
+    # each form sees 1.0 outside its lanes: an inf in an unselected form's
+    # partials is a nan gradient (lambda / phi overflows at phi = 1e-200)
     def own(lanes, *vs):
         return [jnp.where(lanes, v, 1.0) for v in vs]
 
     m0, f0 = own(~pos, mu_s, phi_s)
     f_zero = -jnp.power(m0, a) / (f0 * a)
-    # inner: the density as defined, ln W on u = ln z. mu enters only
-    # through -lambda - y/theta = -d/(2 phi) + y^a / (a (a-1) phi), so the
-    # mean gradient is the deviance's exact (y - mu) / (phi mu^p). As two
-    # separate terms their mu-derivatives cancelled only to rounding at
-    # y = mu, ~1e286 at mu = 1e-300, and y/theta underflowed at phi = 1e200
-    # and took its share of the gradient with it. Likewise
-    # z = y^rho / (a (p-1)^rho phi^(1+rho)) holds no mu: built from lambda
-    # and theta, the residue of its mu terms had derivative eps/mu
-    # (review follow-up, 2026-10-26).
+    # inner: -lambda - y/theta as -d/(2 phi) + y^a / (a (a-1) phi) and z without
+    # mu, so the mean gradient is exactly (y - mu) / (phi mu^p); as separate
+    # terms it cancels to rounding, ~1e286 at mu = 1e-300
     mi, fi, yi = own(inner, mu_s, phi_s, y_s)
     u = r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi) - jnp.log(a)
     f_in = (
@@ -293,8 +229,7 @@ def tweedie_logpdf(p, mu, phi, y):
         - jnp.log(yi)
         + _log_series(r, u)
     )
-    # outer: saddlepoint form plus the tabulated correction T(Z1/Z)/Z, with
-    # 1/Z built from phi directly rather than as a reciprocal of Z ~ 1/phi
+    # outer: 1/Z from phi directly, not a reciprocal of Z ~ 1/phi
     mt, ft, yt = own(outer, mu_s, phi_s, y_s)
     w = jnp.where(outer, ft * a * (pp - 1.0) / jnp.power(yt, a), 1.0 / z1)
     f_tail = (

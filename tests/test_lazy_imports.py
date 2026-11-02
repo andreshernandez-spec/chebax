@@ -48,10 +48,10 @@ EXPECTED = {
     },
     "chebax._src.recipes.betainc": _BETA,
     "chebax._src.recipes.betaincinv": _BETA,
-    # each gammainc path imports its implementation when first called
-    # (test_gammainc_paths_load_only_their_tables)
+    # each gammainc and gammaincinv path imports its implementation when
+    # first called (test_gammainc_paths_load_only_their_tables)
     "chebax._src.recipes.gammainc": set(),
-    "chebax._src.recipes.gammaincinv": _GAMMA,
+    "chebax._src.recipes.gammaincinv": set(),
     "chebax._src.recipes.hyp1f1": {"hyp1f1_table"},
     # the betainc kernel without betainc's tensor (betainc_kernel.py)
     "chebax._src.recipes.stdtr": {"stdtr_table"},
@@ -124,13 +124,19 @@ def test_names_load_only_their_tables(module):
     assert _tables(mods) == EXPECTED[module], (module, sorted(_tables(mods)))
 
 
-# calling one gammainc path loads its own tables and not the other path's
+# calling one gammainc or gammaincinv path loads its own tables and not
+# the other path's
+_GAMMA_ARRAY = {"gammainc_array_table", "erf_table"}
 _GAMMA_PATHS = {
     "gammainc_scalar(2.5, 3.0)": _GAMMA,
     "gammainc_frozen(2.5)(3.0)": _GAMMA,
     "log_gammaincc(2.5, 3.0)": _GAMMA,
-    "gammainc_array([2.5, 30.0], 3.0)": {"gammainc_array_table", "erf_table"},
-    "log_gammaincc([2.5, 30.0], 3.0)": {"gammainc_array_table", "erf_table"},
+    "gammainc_array([2.5, 30.0], 3.0)": _GAMMA_ARRAY,
+    "log_gammaincc([2.5, 30.0], 3.0)": _GAMMA_ARRAY,
+    "gammaincinv_scalar(2.5, 0.3)": _GAMMA,
+    "chi2inv(3.0, 0.3)": _GAMMA,
+    "gammaincinv_array([2.5, 30.0], 0.3)": _GAMMA_ARRAY,
+    "gammainccinv([2.5, 30.0], 0.3)": _GAMMA_ARRAY,
 }
 
 

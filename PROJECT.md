@@ -21,7 +21,8 @@ machinery does not remove that analysis and does not claim to. One measured
 exception: `gammainc_array` (increment 35) takes gammainc's a per element, from
 small 2-D patches (144 coefficients per element in float64, 49 in float32),
 because a Gamma likelihood with a shape per observation is common and the
-uniform tables would pay ~4,300 coefficients per element there.
+uniform tables would pay ~4,300 coefficients per element there. Its
+inverses run on the same patches (`gammaincinv_array`, increment 37).
 
 **Name:** `chebax` — confirmed 2026-07-29. PyPI and GitHub free (nearest neighbors
 chebpy, pychebfun, ChebTools). The spec-* alternatives were rejected: "spec" reads as
@@ -295,7 +296,8 @@ The per-element contract (one parameter per point, scipy's
 `jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
 wrapper changes its arithmetic. gammainc is the exception (increment 35): its
 per-element path is new arithmetic, patches small enough to evaluate per
-point, not a wrapper over the uniform tables.
+point, not a wrapper over the uniform tables, and its inverses solve on
+those patches (increment 37).
 
 MEASURED 2026-07-31 (`experiments/07_pergroup_crossover.py`, RTX 3080 Laptop,
 f64, plain vmap over equal groups): reconstruction overhead vs chebax's own

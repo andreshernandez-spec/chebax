@@ -76,8 +76,9 @@ That is the `_scalar` path (traced) and the `_frozen` path (eager, cached).
 gammainc also has an `_array` path, a parameter value per element: each
 element finds its patch of a tensor grid over (parameter, argument) and
 evaluates that patch's small 2-D polynomial directly, with no reconstruction
-and no ChebSeries (increment 35). The plain `name(params, x)` picks between
-`_scalar` and `_array` from the parameters' shapes (increment 36).
+and no ChebSeries (increment 35). Its inverses run the same Newton solve on
+either path's ln P and ln Q (increment 37). The plain `name(params, x)` picks
+between `_scalar` and `_array` from the parameters' shapes (increment 36).
 
 All fit stages in a recipe generator stay in mpmath at the recorded precision
 before one final float64 conversion. Tables record axes, parameter domains,
@@ -107,9 +108,9 @@ value. Normalize them through `canon_param`; reject larger arrays with the
 parameter name and guidance to `pergroup`. Evaluation points may be arrays.
 Some direct functions, notably Tweedie, additionally broadcast parameters such
 as mean and dispersion; their own docstrings state which arguments broadcast.
-gammainc's `_array` functions broadcast a with x on purpose: they are a
-separate path with its own table, and every `_scalar` function keeps
-refusing per-element arrays.
+gammainc's `_array` functions, and its inverses', broadcast a with x on
+purpose: they are a separate path with its own table, and every `_scalar`
+function keeps refusing per-element arrays.
 The NumPyro constructors follow the same rule for shape parameters.
 
 Public entry points must apply the same normalization to positional and

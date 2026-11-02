@@ -109,7 +109,7 @@ def _edge_slope_jvp(primals, tangents):
     return jnp.zeros_like(x), s * tangents[1]
 
 
-def float_params(impl):
+def float_params(impl, array=None):
     """Public entry point for a custom_jvp'd implementation: normalize every
     argument before the rule sees it.
 
@@ -129,6 +129,7 @@ def float_params(impl):
     scalar it holds and a per-element one is refused by name) and the last
     is the evaluation point. Keyword calls are bound to the same names
     first; stdtr(nu=4, t=t) used to skip all of this (review, 2026-10-26).
+    array names the family's per-element path for canon_param's message.
     """
     who = impl.__name__.lstrip("_").removesuffix("_cj")
     sig = inspect.signature(impl)
@@ -138,7 +139,8 @@ def float_params(impl):
     def public(*args, **kw):
         arg = sig.bind(*args, **kw).arguments
         return impl(
-            *(canon_param(arg[n], who, n) for n in params), canon_float(arg[point])
+            *(canon_param(arg[n], who, n, array) for n in params),
+            canon_float(arg[point]),
         )
 
     public.__name__ = public.__qualname__ = who
@@ -171,17 +173,23 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
-def newton_bisect(f_and_df, x0, lo0, hi0, iters):
+def newton_bisect(f_and_df, x0, lo0, hi0, iters, snap=None):
     """Fixed-count safeguarded Newton for increasing f: keep [lo, hi]
     bracketing the root, fall back to the midpoint (or doubling while hi is
     inf) when the Newton step leaves the bracket. The bounds test is
     INCLUSIVE: a Newton step that stalls exactly at the current iterate
     (converged) must be accepted, or a one-sided approach whose far bound
     never tightened catapults a converged iterate to the midpoint of the
-    half-open bracket (measured, the quantile-toolkit bug)."""
+    half-open bracket (measured, the quantile-toolkit bug).
+
+    snap, if given, maps an iterate to the point f_and_df actually
+    evaluates (the gamma solve rounds its t through x), so that the step
+    and the bracket start from where f was measured."""
 
     def step(_, carry):
         x, lo, hi = carry
+        if snap is not None:
+            x = snap(x)
         f, df = f_and_df(x)
         lo = jnp.where(f < 0, x, lo)
         hi = jnp.where(f < 0, hi, x)

@@ -145,7 +145,7 @@ def test_betainc_x_derivative_in_both_modes():
     # recipe, whose endpoint slopes are set explicitly.
     for av, bv in ((0.5, 2.0), (2.0, 0.5), (1.0, 3.0), (3.0, 1.0), (2.5, 3.5)):
         xv = [0.0, 0.4, 1.0]
-        ref = [float(jax.grad(chebax.betainc_fn, 2)(av, bv, t)) for t in xv]
+        ref = [float(jax.grad(chebax.betainc_scalar, 2)(av, bv, t)) for t in xv]
         for got in modes(av, bv, xv):
             np.testing.assert_allclose(got, ref, rtol=1e-13)
 
@@ -297,7 +297,9 @@ def test_forward_gamma_drops_the_loop_for_a_concrete_shape():
     # it. Both are correct; only the first is visible in the HLO.
     from chebax.pytensor import _forward_gamma
 
-    fwd = _forward_gamma(None, "igamma", chebax.gammainc_fn, jax.scipy.special.gammainc)
+    fwd = _forward_gamma(
+        None, "igamma", chebax.gammainc_scalar, jax.scipy.special.gammainc
+    )
     xs = jnp.zeros(8)
     concrete = jax.jit(lambda x: fwd(jnp.float64(3.0), x))
     assert concrete.lower(xs).compile().as_text().count("while(") == 0

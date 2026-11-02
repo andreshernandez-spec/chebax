@@ -1,8 +1,8 @@
-"""Per-element gammainc: gammainc_elem, gammaincc_elem and their logs, with
+"""Per-element gammainc: gammainc_array, gammaincc_array and their logs, with
 a different a on every element, a >= 0.1, x in [0, inf).
 
 References are mpmath at 40 dps on 2,300 points over every zone of
-gammainc_elem_gen: a from 0.1 to 1e4, the bulk, both tails (ln P down to
+gammainc_array_gen: a from 0.1 to 1e4, the bulk, both tails (ln P down to
 -1.2e5, ln Q to -3.0e5), and the seams a = 1, a = 10, x = a + 1 and
 lambda = LAM_LO, LAM_HI.
 The logs use |ln F - ref| / max(1, |ref|): relative in F where |ln F| <= 1,
@@ -40,17 +40,17 @@ import pytest
 
 import chebax
 from chebax import domains
-from chebax._src.recipes import gammainc_elem_gen
-from chebax._src.recipes import gammainc_elem_table as t
+from chebax._src.recipes import gammainc_array_gen
+from chebax._src.recipes import gammainc_array_table as t
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
 ALLFN = [
-    chebax.gammainc_elem,
-    chebax.gammaincc_elem,
-    chebax.log_gammainc_elem,
-    chebax.log_gammaincc_elem,
+    chebax.gammainc_array,
+    chebax.gammaincc_array,
+    chebax.log_gammainc_array,
+    chebax.log_gammaincc_array,
 ]
 
 
@@ -144,7 +144,7 @@ def test_points_cover_every_zone(refs):
 def test_logs_against_mpmath(refs):
     a, x, lp, lq = refs[:4]
     f = jax.jit(
-        lambda a, x: (chebax.log_gammainc_elem(a, x), chebax.log_gammaincc_elem(a, x))
+        lambda a, x: (chebax.log_gammainc_array(a, x), chebax.log_gammaincc_array(a, x))
     )
     gp, gq = f(a, x)
     assert np.max(_err(gp, lp)) <= 3.5e-15
@@ -153,8 +153,8 @@ def test_logs_against_mpmath(refs):
 
 def test_values_absolute(refs):
     a, x, lp, lq = refs[:4]
-    p = np.asarray(jax.jit(chebax.gammainc_elem)(a, x))
-    q = np.asarray(jax.jit(chebax.gammaincc_elem)(a, x))
+    p = np.asarray(jax.jit(chebax.gammainc_array)(a, x))
+    q = np.asarray(jax.jit(chebax.gammaincc_array)(a, x))
     assert np.max(np.abs(p - np.exp(lp))) <= 3.5e-15
     assert np.max(np.abs(q - np.exp(lq))) <= 3.5e-15
 
@@ -170,7 +170,7 @@ def _x64_off(tmp_path, body, **arrays):
         import numpy as np, jax, jax.numpy as jnp, chebax
         assert jnp.empty(()).dtype == jnp.float32, "x64 leaked in"
         sys.path.insert(0, {str(pathlib.Path(__file__).parent)!r})
-        from test_gammainc_elem import ALLFN, _slopes
+        from test_gammainc_array import ALLFN, _slopes
         d = np.load({str(tmp_path / "in.npz")!r})
         out = {{}}
     """)
@@ -205,10 +205,10 @@ def test_float32(refs, tmp_path):
         x=x32,
     )
     lp, lq = _mp_logs(a32.astype(np.float64), x32.astype(np.float64))
-    assert np.max(_err(got["log_gammainc_elem"], lp)) <= 2e-6
-    assert np.max(_err(got["log_gammaincc_elem"], lq)) <= 1.2e-5
-    assert np.max(np.abs(got["gammainc_elem"] - np.exp(lp))) <= 1.6e-6
-    assert np.max(np.abs(got["gammaincc_elem"] - np.exp(lq))) <= 1.6e-6
+    assert np.max(_err(got["log_gammainc_array"], lp)) <= 2e-6
+    assert np.max(_err(got["log_gammaincc_array"], lq)) <= 1.2e-5
+    assert np.max(np.abs(got["gammainc_array"] - np.exp(lp))) <= 1.6e-6
+    assert np.max(np.abs(got["gammaincc_array"] - np.exp(lq))) <= 1.6e-6
 
 
 def _slopes(a, x):
@@ -247,7 +247,7 @@ _EXTREME_X = {
 def test_extreme_inputs_in_both_modes(dtype, tmp_path):
     """No nan in values or in forward- or reverse-mode slopes at the ends
     of the range, and the two modes agree. An unused branch that divides by
-    an unmasked x once gave nan through 0 * inf (jax.grad of gammainc_elem
+    an unmasked x once gave nan through 0 * inf (jax.grad of gammainc_array
     in x at (1, 1e-20) in float32), and differentiating x/a through the
     ratio lost the a-term where x/a^2 left the float range. The one
     infinity is d ln P/dx where its true value, ~ a/x, overflows."""
@@ -269,10 +269,10 @@ def test_extreme_inputs_in_both_modes(dtype, tmp_path):
             np.testing.assert_allclose(
                 rev, fwd, rtol=rtol, atol=atol, err_msg=f"{n} {w}"
             )
-            want = big if (n, w) == ("log_gammainc_elem", "x") else False
+            want = big if (n, w) == ("log_gammainc_array", "x") else False
             assert np.array_equal(np.isinf(rev), want | np.zeros_like(big)), (n, w)
     k = np.flatnonzero((a == 1.0) & (x == 1e-20))[0]
-    assert got["gammainc_elem rev x"][k] == pytest.approx(1.0, rel=rtol)
+    assert got["gammainc_array rev x"][k] == pytest.approx(1.0, rel=rtol)
 
 
 # (a, x): the upper tail far past the table (ln Q ~ -x), the lower tail
@@ -314,7 +314,7 @@ def test_tails_against_mpmath(dtype, tmp_path):
     the precision raised for |ln F|. Differentiating -a phi as a product
     once cancelled two terms of size x/a here: d ln Q/da at (2.5, 1e8) was
     13.6 for 17.7 in float32, 4e83 at x = 1e100 in float64. Forming x/a
-    lost ln P where it underflows: log_gammainc_elem(1000, 1e-36) was -inf
+    lost ln P where it underflows: log_gammainc_array(1000, 1e-36) was -inf
     in float32 for -88805.19. Measured worst, |err| / max(1, |ref|):
     float64 2.2e-16, bar 1e-15; float32 1.0e-7, bar 4e-7. A slope whose
     true value overflows (d ln P/dx ~ a/x at x = 1e-306) must be inf."""
@@ -323,7 +323,7 @@ def test_tails_against_mpmath(dtype, tmp_path):
     for pts, upper in zip(_TAILS[dtype], (True, False)):
         a, x = (np.array(v) for v in zip(*pts))
         got = _in_dtype(dtype, tmp_path, a, x)
-        n = "log_gammaincc_elem" if upper else "log_gammainc_elem"
+        n = "log_gammaincc_array" if upper else "log_gammainc_array"
         refs = np.array([_mp_tail(*p, upper) for p in pts]).T
         for key, r in zip(("", " rev a", " rev x"), refs):
             gots = [got[n + key]] + (
@@ -341,7 +341,7 @@ def test_dx_against_density(refs):
     def dx(f):
         return np.asarray(jax.jit(jax.grad(lambda x: jnp.sum(f(a, x))))(x))
 
-    gp, gq = dx(chebax.log_gammainc_elem), dx(chebax.log_gammaincc_elem)
+    gp, gq = dx(chebax.log_gammainc_array), dx(chebax.log_gammaincc_array)
     for g, r in ((gp, rp), (gq, rq)):
         assert np.all(np.isfinite(g))
         # the deep tails' slopes over/underflow together with the reference
@@ -361,7 +361,7 @@ def test_da_against_mpmath(refs):
     def da(f):
         return np.asarray(jax.jit(jax.grad(lambda a: jnp.sum(f(a, xp))))(ap))
 
-    gp, gq = da(chebax.log_gammainc_elem), da(chebax.log_gammaincc_elem)
+    gp, gq = da(chebax.log_gammainc_array), da(chebax.log_gammaincc_array)
     for k, (ak, xk) in enumerate(zip(ap, xp)):
         am, xm = mp.mpf(ak), mp.mpf(xk)
         rp = mp.diff(lambda s: mp.log(mp.gammainc(s, 0, xm, regularized=True)), am)
@@ -374,17 +374,17 @@ def test_endpoints_and_invalid_a():
     xs = jnp.asarray([-3.0, -jnp.inf, 0.0, jnp.inf, jnp.nan])
     a = jnp.full(xs.shape, 2.5)
     for f, want in (
-        (chebax.gammainc_elem, [0.0, 0.0, 0.0, 1.0]),
-        (chebax.gammaincc_elem, [1.0, 1.0, 1.0, 0.0]),
-        (chebax.log_gammainc_elem, [-np.inf, -np.inf, -np.inf, 0.0]),
-        (chebax.log_gammaincc_elem, [0.0, 0.0, 0.0, -np.inf]),
+        (chebax.gammainc_array, [0.0, 0.0, 0.0, 1.0]),
+        (chebax.gammaincc_array, [1.0, 1.0, 1.0, 0.0]),
+        (chebax.log_gammainc_array, [-np.inf, -np.inf, -np.inf, 0.0]),
+        (chebax.log_gammaincc_array, [0.0, 0.0, 0.0, -np.inf]),
     ):
         got = np.asarray(f(a, xs))
         assert np.array_equal(got[:4], want) and np.isnan(got[4]), f.__name__
         # below the table, a = inf and a = nan are nan, whatever x is
         bad = np.asarray(f(jnp.asarray([0.05, 0.0, -1.0, jnp.inf, jnp.nan]), 2.0))
         assert np.all(np.isnan(bad)), f.__name__
-    assert float(chebax.gammainc_elem(0.1, 1.0)) > 0.0
+    assert float(chebax.gammainc_array(0.1, 1.0)) > 0.0
 
 
 def test_x_zero_slope_is_the_density():
@@ -399,7 +399,7 @@ def test_x_zero_slope_is_the_density():
     ]
     assert np.array_equal(gp, d0) and np.array_equal(gq, -d0)
     assert np.all(np.isposinf(glp)) and np.array_equal(glq, -d0)
-    assert np.all(np.asarray(chebax.gammainc_elem(a, 0.0)) == 0.0)
+    assert np.all(np.asarray(chebax.gammainc_array(a, 0.0)) == 0.0)
 
 
 def test_masked_lanes_stay_finite():
@@ -447,7 +447,7 @@ def test_lower_end_is_the_family_domain():
 
 @pytest.mark.slow
 def test_table_regenerates_bit_for_bit(tmp_path):
-    gammainc_elem_gen.main(tmp_path)
-    assert (tmp_path / "gammainc_elem_table.py").read_text() == pathlib.Path(
+    gammainc_array_gen.main(tmp_path)
+    assert (tmp_path / "gammainc_array_table.py").read_text() == pathlib.Path(
         t.__file__
     ).read_text()

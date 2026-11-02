@@ -26,7 +26,7 @@ from the latest review are in `docs/review-2026-10-26.md`.
   both sides (nans below ~1e-4 at n_iter=50, below ~0.1 at n_iter=100) — cite
   the window when citing the ratio; narrow-domain 2.5–3.0× for the
   private single-region kernel and 2.5× f64 / 2.6× f32 for the SHIPPED
-  `besselj(v, domain=(0, 8))`, whose nan guard is the ~9% f64 difference
+  `besselj(v, domain=(0, 8))` (now `besselj_frozen`), whose nan guard is the ~9% f64 difference
   (`experiments/04`, re-run 2026-08-02); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
   the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
   for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane
@@ -56,11 +56,11 @@ from the latest review are in `docs/review-2026-10-26.md`.
   core, 254-331x on the GPU, value_and_grad 131 ms on the GPU; scipy itself
   is off by up to 4.7e-6 at p = 1.2 in a band around Z ~ 15-30. Per-element
   gammainc (`experiments/22`, a per element, x ~ Gamma(a), 2026-11-01):
-  gammainc_elem vs jax's gammainc, GPU f64 2.3-18x values and 2.8-24x
-  value_and_grad, f32 4.5-67x / 6.8-96x, one CPU core f64 1.0-8.9x / 1.6-15x
+  gammainc_array vs jax's gammainc, GPU f64 2.3-18x values and 2.8-23x
+  value_and_grad, f32 4.5-66x / 6.6-95x, one CPU core f64 1.1-9.5x / 1.8-15x
   (all growing with the spread of a, since jax's loops follow the worst lane);
   CPU f32 values are 1.8x SLOWER than jax's at a = 2.5 each. Against vmap of
-  gammainc_fn, f64 value_and_grad 71-78x CPU, 53-57x GPU. Consumer-GPU fp64 is
+  gammainc_scalar, f64 value_and_grad 73-77x CPU, 54x GPU. Consumer-GPU fp64 is
   compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
   analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's
@@ -134,7 +134,7 @@ python -m chebax._src.recipes.betainc_wide_gen    # regenerate the wide panels (
                                                   #  tests/test_betainc.py -m slow)
 python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
 python -m chebax._src.recipes.gammainc_large_gen  # regenerate the Temme-zone tables (~4 s)
-python -m chebax._src.recipes.gammainc_elem_gen   # regenerate the per-element patches (~1 min)
+python -m chebax._src.recipes.gammainc_array_gen  # regenerate the per-element patches (~1 min)
 python -m chebax._src.recipes.hyp1f1_gen          # regenerate the hyp1f1 log-tables (~11 min;
                                                   #  CI regen-checks only the tail table; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)

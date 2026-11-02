@@ -67,7 +67,7 @@ def _as_float_coef(coef):
 
     jnp.asarray narrows int64 to int32 first, so a big integer wraps under
     x64 off, and casting complex to float drops the imaginary part. Value
-    checks run on concrete input only: coef may be a tracer (the *_fn paths
+    checks run on concrete input only: coef may be a tracer (the *_scalar paths
     build series from traced reconstructions)."""
     traced = isinstance(coef, jax.core.Tracer)
     if not traced and not isinstance(coef, jax.Array):

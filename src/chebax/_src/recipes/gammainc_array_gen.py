@@ -1,7 +1,7 @@
 """Generator for the per-element gammainc table. Build-time only; mpmath inside.
 
-gammainc_elem evaluates P(a, x) and Q(a, x) with a different a on every
-element. The uniform-a recipe collapses each 2-D table's a-axis once per
+gammainc_array evaluates P(a, x) and Q(a, x) with a different a on every
+element. The scalar path collapses each 2-D table's a-axis once per
 call and then runs 1-D series of up to 68 terms; with a per element that
 collapse runs per element, about 4,300 coefficients counting both sides of
 its dispatch. Here an element evaluates one small 2-D polynomial instead,
@@ -56,7 +56,7 @@ uses the leading KY32 x KP32 block of the same patches, the smallest one
 whose dropped coefficients stay within TOL32 on every patch: 7 x 7.
 Regenerate with:
 
-    python -m chebax._src.recipes.gammainc_elem_gen      # ~1 min
+    python -m chebax._src.recipes.gammainc_array_gen      # ~1 min
 """
 
 import numpy as np
@@ -232,8 +232,8 @@ def main(out_dir=None):
     pcuts = [c + [c[-1]] * (pad[0] - len(c)) for c in pcuts]
     ycuts = [c + [c[-1]] * (pad[1] - len(c)) for c in ycuts]
     write_table_module(
-        table_path(out_dir, __file__, "gammainc_elem_table.py"),
-        "chebax._src.recipes.gammainc_elem_gen",
+        table_path(out_dir, __file__, "gammainc_array_table.py"),
+        "chebax._src.recipes.gammainc_array_gen",
         "TABLE[n, k, j] = j-th parameter coefficient of the k-th argument "
         "coefficient of patch n; zone z holds patches OFFSET[z] + i NARG[z] + j "
         "over parameter interval i (PCUTS[z, i:i+2]) and argument interval j "

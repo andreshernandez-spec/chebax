@@ -19,13 +19,13 @@ from chebax._src.series import ChebSeries
 def test_limits_at_infinity():
     # each of these produced nan from masked tail arithmetic
     assert float(chebax.matern(1.5, jnp.inf)) == 0.0
-    assert float(chebax.spherical_jn(2)(jnp.inf)) == 0.0
-    assert float(chebax.spherical_yn(2)(jnp.inf)) == 0.0
-    assert float(chebax.besseli_dnu(2.5, scaled=True)(jnp.inf)) == 0.0
-    assert float(chebax.besseli(2.5, scaled=True)(jnp.inf)) == 0.0
-    assert np.isposinf(float(chebax.hyp1f1_fn(1.0, 1.0, jnp.inf)))
-    assert float(chebax.gammainc_fn(2.0, jnp.inf)) == 1.0
-    assert float(chebax.gammaincc_fn(2.0, jnp.inf)) == 0.0
+    assert float(chebax.spherical_jn_frozen(2)(jnp.inf)) == 0.0
+    assert float(chebax.spherical_yn_frozen(2)(jnp.inf)) == 0.0
+    assert float(chebax.besseli_dnu_frozen(2.5, scaled=True)(jnp.inf)) == 0.0
+    assert float(chebax.besseli_frozen(2.5, scaled=True)(jnp.inf)) == 0.0
+    assert np.isposinf(float(chebax.hyp1f1_scalar(1.0, 1.0, jnp.inf)))
+    assert float(chebax.gammainc_scalar(2.0, jnp.inf)) == 1.0
+    assert float(chebax.gammaincc_scalar(2.0, jnp.inf)) == 0.0
 
 
 def test_negative_distance_is_a_domain_error():
@@ -37,7 +37,7 @@ def test_negative_distance_is_a_domain_error():
 
 
 def test_cached_instances_cannot_be_mutated_or_emptied():
-    s = chebax.besselj(2.5).g
+    s = chebax.besselj_frozen(2.5).g
     with pytest.raises(AttributeError, match="immutable"):
         s.coef = np.zeros(3)
     with pytest.raises(AttributeError, match="immutable"):
@@ -46,11 +46,11 @@ def test_cached_instances_cannot_be_mutated_or_emptied():
     with pytest.raises(AttributeError, match="immutable"):
         del p.coef
     # and the shared instance is intact afterwards
-    assert float(chebax.besselj(2.5)(1.0)) != 0.0
+    assert float(chebax.besselj_frozen(2.5)(1.0)) != 0.0
 
 
 def test_truncate_validates_its_tolerance():
-    inst = chebax.besselj(2.5)
+    inst = chebax.besselj_frozen(2.5)
     for bad in (-1.0, float("nan"), float("inf"), -0.0001):
         with pytest.raises(ValueError, match="finite and nonnegative"):
             inst.truncate(bad)
@@ -93,8 +93,10 @@ def test_emitted_names_are_valid_in_both_languages(tmp_path):
 
     for bad in ("template", "class", "operator", "_Foo", "my__f", "lambda"):
         with pytest.raises(ValueError):
-            bake.xsf_header(chebax.besselj(2.5), str(tmp_path / "h.h"), name=bad)
-    bake.xsf_header(chebax.besselj(2.5), str(tmp_path / "ok.h"), name="besselj_2p5")
+            bake.xsf_header(chebax.besselj_frozen(2.5), str(tmp_path / "h.h"), name=bad)
+    bake.xsf_header(
+        chebax.besselj_frozen(2.5), str(tmp_path / "ok.h"), name="besselj_2p5"
+    )
 
 
 def test_truncated_icdf_rejects_invalid_probabilities():
@@ -115,25 +117,25 @@ _UNIFORM_PARAM_CALLS = [
     ("log_stdtr", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
     ("log_stdtr_sf", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
     ("stdtrit", lambda f, p: f(p(5.0), np.array([0.3, 0.7])), 1),
-    ("betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
-    ("log_betainc_fn", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
+    ("betainc_scalar", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
+    ("log_betainc_scalar", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
     ("betaincinv", lambda f, p: f(p(2.0), p(3.0), np.array([0.3, 0.7])), 2),
-    ("gammainc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
-    ("gammaincc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
-    ("log_gammainc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
-    ("log_gammaincc_fn", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("gammainc_scalar", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("gammaincc_scalar", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("log_gammainc_scalar", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
+    ("log_gammaincc_scalar", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("gammaincinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("gammainccinv", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("chi2inv", lambda f, p: f(p(3.0), np.array([0.3, 0.7])), 1),
-    ("besselk_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
-    ("log_besselk_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
-    ("besseli_fn", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("besselk_scalar", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("log_besselk_scalar", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
+    ("besseli_scalar", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
     ("besseli_ratio", lambda f, p: f(p(1.5), np.array([1.3, 1.7])), 1),
     ("vonmises_cdf", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("vonmises_icdf", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
     ("log_wright_bessel0", lambda f, p: f(p(2.0), np.array([0.3, 0.7])), 1),
-    ("hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
-    ("log_hyp1f1_fn", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
+    ("hyp1f1_scalar", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
+    ("log_hyp1f1_scalar", lambda f, p: f(p(1.0), p(2.0), np.array([0.3, 0.7])), 2),
     ("matern", lambda f, p: f(p(1.5), np.array([0.3, 0.7])), 1),
 ]
 
@@ -174,7 +176,8 @@ def test_size_one_parameter_under_ad(name, call, _n):
     # a scalar point: against a (2,) one the (1,) tangent just broadcasts
     x = (
         1.3
-        if name in ("besselk_fn", "log_besselk_fn", "besseli_fn", "besseli_ratio")
+        if name
+        in ("besselk_scalar", "log_besselk_scalar", "besseli_scalar", "besseli_ratio")
         else 0.3
     )
     scalar = total(lambda q: lambda v: v + q)(0.0, x)

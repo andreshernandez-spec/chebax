@@ -31,7 +31,7 @@ from chebax._src.recipes import vonmises_table as _vt
 from chebax._src.recipes._common import float_params
 from chebax._src.recipes._common import newton_bisect
 from chebax._src.recipes._common import traced_coefs
-from chebax._src.recipes.besseli import besseli_fn
+from chebax._src.recipes.besseli import besseli_scalar
 from chebax._src.series import ChebSeries
 
 # a solve is accepted when its CDF residual is this small relative to
@@ -97,7 +97,7 @@ def _vonmises_cdf_jvp(primals, tangents):
 
 
 def _log_pdf(kappa, theta):
-    i0 = besseli_fn(jnp.asarray(0.0), jnp.asarray(kappa))
+    i0 = besseli_scalar(jnp.asarray(0.0), jnp.asarray(kappa))
     return jnp.asarray(kappa) * jnp.cos(theta) - jnp.log(2 * jnp.pi * i0)
 
 

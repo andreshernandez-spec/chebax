@@ -41,6 +41,7 @@ from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes._common import (
     canon_tag,
     check_range,
+    deprecated_factory,
     digamma64,
     param_coefs,
     param_coefs_der,
@@ -129,7 +130,7 @@ class _JBase(Recipe):
 @jax.tree_util.register_pytree_node_class
 class BesselJ(_JBase):
     """Callable J_v on x >= 0, or on `domain` when one was given.
-    Build with besselj(v) or besselj(v, domain=(lo, hi))."""
+    Build with besselj_frozen(v) or besselj_frozen(v, domain=(lo, hi))."""
 
     _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q")
@@ -158,7 +159,7 @@ class BesselJ(_JBase):
 @jax.tree_util.register_pytree_node_class
 class BesselJdnu(_JBase):
     """Callable dJ_v/dv on x > 0, or on `domain` when one was given.
-    Build with besselj_dnu(v) or besselj_dnu(v, domain=(lo, hi))."""
+    Build with besselj_dnu_frozen(v) or besselj_dnu_frozen(v, domain=(lo, hi))."""
 
     _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q", "gnu", "jmnu", "pnu", "qnu")
@@ -230,7 +231,18 @@ def _besselj_cached(v, domain, _tag):
     return BesselJ(v, domain, *_series_at(v))
 
 
-def besselj(v, domain=None):
+def besselj(v, x=None, domain=None):
+    """J_v(x) for one concrete order v in [0, 10]: besselj_frozen(v,
+    domain)(x). The order is not traceable here.
+
+    besselj(v) or besselj(v, domain=...) with no x is the 0.4 factory and
+    returns besselj_frozen, with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("besselj", besselj_frozen, v, domain=domain)
+    return besselj_frozen(v, domain)(x)
+
+
+def besselj_frozen(v, domain=None):
     """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath.
 
     v may be a python number or a concrete jax scalar; the bounded cache
@@ -264,10 +276,21 @@ def _besselj_dnu_cached(v, domain, _tag):
     )
 
 
-def besselj_dnu(v, domain=None):
+def besselj_dnu(v, x=None, domain=None):
+    """dJ_v/dv at x for one concrete order v: besselj_dnu_frozen(v,
+    domain)(x).
+
+    besselj_dnu(v) with no x is the 0.4 factory and returns
+    besselj_dnu_frozen, with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("besselj_dnu", besselj_dnu_frozen, v, domain=domain)
+    return besselj_dnu_frozen(v, domain)(x)
+
+
+def besselj_dnu_frozen(v, domain=None):
     """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient).
 
-    domain=(lo, hi) trims the regions exactly as besselj's does."""
+    domain=(lo, hi) trims the regions exactly as besselj_frozen's does."""
     return _besselj_dnu_cached(
         float(v), _canon_domain("besselj_dnu", domain), canon_tag()
     )

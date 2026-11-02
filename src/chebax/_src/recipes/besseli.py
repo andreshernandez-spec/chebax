@@ -25,7 +25,7 @@ float32) the log derivative is rebuilt from the SECOND v-derivative, which
 is O(1/x) and well conditioned: integrate it from 0 by two-point Gauss and
 add the exact -K_0/I_0 at v = 0.
 
-besseli(v)/besseli_dnu(v) mirror the besselj API; besseli_fn(nu, x)
+besseli_frozen(v)/besseli_dnu_frozen(v) mirror the besselj API; besseli_scalar(nu, x)
 additionally takes nu as a traced jax scalar (uniform per call, in [0, 10],
 unchecked under trace), differentiable in both arguments.
 """
@@ -45,12 +45,13 @@ from chebax._src.recipes._common import (
     canon_float,
     canon_tag,
     check_range,
+    deprecated_factory,
     digamma64,
     param_coefs,
     param_coefs_der,
     traced_coefs,
 )
-from chebax._src.recipes.besselk import besselk, besselk_fn
+from chebax._src.recipes.besselk import besselk_frozen, besselk_scalar
 from chebax._src.series import ChebSeries
 
 # above this the tail switches to a single combined exp: e^x alone overflows
@@ -185,7 +186,7 @@ def _combine_dnu(val, ratio, k0, d_first, integ, dv=1.0):
 
 @jax.tree_util.register_pytree_node_class
 class BesselI(Recipe):
-    """Callable I_v (or e^-x I_v if scaled) on x >= 0. Build with besseli()."""
+    """Callable I_v (or e^-x I_v if scaled) on x >= 0. Build with besseli_frozen()."""
 
     _static_fields = ("v", "scaled")
     _series_fields = ("lh", "lt")
@@ -203,7 +204,7 @@ class BesselI(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class BesselIdnu(Recipe):
-    """Callable dI_v/dv (or e^-x dI_v/dv if scaled). Build with besseli_dnu()."""
+    """Callable dI_v/dv (or e^-x dI_v/dv if scaled). Build with besseli_dnu_frozen()."""
 
     _static_fields = ("v", "scaled")
     _series_fields = (
@@ -295,7 +296,7 @@ def _besseli_dnu_cached(v, scaled, _tag):
         lh2b,
         lt2b,
         _besseli_cached(0.0, True, canon_tag()),
-        besselk(0.0),
+        besselk_frozen(0.0),
     )
 
 
@@ -324,7 +325,7 @@ def _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu):
     """dI_nu/dnu * dnu with nu traced; d_ad is the AD route, already scaled."""
     zero = jnp.zeros_like(nu)
     ratio = _besseli_fn_impl(nu, x, True) / _besseli_fn_impl(zero, x, True)
-    k0 = besselk_fn(zero, x)
+    k0 = besselk_scalar(zero, x)
     if scaled:
         k0 = k0 * jnp.exp(-x)
     sa, sb = _G_LO * nu, _G_HI * nu
@@ -363,7 +364,7 @@ def _besseli_fn_jvp(scaled, primals, tangents):
     return val, d_x + _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu)
 
 
-def besseli_fn(nu, x, scaled=False):
+def besseli_scalar(nu, x, scaled=False):
     """I_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
 
     nu must be uniform per call and inside [0, 10] (unchecked under trace).
@@ -372,11 +373,24 @@ def besseli_fn(nu, x, scaled=False):
     clamped below x = 1e-6 with the K table), so it is also correct to
     second order in nu."""
     return _besseli_fn(
-        canon_param(nu, "besseli_fn", "nu"), canon_float(x), bool(scaled)
+        canon_param(nu, "besseli_scalar", "nu"), canon_float(x), bool(scaled)
     )
 
 
-def besseli(v, scaled=False):
+def besseli(nu, x=None, scaled=False):
+    """I_nu(x) for one order nu in [0, 10]: besseli_scalar, which has no
+    per-element form (chebax.pergroup gives one order per group).
+
+    besseli(nu) or besseli(nu, scaled=...) with no x is the 0.4 factory and
+    returns besseli_frozen, with a DeprecationWarning; a bool in x's place
+    is the 0.4 positional scaled."""
+    if x is None or isinstance(x, bool):
+        scaled = scaled if x is None else x
+        return deprecated_factory("besseli", besseli_frozen, nu, scaled=scaled)
+    return besseli_scalar(nu, x, scaled)
+
+
+def besseli_frozen(v, scaled=False):
     """I_v on x >= 0 for real v in [0, 10] (e^-x I_v if scaled). Cached.
 
     v may be a python number or a concrete jax scalar; the bounded cache
@@ -384,7 +398,19 @@ def besseli(v, scaled=False):
     return _besseli_cached(float(v), bool(scaled), canon_tag())
 
 
-def besseli_dnu(v, scaled=False):
+def besseli_dnu(v, x=None, scaled=False):
+    """dI_v/dv at x for one concrete order v: besseli_dnu_frozen(v)(x). For
+    a traced order, differentiate besseli_scalar instead.
+
+    besseli_dnu(v) with no x is the 0.4 factory and returns
+    besseli_dnu_frozen, with a DeprecationWarning."""
+    if x is None or isinstance(x, bool):
+        scaled = scaled if x is None else x
+        return deprecated_factory("besseli_dnu", besseli_dnu_frozen, v, scaled=scaled)
+    return besseli_dnu_frozen(v, scaled)(x)
+
+
+def besseli_dnu_frozen(v, scaled=False):
     """dI_v/dv on x > 0 for real v in [0, 10] (times e^-x if scaled).
 
     v = 0 reduces to the exact identity dI_v/dv|_0 = -K_0(x) (clamped below
@@ -423,7 +449,7 @@ def besseli_ratio(nu, x):
 
     Two branches: below x = 2 the cancelled series _ratio_series, so
     nothing underflows and the slope at the origin is the exact
-    1/(2(nu+1)); from x = 2 up the quotient of the scaled besseli_fn
+    1/(2(nu+1)); from x = 2 up the quotient of the scaled besseli_scalar
     values, whose (x/2)^nu prefactors are >= 1 there and whose e^x factors
     cancel."""
     nu = canon_param(nu, "besseli_ratio", "nu")
@@ -436,7 +462,7 @@ def besseli_ratio(nu, x):
     r = jnp.where(
         near,
         _ratio_series(nu, xs),
-        besseli_fn(nu + 1.0, xt, scaled=True) / besseli_fn(nu, xt, scaled=True),
+        besseli_scalar(nu + 1.0, xt, scaled=True) / besseli_scalar(nu, xt, scaled=True),
     )
     r = jnp.where(jnp.isinf(x), 1.0, r)
     return jnp.where(jnp.isnan(x) | jnp.isnan(nu), jnp.nan, r)

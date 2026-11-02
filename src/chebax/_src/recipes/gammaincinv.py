@@ -62,9 +62,9 @@ from chebax._src.recipes._common import (
     newton_bisect,
     solver_limits,
 )
-from chebax._src.recipes.gammainc import _eval_logs as _gi_logs
-from chebax._src.recipes.gammainc import _traced_series as _gi_series
-from chebax._src.recipes.gammainc import eval_gammainc
+from chebax._src.recipes.gammainc_small import eval_gammainc
+from chebax._src.recipes.gammainc_small import eval_logs as _gi_logs
+from chebax._src.recipes.gammainc_small import series_traced as _gi_series
 
 _LN_SMALL = math.log(0.01)  # below this the lower-tail asymptotic beats WH
 

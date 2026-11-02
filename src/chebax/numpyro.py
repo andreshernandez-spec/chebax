@@ -175,7 +175,7 @@ def _log_pq(a, x, use_recipe):
     jax's own gammainc pair outside it, whose logs bottom out where those
     functions do."""
     if use_recipe:
-        return chebax.log_gammainc_fn(a, x), chebax.log_gammaincc_fn(a, x)
+        return chebax.log_gammainc_scalar(a, x), chebax.log_gammaincc_scalar(a, x)
     return (
         jnp.log(jax.scipy.special.gammainc(a, x)),
         jnp.log(jax.scipy.special.gammaincc(a, x)),
@@ -396,11 +396,13 @@ class TruncatedBeta(_Truncated):
         # needs; below the median the survival is O(1) and does not care
         return (
             jnp.where(
-                inside, chebax.log_betainc_fn(a, b, v), jnp.where(below, -jnp.inf, 0.0)
+                inside,
+                chebax.log_betainc_scalar(a, b, v),
+                jnp.where(below, -jnp.inf, 0.0),
             ),
             jnp.where(
                 inside,
-                chebax.log_betainc_fn(b, a, 1.0 - v),
+                chebax.log_betainc_scalar(b, a, 1.0 - v),
                 jnp.where(below, 0.0, -jnp.inf),
             ),
         )

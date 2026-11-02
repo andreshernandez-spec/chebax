@@ -23,32 +23,47 @@ import pytest
 
 # value: (expression evaluated in the child, 40-dps reference)
 CASES = {
-    "besselj": ("chebax.besselj(2.5)(7.0)", -0.2834366512016992),
-    "bessely": ("chebax.bessely(1.5)(3.0)", 0.087008090720835282),
-    "besseli_scaled": ("chebax.besseli(2.5, scaled=True)(4.0)", 0.087138975806603666),
-    "besselk": ("chebax.besselk(1.5)(2.0)", 0.17990665795209217),
-    "besselk_fn": ("chebax.besselk_fn(1.7, 5.0)", 0.004802603310190489),
-    "log_besselk_fn": ("chebax.log_besselk_fn(0.0, 300.0)", -302.62651585930441),
-    "besseli_fn": ("chebax.besseli_fn(1.3, 2.0)", 1.29081921513588),
+    "besselj": ("chebax.besselj_frozen(2.5)(7.0)", -0.2834366512016992),
+    "bessely": ("chebax.bessely_frozen(1.5)(3.0)", 0.087008090720835282),
+    "besseli_scaled": (
+        "chebax.besseli_frozen(2.5, scaled=True)(4.0)",
+        0.087138975806603666,
+    ),
+    "besselk": ("chebax.besselk_frozen(1.5)(2.0)", 0.17990665795209217),
+    "besselk_scalar": ("chebax.besselk_scalar(1.7, 5.0)", 0.004802603310190489),
+    "log_besselk_scalar": (
+        "chebax.log_besselk_scalar(0.0, 300.0)",
+        -302.62651585930441,
+    ),
+    "besseli_scalar": ("chebax.besseli_scalar(1.3, 2.0)", 1.29081921513588),
     # the two besseli_ratio cases the review reported as nan under x64 off
     "besseli_ratio": ("chebax.besseli_ratio(0.0, 3.0)", 0.80998529395650453),
     "besseli_ratio_small_x": ("chebax.besseli_ratio(4.0, 0.5)", 0.049896203861781465),
     "besseli_ratio_tiny_x": ("chebax.besseli_ratio(8.9, 1e-6)", 5.0505050505050393e-08),
     "besseli_ratio_inf": ("chebax.besseli_ratio(0.0, jnp.inf)", 1.0),
-    "betainc_fn": ("chebax.betainc_fn(2.0, 3.0, 0.4)", 0.5248),
-    "log_betainc_fn": ("chebax.log_betainc_fn(2.0, 3.0, 0.01)", -7.4319532486885614),
-    "gammainc_fn": ("chebax.gammainc_fn(2.5, 3.0)", 0.6937810815867216),
-    "gammainc_elem": ("chebax.gammainc_elem(2.5, 3.0)", 0.6937810815867216),
-    "log_gammaincc_elem": ("chebax.log_gammaincc_elem(2.5, 40.0)", -34.714103456537936),
-    "gammaincc_fn": ("chebax.gammaincc_fn(2.5, 9.0)", 0.0029464045878802904),
-    "log_gammaincc_fn": ("chebax.log_gammaincc_fn(2.5, 40.0)", -34.714103456537936),
+    "betainc_scalar": ("chebax.betainc_scalar(2.0, 3.0, 0.4)", 0.5248),
+    "log_betainc_scalar": (
+        "chebax.log_betainc_scalar(2.0, 3.0, 0.01)",
+        -7.4319532486885614,
+    ),
+    "gammainc_scalar": ("chebax.gammainc_scalar(2.5, 3.0)", 0.6937810815867216),
+    "gammainc_array": ("chebax.gammainc_array(2.5, 3.0)", 0.6937810815867216),
+    "log_gammaincc_array": (
+        "chebax.log_gammaincc_array(2.5, 40.0)",
+        -34.714103456537936,
+    ),
+    "gammaincc_scalar": ("chebax.gammaincc_scalar(2.5, 9.0)", 0.0029464045878802904),
+    "log_gammaincc_scalar": (
+        "chebax.log_gammaincc_scalar(2.5, 40.0)",
+        -34.714103456537936,
+    ),
     "stdtr": ("chebax.stdtr(4.0, 1.2)", 0.85182430334382328),
     "stdtr_tail": ("chebax.stdtr(20.0, -2.0)", 0.029632767723285236),
     "dawsn": ("chebax.dawsn(1.0)", 0.53807950691276842),
     "erfcx": ("chebax.erfcx(2.0)", 0.25539567631050574),
     "lambertw": ("chebax.lambertw(3.0, 0)", 1.04990889496404),
-    "spherical_jn": ("chebax.spherical_jn(2)(4.0)", 0.27628368577135016),
-    "gammainc_at_inf": ("chebax.gammainc_fn(2.0, jnp.inf)", 1.0),
+    "spherical_jn": ("chebax.spherical_jn_frozen(2)(4.0)", 0.27628368577135016),
+    "gammainc_at_inf": ("chebax.gammainc_scalar(2.0, jnp.inf)", 1.0),
 }
 
 # the inverses, which is where the x64-off breakage was concentrated
@@ -106,10 +121,10 @@ def test_quantile_under_x64_off(name):
 def test_dtype_is_float32_not_promoted():
     # everything must come back float32, not silently widened
     _run(
-        "for v in [chebax.besselk(1.5)(2.0), chebax.betaincinv(2.0, 3.0, 0.4),\n"
+        "for v in [chebax.besselk_frozen(1.5)(2.0), chebax.betaincinv(2.0, 3.0, 0.4),\n"
         "          chebax.gammaincinv(2.5, 0.4), chebax.stdtrit(4.0, 0.25),\n"
         "          chebax.besseli_ratio(0.0, 3.0), chebax.stdtr(4.0, 1.2),\n"
-        "          chebax.log_gammainc_elem(jnp.asarray([0.5, 30.0]), 2.0)]:\n"
+        "          chebax.log_gammainc_array(jnp.asarray([0.5, 30.0]), 2.0)]:\n"
         "    assert v.dtype == jnp.float32, v.dtype\n"
     )
 
@@ -117,13 +132,13 @@ def test_dtype_is_float32_not_promoted():
 def test_gradients_are_finite_under_x64_off():
     _run(
         "gs = [jax.grad(chebax.besselk(1.5))(2.0),\n"
-        "      jax.grad(chebax.besselk_fn, argnums=0)(1.7, 5.0),\n"
+        "      jax.grad(chebax.besselk_scalar, argnums=0)(1.7, 5.0),\n"
         "      jax.grad(chebax.betaincinv, argnums=2)(2.0, 3.0, 0.4),\n"
         "      jax.grad(chebax.gammaincinv, argnums=1)(2.5, 0.4),\n"
         "      jax.grad(chebax.stdtrit, argnums=1)(4.0, 0.25),\n"
         "      jax.grad(chebax.besseli_ratio, argnums=1)(0.0, 0.0),\n"
         "      jax.grad(chebax.vonmises_cdf, argnums=0)(2.0, 0.5),\n"
-        "      jax.grad(chebax.log_gammaincc_elem, argnums=0)(30.0, 25.0)]\n"
+        "      jax.grad(chebax.log_gammaincc_array, argnums=0)(30.0, 25.0)]\n"
         "for g in gs:\n"
         "    assert np.isfinite(float(g)), g\n"
         "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n"

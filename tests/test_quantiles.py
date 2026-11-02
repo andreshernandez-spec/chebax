@@ -176,8 +176,8 @@ def test_truncated_beta_reparameterization():
     u = jnp.asarray((np.arange(2000) + 0.5) / 2000)
 
     def tmean(aa):
-        flo = chebax.betainc_fn(aa, b, lo)
-        fhi = chebax.betainc_fn(aa, b, hi)
+        flo = chebax.betainc_scalar(aa, b, lo)
+        fhi = chebax.betainc_scalar(aa, b, hi)
         return jnp.mean(chebax.betaincinv(aa, b, flo + u * (fhi - flo)))
 
     def mp_tmean(aa):
@@ -197,8 +197,12 @@ def test_truncated_beta_reparameterization():
             2.0,
             b,
             np.asarray(
-                chebax.betainc_fn(2.0, b, lo)
-                + u * (chebax.betainc_fn(2.0, b, hi) - chebax.betainc_fn(2.0, b, lo))
+                chebax.betainc_scalar(2.0, b, lo)
+                + u
+                * (
+                    chebax.betainc_scalar(2.0, b, hi)
+                    - chebax.betainc_scalar(2.0, b, lo)
+                )
             ),
         )
     )
@@ -321,7 +325,7 @@ def test_quantile_endpoints_and_nan():
         chebax.gammaincinv(2.0, jnp.nan),
         chebax.stdtr(4.0, jnp.nan),
         chebax.stdtrit(4.0, jnp.nan),
-        chebax.betainc_fn(2.0, 3.0, jnp.nan),
+        chebax.betainc_scalar(2.0, 3.0, jnp.nan),
     ]:
         assert np.isnan(float(v))
 

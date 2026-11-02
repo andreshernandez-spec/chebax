@@ -18,7 +18,7 @@ parameter arrays are out of scope; that regime belongs to the branchy CPU-style 
 (bessel Track A / xsf). Finite domains are covered by segmented Chebyshev; infinite tails
 need a per-family asymptotic recipe (phase/modulus for oscillatory functions) — the
 machinery does not remove that analysis and does not claim to. One measured
-exception: `gammainc_elem` (increment 35) takes gammainc's a per element, from
+exception: `gammainc_array` (increment 35) takes gammainc's a per element, from
 small 2-D patches (144 coefficients per element in float64, 49 in float32),
 because a Gamma likelihood with a shape per observation is common and the
 uniform tables would pay ~4,300 coefficients per element there.
@@ -197,9 +197,9 @@ p.deriv()(x)             # chebder series (recomputed per deriv() call;
                          #  jit folds it for concrete coefficients)
 
 # recipes: prebuilt families, tables baked into the package
-jv = chebax.besselj(2.5)         # any real v in the table domain; no mpmath
+jv = chebax.besselj_frozen(2.5)  # any real v in the table domain; no mpmath
 jv(x); jax.grad(jv)(x)           # custom_jvp bound to the derivative series
-chebax.besselj_dnu(2.5)(x)       # order gradient, chebder along the nu axis
+chebax.besselj_dnu(2.5, x)       # order gradient, chebder along the nu axis
 
 # bake: self-contained artifacts for upstream targets
 chebax.bake.jax_module(jv, "besselj_2p5.py")

@@ -1,11 +1,12 @@
-"""Regularized incomplete gamma with a per element: P(a, x), Q = 1 - P and
-their logs for a >= 0.1 and x in [0, inf), a and x broadcast together.
+"""Per-element gammainc: P(a, x), Q = 1 - P and their logs with a
+different a >= 0.1 on every element, for chebax.gammainc_array and its
+siblings (inputs arrive normalized and broadcast from gammainc.py).
 
-The uniform-a functions (gammainc_fn and friends) collapse each table's
-a-axis once per call, which is the right cost when a is one value. With a
-different a on every element that collapse would run per element, so this
-path evaluates one small 2-D Chebyshev patch per element instead, from the
-table gammainc_elem_gen builds (zones, variables and formulas are in its
+The scalar path (gammainc_scalar) collapses each table's a-axis once per
+call, which is the right cost when a is one value. With a different a on
+every element that collapse would run per element, so this path evaluates
+one small 2-D Chebyshev patch per element instead, from the table
+gammainc_array_gen builds (zones, variables and formulas are in its
 docstring). Per element: pick the zone, locate the patch (a few compares),
 gather one KY x KP block, sum it against the two Chebyshev bases, add the
 zone's prefactor. No lgamma and no loop.
@@ -15,8 +16,8 @@ Each zone computes the probability that is small there directly, as a log
 erfcx), and the other one as log1p(-exp(direct)). The far side loses a
 factor of (direct probability)/(far probability), which only matters in A0:
 there Q = 1 - P falls to 0.024 (a = 0.1, x = 1.1), and ln Q is 8.4e-15
-against 7.8e-16 everywhere else (tests/test_gammainc_elem.py). The uniform
-recipe takes 1 - P down to Q ~ 1e-6, in its wedge just below x = 8 at small
+against 7.8e-16 everywhere else (tests/test_gammainc_array.py). The scalar
+path takes 1 - P down to Q ~ 1e-6, in its wedge just below x = 8 at small
 a. Neither log underflows (ln P reaches -1e5 and beyond).
 
 The Temme zone needs phi = d - log1p(d), d = (x - a)/a, near d = 0, where
@@ -52,8 +53,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from chebax._src.recipes import gammainc_elem_table as _t
-from chebax._src.recipes._common import canon_float, edge_slope
+from chebax._src.recipes import gammainc_array_table as _t
+from chebax._src.recipes._common import edge_slope
 from chebax._src.recipes.erf_family import erfcx
 
 _A0, _B0, _L1, _U1, _L2, _U2, _T = range(len(_t.NAMES))
@@ -245,52 +246,28 @@ def _log_pq(a, x):
     return jnp.where(bad, jnp.nan, lp), jnp.where(bad, jnp.nan, lq)
 
 
-def _prepare(a, x):
-    return jnp.broadcast_arrays(canon_float(a), canon_float(x))
-
-
 def _density0(a):
     """Gamma density at x = 0: inf below a = 1, 1 at it, 0 above."""
     return jnp.where(a < 1.0, jnp.inf, jnp.where(a > 1.0, 0.0, 1.0))
 
 
-def gammainc_elem(a, x):
-    """P(a, x) with a per element: a and x broadcast together.
-
-    a >= 0.1 (nan below, and for a = inf or nan), x anywhere: x <= 0 gives
-    0, x = inf gives 1. Absolutely accurate, and relatively accurate where
-    P is small. Differentiable in a and x; dP/dx at x = 0 is the density
-    (inf below a = 1). Active jax float dtype."""
-    a, x = _prepare(a, x)
+def p(a, x):
     lp, _ = _log_pq(a, x)
     return _exp0(lp) + edge_slope(jnp.where(x == 0.0, _density0(a), 0.0), x)
 
 
-def gammaincc_elem(a, x):
-    """Q(a, x) = 1 - P(a, x) with a per element, same contract as
-    gammainc_elem; relatively accurate where Q is small, the upper tail
-    included (computed directly, not as 1 - P)."""
-    a, x = _prepare(a, x)
+def q(a, x):
     _, lq = _log_pq(a, x)
     return _exp0(lq) + edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
 
 
-def log_gammainc_elem(a, x):
-    """ln P(a, x) with a per element, same contract as gammainc_elem and no
-    underflow floor: ln P ~ a ln x - x - lnGamma(a+1) as x -> 0 and
-    -a phi as x/a -> 0 for large a. x <= 0 gives -inf, x = inf gives 0."""
-    a, x = _prepare(a, x)
+def log_p(a, x):
     lp, _ = _log_pq(a, x)
     # d ln P/dx = density/P ~ a/x, so the slope at x = 0 is inf for every a
     return lp + edge_slope(jnp.where(x == 0.0, jnp.inf, 0.0), x)
 
 
-def log_gammaincc_elem(a, x):
-    """ln Q(a, x) with a per element, same contract as gammaincc_elem and
-    no underflow ceiling (ln Q ~ -x as x -> inf): the log survival
-    function of a Gamma likelihood with a shape per observation. x <= 0
-    gives 0, x = inf gives -inf."""
-    a, x = _prepare(a, x)
+def log_q(a, x):
     _, lq = _log_pq(a, x)
     # Q = 1 at x = 0, so d ln Q/dx there is just -density
     return lq + edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)

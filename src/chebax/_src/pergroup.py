@@ -1,6 +1,6 @@
 """Per-group parameters for the traced recipes.
 
-The traced functions (betainc_fn, besselk_fn, ...) take their parameters
+The traced functions (betainc_scalar, besselk_scalar, ...) take their parameters
 uniform per call. `pergroup` relaxes that to per-GROUP: a static integer
 array assigns every element of x to one of G groups, and each group gets
 its own parameter set. Grouping is fixed at wrap time; parameter VALUES
@@ -30,7 +30,7 @@ def pergroup(fn, group_idx, num_groups=None):
 
     fn: a function f(param0, ..., paramK, x) whose leading arguments are
         uniform-per-call scalar parameters and whose last argument is
-        the evaluation array (betainc_fn, besselk_fn, stdtr, ...).
+        the evaluation array (betainc_scalar, besselk_scalar, stdtr, ...).
         Keyword arguments (e.g. scaled=) are bound with functools.partial
         before wrapping.
     group_idx: STATIC integer array (numpy, not traced), same shape as
@@ -98,7 +98,7 @@ def pergroup(fn, group_idx, num_groups=None):
 
     # A copy's output is discarded, so in reverse mode it gets a zero
     # cotangent, and 0 * inf is nan wherever fn's derivative is infinite:
-    # betainc_fn(.5, 2, x) at x = 0 came back with a nan x-gradient
+    # betainc_scalar(.5, 2, x) at x = 0 came back with a nan x-gradient
     # instead of +inf (review, 2026-10-26). So every lane holding element
     # i, the live one and its copies, carries 1/k of i's derivative.
     # The value is still the live lane's alone.

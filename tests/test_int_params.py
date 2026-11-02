@@ -4,7 +4,7 @@
 nu=4 and kappa=5 are how anyone writes these calls, and a python or numpy
 INTEGER is not a differentiable type: jax hands the custom_jvp rule a
 float0 tangent for that primal and the rule's arithmetic dies on it. Four
-public functions failed outright (besseli_fn, stdtr, stdtrit,
+public functions failed outright (besseli_scalar, stdtr, stdtrit,
 vonmises_cdf); the rules now sit on private names and the public entry
 points promote every argument first (_common.float_params). Keyword calls
 went around that promotion until the second review, and so did an integer
@@ -26,17 +26,17 @@ from chebax import ChebSeries, PiecewiseCheb
 
 # (name, call taking (param, x), a float param, an x)
 CASES = [
-    ("besseli_fn", lambda p, x: chebax.besseli_fn(p, x), 2, 3.0),
+    ("besseli_scalar", lambda p, x: chebax.besseli_scalar(p, x), 2, 3.0),
     ("besseli_ratio", lambda p, x: chebax.besseli_ratio(p, x), 2, 3.0),
-    ("besselk_fn", lambda p, x: chebax.besselk_fn(p, x), 2, 3.0),
-    ("log_besselk_fn", lambda p, x: chebax.log_besselk_fn(p, x), 2, 3.0),
-    ("betainc_fn", lambda p, x: chebax.betainc_fn(p, 2, x), 3, 0.4),
-    ("log_betainc_fn", lambda p, x: chebax.log_betainc_fn(p, 2, x), 3, 0.4),
-    ("gammainc_fn", lambda p, x: chebax.gammainc_fn(p, x), 3, 1.5),
-    ("log_gammainc_fn", lambda p, x: chebax.log_gammainc_fn(p, x), 3, 1.5),
-    ("gammainc_elem", lambda p, x: chebax.gammainc_elem(p, x), 3, 1.5),
-    ("log_gammaincc_elem", lambda p, x: chebax.log_gammaincc_elem(p, x), 3, 1.5),
-    ("hyp1f1_fn", lambda p, x: chebax.hyp1f1_fn(p, 3, x), 2, 1.5),
+    ("besselk_scalar", lambda p, x: chebax.besselk_scalar(p, x), 2, 3.0),
+    ("log_besselk_scalar", lambda p, x: chebax.log_besselk_scalar(p, x), 2, 3.0),
+    ("betainc_scalar", lambda p, x: chebax.betainc_scalar(p, 2, x), 3, 0.4),
+    ("log_betainc_scalar", lambda p, x: chebax.log_betainc_scalar(p, 2, x), 3, 0.4),
+    ("gammainc_scalar", lambda p, x: chebax.gammainc_scalar(p, x), 3, 1.5),
+    ("log_gammainc_scalar", lambda p, x: chebax.log_gammainc_scalar(p, x), 3, 1.5),
+    ("gammainc_array", lambda p, x: chebax.gammainc_array(p, x), 3, 1.5),
+    ("log_gammaincc_array", lambda p, x: chebax.log_gammaincc_array(p, x), 3, 1.5),
+    ("hyp1f1_scalar", lambda p, x: chebax.hyp1f1_scalar(p, 3, x), 2, 1.5),
     ("matern", lambda p, x: chebax.matern(p, x), 2, 1.5),
     ("stdtr", lambda p, x: chebax.stdtr(p, x), 4, 1.0),
     ("log_stdtr", lambda p, x: chebax.log_stdtr(p, x), 4, 1.0),
@@ -73,18 +73,18 @@ def test_integer_parameter_under_jit(name, fn, p, x):
 
 # (name, uniform parameters by keyword, evaluation-point keyword, point)
 KW_CASES = [
-    ("besseli_fn", {"nu": 2}, "x", 3.0),
+    ("besseli_scalar", {"nu": 2}, "x", 3.0),
     ("besseli_ratio", {"nu": 2}, "x", 3.0),
-    ("besselk_fn", {"nu": 2}, "x", 3.0),
-    ("log_besselk_fn", {"nu": 2}, "x", 3.0),
-    ("betainc_fn", {"a": 3, "b": 2}, "x", 0.4),
-    ("log_betainc_fn", {"a": 3, "b": 2}, "x", 0.4),
-    ("gammainc_fn", {"a": 3}, "x", 1.5),
-    ("gammaincc_fn", {"a": 3}, "x", 1.5),
-    ("log_gammainc_fn", {"a": 3}, "x", 1.5),
-    ("log_gammaincc_fn", {"a": 3}, "x", 1.5),
-    ("hyp1f1_fn", {"a": 2, "b": 3}, "x", 1.5),
-    ("log_hyp1f1_fn", {"a": 2, "b": 3}, "x", 1.5),
+    ("besselk_scalar", {"nu": 2}, "x", 3.0),
+    ("log_besselk_scalar", {"nu": 2}, "x", 3.0),
+    ("betainc_scalar", {"a": 3, "b": 2}, "x", 0.4),
+    ("log_betainc_scalar", {"a": 3, "b": 2}, "x", 0.4),
+    ("gammainc_scalar", {"a": 3}, "x", 1.5),
+    ("gammaincc_scalar", {"a": 3}, "x", 1.5),
+    ("log_gammainc_scalar", {"a": 3}, "x", 1.5),
+    ("log_gammaincc_scalar", {"a": 3}, "x", 1.5),
+    ("hyp1f1_scalar", {"a": 2, "b": 3}, "x", 1.5),
+    ("log_hyp1f1_scalar", {"a": 2, "b": 3}, "x", 1.5),
     ("matern", {"nu": 2}, "r", 1.5),
     ("stdtr", {"nu": 4}, "t", 1.0),
     ("log_stdtr", {"nu": 4}, "t", 1.0),

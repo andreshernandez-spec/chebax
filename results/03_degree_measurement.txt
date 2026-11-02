@@ -55,8 +55,8 @@ gammainc: L and T degrees (claims: L x <= 23, a <= 53; T t <= 20, a <= 20)
   T t-dir a=0.1: last>1e-15 at k=18  a[20]=8.9e-17  a[24]=3.1e-19
   T t-dir a=10.0: last>1e-15 at k=19  a[20]=7.3e-16  a[24]=1.6e-18
   T a-dir t=1: last>1e-15 at k=20  a[20]=1.0e-15  a[24]=1.5e-18
-== gammainc_elem ==
-gammainc_elem: L's a-direction in u = ln(1 + a) against linear a, a in [0.1, 10] (claims: u 17 vs a 53 at x = 0.01, 33 vs 46 at x = 8)
+== gammainc_array ==
+gammainc_array: L's a-direction in u = ln(1 + a) against linear a, a in [0.1, 10] (claims: u 17 vs a 53 at x = 0.01, 33 vs 46 at x = 8)
   L a-dir x=0.01: last>1e-15 at k=53  a[46]=1.5e-13  a[53]=1.5e-15
   L u-dir x=0.01: last>1e-15 at k=17  a[17]=1.7e-15  a[33]=5.8e-28
   L a-dir x=8.0: last>1e-15 at k=46  a[46]=1.1e-15  a[53]=9.8e-18

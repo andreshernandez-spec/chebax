@@ -11,7 +11,7 @@ Two regions, one hard select at x = XS = 30:
                  the DLMF 13.7.1 asymptotic with its log-remainder T
                  tabulated. Accuracy does not decay with x; M itself
                  overflows f64 once ln M > ~709 (x ~ 700), where
-                 log_hyp1f1_fn is the usable form.
+                 log_hyp1f1_scalar is the usable form.
 
 M is positive on the box and the error contract is relative, degrading
 as eps |ln M| ~ eps x for large x (the exact e^x factor carries the
@@ -20,8 +20,8 @@ x < 0 returns nan (v1 covers x >= 0 only; for x < 0 use the Kummer
 transform M(a, b, x) = e^x M(b-a, b, -x) yourself when b - a lands in
 the box); nan propagates.
 
-hyp1f1(a, b) is the eager cached instance (numpy reconstruction).
-hyp1f1_fn(a, b, x) takes both parameters as traced scalars (uniform per
+hyp1f1_frozen(a, b) is the eager cached instance (numpy reconstruction).
+hyp1f1_scalar(a, b, x) takes both parameters as traced scalars (uniform per
 call, inside [0.1, 10], unchecked under trace): jax.grad works with
 respect to a and b through the tables' log-mapped parameter axes and
 gammaln. dM/dx is AD through the formula; its exact value is
@@ -46,7 +46,12 @@ from chebax import domains as _dom
 from chebax._src import algorithms
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import hyp1f1_table as _ht
-from chebax._src.recipes._common import canon_param, canon_tag, check_range
+from chebax._src.recipes._common import (
+    canon_param,
+    canon_tag,
+    check_range,
+    deprecated_factory,
+)
 from chebax._src.series import ChebSeries, _chebval
 
 _LNLO, _LNHI = float(np.log(_ht.ALO)), float(np.log(_ht.AHI))
@@ -84,7 +89,7 @@ def _eval_logs(a, b, x, lnr, ltail):
     x = 0 belongs to the INNER lane, not to a hard select on the value:
     log1p there is exactly 0, so the value is unchanged, and its
     derivative is the exact a/b instead of the 0 a constant branch gives
-    (review, 2026-08-02: grad of hyp1f1_fn(2, 3, .) at 0 was 0 for a true
+    (review, 2026-08-02: grad of hyp1f1_scalar(2, 3, .) at 0 was 0 for a true
     2/3)."""
     xd = jnp.where((x >= 0.0) & (x <= _ht.XS), x, 1.0)
     lm_in = jnp.log1p(a / b * xd * jnp.exp(lnr(xd)))
@@ -115,7 +120,7 @@ def eval_hyp1f1(a, b, x, lnr, ltail, log):
 
 @jax.tree_util.register_pytree_node_class
 class Hyp1F1(Recipe):
-    """Callable M(a, b, x) on x in [0, inf). Build with hyp1f1(a, b)."""
+    """Callable M(a, b, x) on x in [0, inf). Build with hyp1f1_frozen(a, b)."""
 
     _static_fields = ("a", "b")
     _series_fields = ("lnr", "ltail")
@@ -153,30 +158,46 @@ def _traced_series(a, b):
     )
 
 
-def hyp1f1_fn(a, b, x):
+def hyp1f1_scalar(a, b, x):
     """M(a, b, x) with a, b (traceable) scalars, differentiable in all
     three arguments.
 
     a and b must be uniform per call and inside [0.1, 10] (unchecked
     under trace). Reconstruction costs two tensor contractions per call,
     not per point; jit constant-folds them when a and b are static."""
-    a = canon_param(a, "hyp1f1_fn", "a")
-    b = canon_param(b, "hyp1f1_fn", "b")
+    a = canon_param(a, "hyp1f1_scalar", "a")
+    b = canon_param(b, "hyp1f1_scalar", "b")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=False)
 
 
-def log_hyp1f1_fn(a, b, x):
-    """ln M(a, b, x), same contract as hyp1f1_fn but with no overflow
+def log_hyp1f1_scalar(a, b, x):
+    """ln M(a, b, x), same contract as hyp1f1_scalar but with no overflow
     ceiling: valid for arbitrarily large x (ln M ~ x), where M itself
     leaves f64 past x ~ 700. This is the form a likelihood wants."""
-    a = canon_param(a, "log_hyp1f1_fn", "a")
-    b = canon_param(b, "log_hyp1f1_fn", "b")
+    a = canon_param(a, "log_hyp1f1_scalar", "a")
+    b = canon_param(b, "log_hyp1f1_scalar", "b")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=True)
 
 
-def hyp1f1(a, b):
+def hyp1f1(a, b, x=None):
+    """M(a, b, x) for one pair (a, b) in [0.1, 10]^2: hyp1f1_scalar, which
+    has no per-element form (chebax.pergroup gives one pair per group).
+
+    hyp1f1(a, b) with no x is the 0.4 factory and returns
+    hyp1f1_frozen(a, b), with a DeprecationWarning."""
+    if x is None:
+        return deprecated_factory("hyp1f1", hyp1f1_frozen, a, b)
+    return hyp1f1_scalar(a, b, x)
+
+
+def log_hyp1f1(a, b, x):
+    """ln M(a, b, x) for one pair (a, b) in [0.1, 10]^2: log_hyp1f1_scalar."""
+    return log_hyp1f1_scalar(a, b, x)
+
+
+def hyp1f1_frozen(a, b):
     """M(a, b, x) on [0, inf) for (a, b) in [0.1, 10]^2. Cached per
     (a, b); no mpmath.
 

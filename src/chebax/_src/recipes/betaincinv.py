@@ -11,14 +11,14 @@ but the implicit function theorem's,
 
     dx*/dp = 1 / pdf(x*),    dx*/d(a, b) = -(dI/d(a, b))(x*) / pdf(x*),
 
-with dI/da, dI/db from betainc_fn's traced gradients at the solution.
+with dI/da, dI/db from betainc_scalar's traced gradients at the solution.
 """
 
 import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes._common import float_params
-from chebax._src.recipes.betainc import betainc_fn, with_panel_series
+from chebax._src.recipes.betainc import betainc_scalar, with_panel_series
 from chebax._src.recipes.betainc_kernel import betaincinv_core, ln_beta
 
 
@@ -44,7 +44,7 @@ def _betaincinv_jvp(primals, tangents):
     interior = (x > 0.0) & (x < 1.0)
     xs = jnp.where(interior, x, 0.5)
     pdf = jnp.exp((a - 1) * jnp.log(xs) + (b - 1) * jnp.log1p(-xs) - ln_beta(a, b))
-    _, d_cdf = jax.jvp(lambda aa, bb: betainc_fn(aa, bb, xs), (a, b), (da, db))
+    _, d_cdf = jax.jvp(lambda aa, bb: betainc_scalar(aa, bb, xs), (a, b), (da, db))
     dx = (dp - d_cdf) / pdf
     return x, jnp.where(jnp.isnan(x), jnp.nan, jnp.where(interior, dx, 0.0))
 

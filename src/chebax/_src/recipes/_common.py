@@ -6,13 +6,14 @@ Reconstruction convention (matches _gen_common's emitted axis note): for a
 2-D table, TABLE[k, j] is the j-th parameter-direction coefficient of the
 k-th argument-direction coefficient, the parameter mapped affinely from
 [lo, hi] onto [-1, 1]. `param_coefs` is the eager numpy path used by the
-cached factories; `traced_coefs` is the jax path used by the *_fn traced
+frozen factories; `traced_coefs` is the jax path used by the *_scalar traced
 variants (differentiable in the parameter through the series custom_jvp).
 """
 
 import functools
 import inspect
 import math
+import warnings
 from collections import namedtuple
 
 import numpy as np
@@ -39,7 +40,7 @@ def canon_float(x):
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
 
 
-def canon_param(p, who, name):
+def canon_param(p, who, name, array=None):
     """A uniform-per-call parameter: scalar, or any array holding one value.
 
     numpyro and pytensor both hand back a broadcast (1,) array where the
@@ -52,19 +53,41 @@ def canon_param(p, who, name):
     to do.
 
     One value is uniform whatever its shape, so take it. Anything larger
-    is a per-element parameter, which is out of scope by design and is
-    what chebax.pergroup is for; say so instead of failing later.
+    is a per-element parameter: the family's _array path where it has one
+    (named by array), else chebax.pergroup for one parameter set per
+    group; say so instead of failing later.
     """
     a = canon_float(p)
     if a.ndim == 0:
         return a
     if a.size == 1:
         return jnp.reshape(a, ())
+    per_elem = f"For {name} per element use chebax.{array}; for " if array else "For "
     raise ValueError(
         f"{who} takes {name} as a scalar (uniform per call), got shape "
-        f"{a.shape}. For one parameter set per group use "
+        f"{a.shape}. {per_elem}one parameter set per group use "
         f"chebax.pergroup({who}, group_idx)."
     )
+
+
+def per_element(*params):
+    """True when any parameter holds more than one value. Shapes are
+    static, so a function that dispatches on this picks its path at trace
+    time and the choice costs nothing at run time."""
+    return any(jnp.size(p) > 1 for p in params)
+
+
+def deprecated_factory(name, frozen, *params, **kw):
+    """The 0.4 factory call, name(params) with no evaluation point: it
+    still returns the frozen callable, with a DeprecationWarning that
+    names the new spelling."""
+    warnings.warn(
+        f"{name}(...) without x is deprecated: call {frozen.__name__}(...) "
+        f"for the cached callable, or {name}(..., x) for values.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return frozen(*params, **kw)
 
 
 @jax.custom_jvp
@@ -92,7 +115,7 @@ def float_params(impl):
 
     A python or numpy INTEGER parameter is not a differentiable type, so
     jax hands the rule a float0 tangent for it and the rule's own
-    arithmetic dies on that: grad through stdtr(4, t), besseli_fn(2, x)
+    arithmetic dies on that: grad through stdtr(4, t), besseli_scalar(2, x)
     and vonmises_cdf(5, t) all failed this way (review, 2026-08-02), and
     nu=4 or kappa=5 is how anyone would write those. Converting OUTSIDE
     the rule turns the parameter into an ordinary float constant, which

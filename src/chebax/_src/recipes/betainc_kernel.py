@@ -1,15 +1,6 @@
-"""The betainc kernel without its tables: evaluation from x-series, the
-inverse solve, ln B, and the Student-t density.
-
-betainc, betaincinv and stdtr all run on the same kernel,
-
-    I_x(a, b) = exp( a ln x + b ln(1-x) - ln a - ln B(a,b) + L(a,b,x) )
-
-for x <= XSPLIT and the reflection I_x(a,b) = 1 - I_{1-x}(b,a) above it,
-but on different tables: betainc's 3-D tensor panels, stdtr's slices at
-a = 1/2. The table-free part lives here so that each family loads only its
-own tables; stdtr importing betainc used to load the 15 MB tensor for a
-Student-t call.
+"""The betainc kernel without tables (x-series evaluation, inverse solve, ln B,
+Student-t density), shared by betainc, betaincinv and stdtr so each loads only
+its own tables (betainc's tensor is 15 MB).
 """
 
 import jax
@@ -17,9 +8,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes._common import canon_tag, newton_bisect, solver_limits
 
-# Every table of this kernel is fitted on x in (0, XSPLIT]; the reflection
-# needs 1 - x exact above it, which holds from 1/2. test_betainc checks the
-# tables agree.
+# every table is fitted on (0, XSPLIT]; 1 - x is exact from 1/2
 XSPLIT = 0.5
 
 
@@ -50,18 +39,15 @@ def eval_betainc(a, b, x, cab, cba):
 
 
 def betaincinv_core(a, b, p, cab, cba):
-    """The betaincinv solve, series-agnostic: cab/cba are the x-series of
-    the betainc kernel at (a, b) and (b, a), from the 3-D tensor (public
-    betaincinv) or the stdtr slice tables (stdtrit). Not differentiable
-    on its own; callers wrap it in a custom_jvp."""
+    """The betaincinv solve on given x-series cab, cba at (a, b) and (b, a).
+    Not differentiable; callers wrap it in a custom_jvp."""
     lim = solver_limits(canon_tag())
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
     ln_b = ln_beta(a, b)
 
-    # Solve every element as a LOWER-tail problem of the mirrored orientation
-    # (1 - p is exact for p >= 1/2), in logit space so tail quantiles resolve
-    # down to the dtype's floor; df/du = pdf * x * (1-x) is a stable exp.
+    # lower-tail solve of the mirrored orientation (1 - p exact for p >= 1/2),
+    # in logit space so tails resolve to the dtype's floor
     swap = pc > 0.5
     ps2 = jnp.where(swap, 1.0 - pc, pc)
     aa = jnp.where(swap, b, a)
@@ -78,11 +64,8 @@ def betaincinv_core(a, b, p, cab, cba):
         dfdu = jnp.exp(jnp.where(swap, b, a) * ls + jnp.where(swap, a, b) * l1s - ln_b)
         return f, dfdu
 
-    # Initialization: the generic start converges at ~1/a additive steps in
-    # u, which cannot reach deep tails in a fixed count (measured: a = 1,
-    # p = 1e-50 stalled at e^-64). In the tail the exact leading asymptotic
-    # I_x(a,b) = x^a / (a B(a,b)) (1 + O(x)) inverts to a start within
-    # O(x) relatively, and Newton converges quadratically from there.
+    # tail start from I_x ~ x^a / (a B(a,b)): the generic one moves ~1/a per step
+    # in u (a = 1, p = 1e-50 stalled at e^-64)
     u_generic = jnp.where(swap, jnp.log(b / a), jnp.log(a / b)) + jnp.zeros_like(pc)
     u_asym = (jnp.log(ps2) + jnp.log(aa) + ln_b) / aa
     u0 = jnp.clip(jnp.where(ps2 < 0.01, u_asym, u_generic), lim.lo, lim.hi)
@@ -90,16 +73,10 @@ def betaincinv_core(a, b, p, cab, cba):
         f_and_df, u0, jnp.full_like(pc, lim.lo), jnp.full_like(pc, lim.hi), lim.n_beta
     )
 
-    # Convergence is checked, never assumed. A root at or below the bracket
-    # floor underflows the dtype: return the mirrored endpoint. That is
-    # read off the residual AT the floor, which is the smallest normal x;
-    # a half-unit band above it in u zeroed normal quantiles, as in
-    # betaincinv(1, 1, 4e-308) (review, 2026-10-26). Any other unconverged
-    # element returns nan. The bar stays relative to the mass being
-    # resolved: past the kernel's x = 1/2 split I comes back as
-    # 1 - (the reflected orientation) and is only absolutely accurate, so
-    # a target far below that absolute error is genuinely unresolvable and
-    # nan is the answer (float32 hits this through stdtrit at large nu).
+    # checked: a positive residual at the floor (smallest normal x) is an
+    # underflowing root and gives the endpoint; other unconverged lanes give nan,
+    # e.g. targets below the reflected side's absolute error (float32 stdtrit at
+    # large nu)
     f_fin, _ = f_and_df(u)
     f_lo, _ = f_and_df(jnp.full_like(u, lim.lo))
     at_floor = f_lo > 0.0
@@ -113,10 +90,8 @@ def betaincinv_core(a, b, p, cab, cba):
 
 
 def t_logpdf(nu, t):
-    # ln(1 + t^2/nu) from log|t| where t^2 would overflow (|t| ~ 1.3e154 in
-    # float64, 1.8e19 in float32), where it is 2 ln|t| - ln nu to hundreds
-    # of digits. The direct form is kept elsewhere: it is the one with the
-    # exact zero t-derivative at t = 0, which second derivatives need.
+    # 2 ln|t| - ln nu where t^2 overflows; log1p elsewhere keeps the exact zero
+    # t-derivative at t = 0 that second derivatives need
     t2 = t * t
     ok = jnp.isfinite(t2)
     l1 = jnp.where(

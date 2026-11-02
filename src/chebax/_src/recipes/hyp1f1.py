@@ -1,39 +1,15 @@
-"""Kummer's confluent hypergeometric M(a, b, x) = 1F1(a; b; x) for
-(a, b) in [0.1, 10]^2, x in [0, inf), from baked log-tables.
+"""Kummer's M(a, b, x) = 1F1(a; b; x) for (a, b) in [0.1, 10]^2, x >= 0, from
+log-tables split at x = 30:
 
-Two regions, one hard select at x = XS = 30:
+    x <= 30:  ln M = log1p((a/b) x R), ln R tabulated (hyp1f1_gen says why
+              not ln M), exact relative accuracy down to x = 0
+    x > 30:   ln M = lgamma(b) - lgamma(a) + x + (a - b) ln x + T(30/x),
+              DLMF 13.7.1 with its log-remainder T tabulated
 
-- x in [0, 30]:  M = 1 + (a/b) x R, with ln R tabulated (R(a, b, 0) = 1;
-                 see hyp1f1_gen for why ln M itself is the wrong kernel).
-                 ln M = log1p((a/b) x exp(ln R)) keeps full relative
-                 accuracy down to x = 0.
-- x > 30:        ln M = lgamma(b) - lgamma(a) + x + (a - b) ln x + T(30/x),
-                 the DLMF 13.7.1 asymptotic with its log-remainder T
-                 tabulated. Accuracy does not decay with x; M itself
-                 overflows f64 once ln M > ~709 (x ~ 700), where
-                 log_hyp1f1_scalar is the usable form.
-
-M is positive on the box and the error contract is relative, degrading
-as eps |ln M| ~ eps x for large x (the exact e^x factor carries the
-dynamic range, the besselk/gammainc contract). x = 0 returns 1 exactly;
-x < 0 returns nan (v1 covers x >= 0 only; for x < 0 use the Kummer
-transform M(a, b, x) = e^x M(b-a, b, -x) yourself when b - a lands in
-the box); nan propagates.
-
-hyp1f1_frozen(a, b) is the eager cached instance (numpy reconstruction).
-hyp1f1_scalar(a, b, x) takes both parameters as traced scalars (uniform per
-call, inside [0.1, 10], unchecked under trace): jax.grad works with
-respect to a and b through the tables' log-mapped parameter axes and
-gammaln. dM/dx is AD through the formula; its exact value is
-(a/b) M(a+1, b+1, x), which the tests use as an oracle where a+1, b+1
-stay in the box. x = 0 rides the inner lane rather than a select on the
-value (log1p is exactly 0 there), so the gradient at the origin is the
-exact a/b. M diverges at x = +inf for every a in the box, and both forms
-say so.
-
-jax.scipy.special.hyp1f1 truncates a term-recurrence at tolerance 1e-8
-and is documented-unstable (jax#21503); this recipe is fixed-degree
-polynomial evaluation against 40-digit tables.
+Relative error grows as eps x. M overflows f64 past x ~ 700, where
+log_hyp1f1_scalar still works. x < 0 gives nan (use the Kummer transform
+e^x M(b-a, b, -x) when b - a is in the box). jax's hyp1f1 truncates at 1e-8
+and is unstable (jax#21503).
 """
 
 import functools
@@ -66,8 +42,7 @@ def _smap_raw(v):
 
 
 def _coefs_eager(tensor, sa, sb):
-    """Argument-coefficient vector at mapped (sa, sb): Clenshaw in a then
-    b across the tensor's parameter axes. numpy."""
+    """Argument coefficients at mapped (sa, sb), Clenshaw in a then b (numpy)."""
     out = []
     for k in range(tensor.shape[0]):
         vb = [algorithms.chebval(sa, tensor[k, :, n]) for n in range(tensor.shape[2])]
@@ -84,13 +59,8 @@ def _coefs_traced(tensor, sa, sb):
 
 
 def _eval_logs(a, b, x, lnr, ltail):
-    """(ln M inner, ln M tail), masked lanes fed finite dummies.
-
-    x = 0 belongs to the INNER lane, not to a hard select on the value:
-    log1p there is exactly 0, so the value is unchanged, and its
-    derivative is the exact a/b instead of the 0 a constant branch gives
-    (review, 2026-08-02: grad of hyp1f1_scalar(2, 3, .) at 0 was 0 for a true
-    2/3)."""
+    """(ln M inner, ln M tail), masked lanes fed finite dummies. x = 0 stays
+    in the inner lane, so dM/dx there is a/b, not a constant branch's 0."""
     xd = jnp.where((x >= 0.0) & (x <= _ht.XS), x, 1.0)
     lm_in = jnp.log1p(a / b * xd * jnp.exp(lnr(xd)))
     xo = jnp.where(x > _ht.XS, x, 2.0 * _ht.XS)
@@ -108,9 +78,7 @@ def eval_hyp1f1(a, b, x, lnr, ltail, log):
     x = jnp.asarray(x)
     lm_in, lm_tl = _eval_logs(a, b, x, lnr, ltail)
     lm = jnp.where(x <= _ht.XS, lm_in, lm_tl)
-    # M ~ Gamma(b)/Gamma(a) e^x x^(a-b) grows without bound for every a > 0
-    # in the box, but the tail bracket is inf + (a-b) inf at x = inf, which
-    # is nan when a = b: mask it and set the limit by hand
+    # at x = inf the tail is inf + (a-b) inf, nan when a = b; M -> inf
     big = x == jnp.inf
     out = lm if log else jnp.exp(jnp.where(big, 0.0, lm))
     out = jnp.where(big, jnp.inf, out)
@@ -159,12 +127,8 @@ def _traced_series(a, b):
 
 
 def hyp1f1_scalar(a, b, x):
-    """M(a, b, x) with a, b (traceable) scalars, differentiable in all
-    three arguments.
-
-    a and b must be uniform per call and inside [0.1, 10] (unchecked
-    under trace). Reconstruction costs two tensor contractions per call,
-    not per point; jit constant-folds them when a and b are static."""
+    """M(a, b, x), a and b traced scalars in [0.1, 10] (unchecked under trace),
+    differentiable in all three."""
     a = canon_param(a, "hyp1f1_scalar", "a")
     b = canon_param(b, "hyp1f1_scalar", "b")
     lnr, ltail = _traced_series(a, b)
@@ -172,9 +136,7 @@ def hyp1f1_scalar(a, b, x):
 
 
 def log_hyp1f1_scalar(a, b, x):
-    """ln M(a, b, x), same contract as hyp1f1_scalar but with no overflow
-    ceiling: valid for arbitrarily large x (ln M ~ x), where M itself
-    leaves f64 past x ~ 700. This is the form a likelihood wants."""
+    """ln M(a, b, x) as hyp1f1_scalar, with no overflow at large x."""
     a = canon_param(a, "log_hyp1f1_scalar", "a")
     b = canon_param(b, "log_hyp1f1_scalar", "b")
     lnr, ltail = _traced_series(a, b)
@@ -182,11 +144,8 @@ def log_hyp1f1_scalar(a, b, x):
 
 
 def hyp1f1(a, b, x=None):
-    """M(a, b, x) for one pair (a, b) in [0.1, 10]^2: hyp1f1_scalar, which
-    has no per-element form (chebax.pergroup gives one pair per group).
-
-    hyp1f1(a, b) with no x is the 0.4 factory and returns
-    hyp1f1_frozen(a, b), with a DeprecationWarning."""
+    """M(a, b, x) for one pair (a, b) in [0.1, 10]^2 (hyp1f1_scalar). Without
+    x it is the deprecated 0.4 factory. chebax.pergroup gives one pair per group."""
     if x is None:
         return deprecated_factory("hyp1f1", hyp1f1_frozen, a, b)
     return hyp1f1_scalar(a, b, x)
@@ -198,9 +157,5 @@ def log_hyp1f1(a, b, x):
 
 
 def hyp1f1_frozen(a, b):
-    """M(a, b, x) on [0, inf) for (a, b) in [0.1, 10]^2. Cached per
-    (a, b); no mpmath.
-
-    a and b may be python numbers or concrete jax scalars; the bounded
-    cache is keyed per x64 mode."""
+    """M(a, b, x) on [0, inf) for concrete (a, b) in [0.1, 10]^2. Cached."""
     return _hyp1f1_cached(float(a), float(b), canon_tag())

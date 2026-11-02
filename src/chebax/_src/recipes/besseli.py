@@ -1,33 +1,17 @@
-"""I_v for real v in [0, 10] on x >= 0, from baked log-tables.
+"""I_v for real v in [0, 10] on x >= 0, from log-tables split at x = 8:
 
-Two regions, one hard select at x = 8:
+    x <= 8:  I = exp(Lh(v, x^2)) (x/2)^v / Gamma(v+1),
+             Lh = ln[Gamma(v+1) (x/2)^(-v) I_v(x)]
+    x > 8:   I = exp(Lt(v, 8/x)) e^x / sqrt(2 pi x),  Lt = ln[sqrt(2 pi x) e^-x I_v]
 
-- x in [0, 8]:  I = exp(Lh(v, x^2)) * (x/2)^v / Gamma(v+1), with
-                Lh = ln[Gamma(v+1) (x/2)^(-v) I_v(x)] tabulated in z = x^2
-                (the factored entire part, logged: I > 0 everywhere).
-- x > 8:        I = exp(Lt(v, 8/x)) * e^x / sqrt(2 pi x), with
-                Lt = ln[sqrt(2 pi x) e^(-x) I_v(x)].
+sqrt(2 pi) and sqrt(x) stay separate, since 2 pi x overflows at x ~ 2.9e307.
+scaled=True gives e^-x I_v (scipy's ive), finite past x ~ 709. f64 floor
+~eps v |ln(x/2)|, from the prefactor pow.
 
-sqrt(2 pi) and sqrt(x) stay separate factors and the combined tail logs
-them separately, so every finite x works: 2 pi x overflows at x ~ 2.9e307
-while e^-x I_v(x) ~ 1/sqrt(2 pi x) is still perfectly representable there.
-
-scaled=True returns e^(-x) I_v(x) (scipy's ive): the tail then never forms
-e^x, so it stays finite past x ~ 709 where the unscaled value correctly
-overflows to inf. The f64 floor is the familiar prefactor pow term,
-~eps * v * |ln(x/2)|.
-
-dI_v/dv is I_v times its log derivative, and near v = 0 that derivative is
-an exponentially small number over an exponentially large one (-K_0/I_0 at
-v = 0, DLMF 10.38.2). The tables' first v-derivative carries ~3e-16 of
-ABSOLUTE noise and cannot resolve it, so below |dlnI/dv| ~ 1e-3 (3e-2 in
-float32) the log derivative is rebuilt from the SECOND v-derivative, which
-is O(1/x) and well conditioned: integrate it from 0 by two-point Gauss and
-add the exact -K_0/I_0 at v = 0.
-
-besseli_frozen(v)/besseli_dnu_frozen(v) mirror the besselj API; besseli_scalar(nu, x)
-additionally takes nu as a traced jax scalar (uniform per call, in [0, 10],
-unchecked under trace), differentiable in both arguments.
+Near v = 0, dlnI/dv (-K_0/I_0 at v = 0) is below the ~3e-16 absolute noise of
+the tables' first v-derivative, so below |dlnI/dv| ~ 1e-3 (3e-2 in float32) it
+is the exact -K_0/I_0 plus the second v-derivative integrated from 0 by
+two-point Gauss.
 """
 
 import functools
@@ -54,15 +38,13 @@ from chebax._src.recipes._common import (
 from chebax._src.recipes.besselk import besselk_frozen, besselk_scalar
 from chebax._src.series import ChebSeries
 
-# above this the tail switches to a single combined exp: e^x alone overflows
-# at x ~ 709.78 while I_v(x) stays representable to x ~ 713
+# e^x overflows at x ~ 709.78, I_v(x) only at x ~ 713
 _X_SPLIT_EXP = 700.0
 
 _SQRT_2PI = math.sqrt(2.0 * math.pi)
 _LOG_SQRT_2PI = 0.5 * math.log(2.0 * math.pi)
 
-# second v-derivative of the tables: chebder twice along the parameter axis,
-# with the [0, VMAX] -> [-1, 1] map's chain factor
+# the tables' second v-derivative, with the [0, VMAX] map's chain factor
 _D2_IN = np.array([algorithms.chebder(algorithms.chebder(r)) for r in _it.TABLE_IN])
 _D2_TAIL = np.array([algorithms.chebder(algorithms.chebder(r)) for r in _it.TABLE_TAIL])
 _D2_SCALE = (2.0 / _it.VMAX) ** 2
@@ -71,9 +53,7 @@ _D2_SCALE = (2.0 / _it.VMAX) ** 2
 _G_LO = 0.5 - 0.5 / math.sqrt(3.0)
 _G_HI = 0.5 + 0.5 / math.sqrt(3.0)
 
-# crossover for besseli_ratio's cancelled small-x series. Above it the two
-# scaled I's have (x/2)^v >= 1 and cannot underflow; at it the series argument
-# (x/2)^2 is 1, where the terms fall like 1/(k!)^2
+# besseli_ratio's series below, scaled I's above (where (x/2)^v >= 1)
 _RATIO_XS = 2.0
 
 
@@ -82,8 +62,7 @@ def _canon_is_f64():
 
 
 def _trigamma64(z):
-    """float64 psi'(z) for z >= 1: recurrence up to z >= 30, then the
-    Bernoulli series through z^-11 (A&S 6.4.12). Truncation < 1e-18."""
+    """float64 psi'(z), z >= 1: recurrence to 30, then A&S 6.4.12 (< 1e-18)."""
     acc = 0.0
     while z < 30.0:
         acc += 1.0 / (z * z)
@@ -103,17 +82,13 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     static_zero = isinstance(v, (int, float)) and v == 0.0
     if static_zero:
-        # (x/2)^0 = 1, but the generic power rule is 0 * (x/2)^-1 at the
-        # origin: NaN gradient for a constant prefactor
+        # the power rule gives 0 * (x/2)^-1 at 0, a nan gradient
         pref = 1.0
     elif isinstance(v, (int, float)):
         pref = jnp.power(xi / 2, v)
     else:
-        # traced v == 0 at the origin: constant prefactor 1, and the power
-        # must see a safe dummy input too, or reverse mode transposes its
-        # 0 * inf coefficient into NaN through the select. Only that one
-        # corner is masked: for x > 0 the power keeps its v derivative
-        # ln(x/2), which dI/dv needs.
+        # mask only v == 0 at x == 0 (0 * inf in reverse mode); elsewhere the
+        # power keeps its v derivative ln(x/2), which dI/dv needs
         bad = (jnp.asarray(v) == 0.0) & (xi == 0.0)
         pref = jnp.where(bad, 1.0, jnp.power(jnp.where(bad, 1.0, xi) / 2, v))
     inner = jnp.exp(lh(xi * xi)) * pref * inv_gamma
@@ -122,14 +97,11 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     xo = jnp.where(x <= _it.XS, _it.XS, x)
     lt_val = lt(_it.XS / xo)
     if scaled:
-        # 2 pi xo overflows past x ~ 2.9e307 and takes the whole quotient to
-        # 0; two separate sqrts cost the same two roundings and cannot
+        # 2 pi xo overflows past x ~ 2.9e307; two sqrts cannot
         tail = jnp.exp(lt_val) / (_SQRT_2PI * jnp.sqrt(xo))
     else:
-        # keep e^x as its own correctly rounded factor while it fits (a
-        # combined exp costs eps*x of relative error); past the exp
-        # overflow point only the combined form can express the result, and
-        # its log has to split 2 pi off x for the same overflow reason
+        # e^x as its own factor while it fits (a combined exp costs eps x),
+        # the combined form past its overflow
         xc = jnp.where(xo > _X_SPLIT_EXP, _X_SPLIT_EXP, xo)
         split = jnp.exp(lt_val) / jnp.sqrt(2 * jnp.pi * xc) * jnp.exp(xc)
         combined = jnp.exp(lt_val + xo - _LOG_SQRT_2PI - 0.5 * jnp.log(xo))
@@ -150,13 +122,9 @@ def _dlog_i(x, lh_nu, lt_nu, psi):
 
 
 def _int_dlog2(v, x, lh2a, lt2a, psi1a, lh2b, lt2b, psi1b):
-    """dlnI_v/dv minus its value at v = 0, as int_0^v d2 lnI_s/ds2 ds.
-
-    Two-point Gauss, exact through cubics: that also covers the odd K-sized
-    part of the integrand, which a one-point rule would miss. The series are
-    the tables' second v-derivative at the two nodes, psi1 the trigamma the
-    inner region's -lnGamma(v+1) contributes there. v factors out, so v = 0
-    integrates to exactly 0 whatever the series say."""
+    """int_0^v d2 lnI_s/ds2 ds by two-point Gauss, exact through cubics (a
+    one-point rule misses the odd K-sized part). psi1 is trigamma from the inner
+    region's -lnGamma(v+1). v factors out, so v = 0 gives exactly 0."""
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     xo = jnp.where(x <= _it.XS, _it.XS, x)
     z, t = xi * xi, _it.XS / xo
@@ -170,14 +138,9 @@ def _int_dlog2(v, x, lh2a, lt2a, psi1a, lh2b, lt2b, psi1b):
 
 
 def _combine_dnu(val, ratio, k0, d_first, integ, dv=1.0):
-    """dI_v/dv from the two routes, times an order tangent dv.
-
-    integ * val - k0 * ratio is I_v * [dlnI/dv|_0 + int_0^v d2lnI/ds2] with
-    the v = 0 term kept as -K_0 * I_v/I_0, so nothing underflows where K_0
-    and I_v separately still fit. v = 0 gives integ == 0 exactly, so past
-    the x where I_v overflows that product is 0 * inf; substitute 0 there
-    only, or the v derivative of the whole branch (d2I/dv2) goes with it.
-    d_first, the first-derivative route, arrives already scaled by dv."""
+    """dI_v/dv times dv: integ * val - k0 * ratio (the v = 0 term as
+    -K_0 I_v/I_0) below the floor, else d_first, already scaled by dv. The
+    0 * inf at v = 0 past I_v's overflow is zeroed there only, to keep d2I/dv2."""
     safe = jnp.where(jnp.isinf(val) & (integ == 0.0), 0.0, val)
     return jnp.where(
         jnp.abs(integ) < _dlog_floor(), (integ * safe - k0 * ratio) * dv, d_first
@@ -254,8 +217,7 @@ class BesselIdnu(Recipe):
         )
         out = _combine_dnu(val, ratio, k0, d_first, integ)
         if self.scaled:
-            # e^-x I_v -> 0 at +inf and so does its order derivative; the
-            # masked tail arithmetic gave nan (review, 2026-08-02)
+            # the masked tail gives nan at +inf, where the limit is 0
             out = jnp.where(x == jnp.inf, 0.0, out)
         return out
 
@@ -272,7 +234,7 @@ def _besseli_cached(v, scaled, _tag):
 
 
 def _d2_series(v):
-    """The two second-v-derivative series (inner, tail) at order v."""
+    """The second-v-derivative series (inner, tail) at order v."""
     return (
         ChebSeries(_D2_SCALE * param_coefs(_D2_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
         ChebSeries(_D2_SCALE * param_coefs(_D2_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
@@ -355,35 +317,23 @@ def _besseli_fn_jvp(scaled, primals, tangents):
     dnu, dx = tangents
     val = _besseli_fn_impl(nu, x, scaled)
     _, d_x = jax.jvp(lambda xx: _besseli_fn_impl(nu, xx, scaled), (x,), (dx,))
-    # nu direction: AD of the table reconstruction where the log derivative
-    # is big enough to survive the tables' absolute noise, the integrated
-    # second derivative below that (see the module docstring). AD runs on
-    # dnu itself; a unit tangent scaled back out afterwards leaves XLA's
-    # algebraic simplifier churning on the jitted gradient.
+    # AD on dnu itself: a unit tangent scaled afterwards stalls XLA's simplifier
     _, d_ad = jax.jvp(lambda n: _besseli_fn_impl(n, x, scaled), (nu,), (dnu,))
     return val, d_x + _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu)
 
 
 def besseli_scalar(nu, x, scaled=False):
-    """I_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
-
-    nu must be uniform per call and inside [0, 10] (unchecked under trace).
-    Uses exp(gammaln) for the traced 1/Gamma(nu+1). The nu gradient at and
-    near nu = 0 comes from the small-order path (exact -K_0(x) at nu = 0,
-    clamped below x = 1e-6 with the K table), so it is also correct to
-    second order in nu."""
+    """I_nu(x), nu a traced scalar in [0, 10] (unchecked under trace),
+    differentiable in both to second order, also near nu = 0."""
     return _besseli_fn(
         canon_param(nu, "besseli_scalar", "nu"), canon_float(x), bool(scaled)
     )
 
 
 def besseli(nu, x=None, scaled=False):
-    """I_nu(x) for one order nu in [0, 10]: besseli_scalar, which has no
-    per-element form (chebax.pergroup gives one order per group).
-
-    besseli(nu) or besseli(nu, scaled=...) with no x is the 0.4 factory and
-    returns besseli_frozen, with a DeprecationWarning; a bool in x's place
-    is the 0.4 positional scaled."""
+    """I_nu(x) for one order nu in [0, 10] (besseli_scalar). Without x, or with
+    a bool for x, it is the deprecated 0.4 factory. chebax.pergroup gives one order
+    per group."""
     if x is None or isinstance(x, bool):
         scaled = scaled if x is None else x
         return deprecated_factory("besseli", besseli_frozen, nu, scaled=scaled)
@@ -391,19 +341,13 @@ def besseli(nu, x=None, scaled=False):
 
 
 def besseli_frozen(v, scaled=False):
-    """I_v on x >= 0 for real v in [0, 10] (e^-x I_v if scaled). Cached.
-
-    v may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode."""
+    """I_v on x >= 0 for a concrete v in [0, 10] (e^-x I_v if scaled). Cached."""
     return _besseli_cached(float(v), bool(scaled), canon_tag())
 
 
 def besseli_dnu(v, x=None, scaled=False):
-    """dI_v/dv at x for one concrete order v: besseli_dnu_frozen(v)(x). For
-    a traced order, differentiate besseli_scalar instead.
-
-    besseli_dnu(v) with no x is the 0.4 factory and returns
-    besseli_dnu_frozen, with a DeprecationWarning."""
+    """dI_v/dv at x for a concrete v; for a traced v, differentiate
+    besseli_scalar. Without x it is the deprecated 0.4 factory."""
     if x is None or isinstance(x, bool):
         scaled = scaled if x is None else x
         return deprecated_factory("besseli_dnu", besseli_dnu_frozen, v, scaled=scaled)
@@ -411,23 +355,16 @@ def besseli_dnu(v, x=None, scaled=False):
 
 
 def besseli_dnu_frozen(v, scaled=False):
-    """dI_v/dv on x > 0 for real v in [0, 10] (times e^-x if scaled).
-
-    v = 0 reduces to the exact identity dI_v/dv|_0 = -K_0(x) (clamped below
-    x = 1e-6 with the K table); small v > 0 rides the same small-order
-    path."""
+    """dI_v/dv on x > 0 for v in [0, 10] (times e^-x if scaled); -K_0(x) at
+    v = 0, with K clamped below x = 1e-6."""
     return _besseli_dnu_cached(float(v), bool(scaled), canon_tag())
 
 
 def _ratio_series(nu, x):
-    """I_{nu+1}/I_nu from the ascending series with the prefactors cancelled.
-
-    I_nu = (x/2)^nu/Gamma(nu+1) * sum_k (x^2/4)^k/(k! (nu+1)_k), so the ratio
-    is x/(2(nu+1)) times a ratio of two sums that both start at 1. No power
-    and no Gamma is ever evaluated on its own, which is what the direct
-    quotient of two scaled I's gets wrong (both underflow at small x)."""
+    """I_{nu+1}/I_nu as x/(2(nu+1)) times a ratio of the two ascending sums,
+    with no power or Gamma alone (scaled I's both underflow at small x)."""
     y = (0.5 * x) ** 2
-    # worst case y = 1 at the crossover, where term k is about 1/(k!)^2
+    # term k ~ 1/(k!)^2 at y = 1, the crossover
     n = 16 if _canon_is_f64() else 9
     a0 = a1 = s0 = s1 = 1.0
     for k in range(1, n + 1):
@@ -439,25 +376,14 @@ def _ratio_series(nu, x):
 
 
 def besseli_ratio(nu, x):
-    """I_{nu+1}(x) / I_nu(x), the Bessel ratio of circular statistics.
-
-    A(kappa) = besseli_ratio(0.0, kappa) is the von Mises mean resultant
-    length; the vMF version uses nu = d/2 - 1. nu must be uniform per call
-    and inside [0, 9] (nu + 1 rides the same [0, 10] tables; unchecked
-    under trace); x >= 0. The ratio is 0 at x = 0, increases toward 1, and
-    is exactly 1 at x = +inf.
-
-    Two branches: below x = 2 the cancelled series _ratio_series, so
-    nothing underflows and the slope at the origin is the exact
-    1/(2(nu+1)); from x = 2 up the quotient of the scaled besseli_scalar
-    values, whose (x/2)^nu prefactors are >= 1 there and whose e^x factors
-    cancel."""
+    """I_{nu+1}(x) / I_nu(x), the von Mises mean resultant length at nu = 0
+    (vMF: nu = d/2 - 1), for nu in [0, 9] uniform per call and x >= 0; 0 at
+    x = 0, 1 at +inf. The series below x = 2, scaled besseli_scalar above."""
     nu = canon_param(nu, "besseli_ratio", "nu")
     x = jnp.asarray(x)
     near = x <= _RATIO_XS
     xs = jnp.where(near, x, 0.0)
-    # inf and NaN ride the table branch's dummy too, or their gradients
-    # transpose back through the select as NaN
+    # inf and nan take the dummy too, or their gradients come back nan
     xt = jnp.where(near | ~jnp.isfinite(x), 2.0 * _RATIO_XS, x)
     r = jnp.where(
         near,

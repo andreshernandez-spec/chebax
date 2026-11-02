@@ -1,47 +1,16 @@
-"""Gamma quantiles with one a per call: gammaincinv_scalar and
-gammainccinv_scalar (jax#5350; the entry points are in gammaincinv.py).
-The Beta quantile is in betaincinv.py, on the same solver design and the
-same per-dtype constants (_common.solver_limits).
+"""gammaincinv_scalar and gammainccinv_scalar (jax#5350): one traceable a per
+call, so jax.grad works in every argument. The solve (Newton in t = ln(x/a)),
+its starts and acceptance are gammaincinv_kernel's; this module picks the ln P
+and ln Q it runs on and owns the derivatives, by the implicit function theorem:
 
-a is traceable (uniform per call), so jax.grad works with respect to
-every argument, which is what implicit-reparameterization gradients and
-copula models need.
+    dx*/dp = 1 / pdf(x*),    dx*/da = -(dP/da)(x*) / pdf(x*).
 
-The solve (safeguarded Newton in t = ln(x/a)), its starts and its
-acceptance test are gammaincinv_kernel's, shared with gammaincinv_array; this module picks the
-ln P and ln Q it runs on (below) and owns the derivatives. Gradients do
-NOT differentiate through the iteration: each inverse carries a
-custom_jvp from the implicit function theorem,
-
-    dx*/dp = 1 / pdf(x*),    dx*/da = -(dP/da)(x*) / pdf(x*),
-
-with dP/da from the chebax recipe (or jax's igamma_grad_a primitive
-outside it), evaluated at the solution.
-
-Both inverses solve the half that carries the tail mass, never the half
-that rounds against 1: gammaincinv targets Q(a, x) for p > 1/2. 1 - p is
-exact for p >= 1/2, so the mirrored target costs nothing.
-
-Guarantees instead of silent saturation: every solve checks its final CDF
-residual, relative to min(p, 1-p) (the mass actually being resolved), or
-that x is the root to within one float step. A quantile that underflows
-the canonical dtype returns 0.0 (the scipy convention); anything else
-that failed to converge returns nan. NaN inputs
-propagate to nan; p outside [0, 1] returns nan; a shape that is not finite
-and positive returns nan for every p; the p = 0 and 1 endpoints return the
-exact distribution endpoints.
-
-gammaincinv has no table domain: its residual evaluates the chebax gammainc recipe when a is at least 0.1
-(above 10 via the Temme-zone tables; fixed-degree polynomials where
-jax's gammainc re-runs a whole-array
-while_loop per step) and falls back to jax's gammainc
-below, picked by nested lax.conds on the scalar a. Above a = 1e10 the
-solve runs in Temme's variable instead (_huge_solve). Inputs are
-computed in the canonical float dtype (float64 under x64), so explicit
-float32 arguments are promoted, not crashed on, and the solver constants
-follow that dtype (see _common.solver_limits): float64's log-space
-brackets reach to +-708, which is meaningless in float32, where exp
-saturates at +-88.
+Each inverse solves the tail-mass half (Q for p > 1/2, where 1 - p is exact)
+and checks its residual relative to min(p, 1-p), or that x is a float step
+from the root; a failed solve gives nan, an underflowed quantile 0.0. ln P and
+ln Q come from the gammainc tables for a in [0.1, 1e10], jax's gammainc below
+0.1, and Temme's variable above 1e10 (_huge_solve). Solver constants follow
+the canonical dtype (_common.solver_limits): exp saturates at 88 in float32.
 """
 
 import math
@@ -64,12 +33,8 @@ from chebax._src.recipes.gammainc_small import series_traced as _gi_series
 
 
 def _dPda_recipe(a, x):
-    """dP(a, x)/da through the gammainc tables: one polynomial where
-    jax's igamma_grad_a runs a looped series. a inside [0.1, 10] only
-    (the JVP's cond dispatches). Differentiable in x through the tables;
-    the a direction is never requested here (the cond traces the
-    fallback's NotImplementedError for a-tangents, so d2/da2 keeps its
-    clear raise on every path)."""
+    """dP/da through the a in [0.1, 10] tables, differentiable in x. d2/da2
+    still raises, through the cond's traced fallback."""
 
     def p_of_a(t):
         lser, ltail = _gi_series(t)
@@ -90,13 +55,8 @@ def _dPda_recipe_large(a, x):
 
 @jax.custom_jvp
 def _dPda(a, x):
-    """dP(a, x)/da (regularized lower gamma), differentiable in x.
-
-    jax's igamma_grad_a primitive has no JVP of its own, which made
-    gammaincinv only once differentiable even in p (the second derivative
-    reaches this term through x*(p)). The x direction has the closed form
-    d/dx dP/da = pdf(a, x) * (ln x - psi(a)); the a direction (d2P/da2)
-    has no closed form here and raises."""
+    """jax's igamma_grad_a with a JVP in x, d/dx dP/da = pdf (ln x - psi(a)),
+    so second derivatives in p work; d2P/da2 raises."""
     return jax.lax.igamma_grad_a(a, x)
 
 
@@ -121,8 +81,7 @@ _dPda.defjvp(_dPda_jvp, symbolic_zeros=True)
 
 
 def _dPda_dispatch(a, x):
-    """dP/da from whichever path owns this a: the tables inside their
-    boxes, jax's igamma_grad_a outside."""
+    """dP/da from the tables inside their boxes, igamma_grad_a outside."""
     in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
     in_large = (a > _gt.AHI) & (a <= _gl.AHI)
     return jax.lax.cond(
@@ -135,13 +94,9 @@ def _dPda_dispatch(a, x):
 
 
 def _gamma_log_density(a, x):
-    """ln of the Gamma(a, 1) density at x > 0.
-
-    a ln x - x - lnGamma(a) cancels terms of size a ln a, which left the
-    inverses' x-derivative 8e-6 off at a = 1e10 (and 4e-7 at 1e8). Past
-    a = 100 it is -a w + ln(a / (2 pi))/2 - S(a) - ln x instead, with
-    w = lambda - 1 - ln lambda from d = (x - a)/a, an exact subtraction near
-    the mode, and S Stirling's remainder to a^-5 (below 1e-17 there)."""
+    """ln of the Gamma(a, 1) density at x > 0. a ln x - x - lnGamma(a) cancels
+    (8e-6 off at a = 1e10), so past a = 100 it is -a w + ln(a / (2 pi))/2 - S(a)
+    - ln x, w = lambda - 1 - ln lambda from (x - a)/a, S Stirling's to a^-5."""
     direct = (a - 1.0) * jnp.log(x) - x - jax.scipy.special.gammaln(a)
     big = a > 100.0
     ab = jnp.where(big, a, 1000.0)
@@ -154,27 +109,21 @@ def _gamma_log_density(a, x):
 
 # From here up the gamma inverses solve in Temme's variable (_huge_solve)
 _A_HUGE = 1e10
-# (lambda - 1)/eta = 1 + eta/3 + eta^2/36 - ..., the inverse of
-# eta^2/2 = lambda - 1 - ln lambda (sympy reversion), through eta^5: above
-# _A_HUGE, |eta| < 4e-4 and the next term is below 1e-25 relative
+# (lambda - 1)/eta, reverting eta^2/2 = lambda - 1 - ln lambda to eta^5 (next term
+# below 1e-25 for |eta| < 4e-4)
 _LAM_SERIES = (1.0 / 3.0, 1.0 / 36.0, -1.0 / 270.0, 1.0 / 4320.0, 1.0 / 17010.0)
 
 
 def _huge_parts(a, s, temme):
-    """At s = eta sqrt(a/2): (ln P, ln Q, ln dP/ds, lambda - 1).
-
-    dP/ds is x^a e^-x / Gamma(a) times dx/ds, which is
-    e^(-s^2) / sqrt(pi) e^(-1/(12 a)) eta / (lambda - 1), Stirling's
-    remainder kept to 1/(12 a) (the next term is below 1e-33 here)."""
-    # sqrt(2)/sqrt(a): 2/a is subnormal from a = 9e307, flushed to 0, and
-    # dx/dp was 0 there
+    """(ln P, ln Q, ln dP/ds, lambda - 1) at s = eta sqrt(a/2), with
+    dP/ds = e^(-s^2) / sqrt(pi) e^(-1/(12 a)) eta / (lambda - 1)."""
+    # sqrt(2)/sqrt(a): 2/a is subnormal from a = 9e307 and flushes to 0
     eta = s * (math.sqrt(2.0) / jnp.sqrt(a))
     r = _LAM_SERIES[-1]
     for c in _LAM_SERIES[-2::-1]:
         r = r * eta + c
     r = 1.0 + eta * r  # (lambda - 1) / eta
-    # sqrt(2 pi) sqrt(a): 2 pi a overflows from a = 2.9e307, and dx/dp was
-    # 0 there
+    # sqrt(2 pi) sqrt(a): 2 pi a overflows from a = 2.9e307
     rt = math.sqrt(2.0 * math.pi) * jnp.sqrt(a)
     lp, lq = _gl.temme_log_pq(s, s * s, temme(eta), rt)
     lden = -s * s - 0.5 * math.log(math.pi) - 1.0 / (12.0 * a) - jnp.log(r)
@@ -182,15 +131,9 @@ def _huge_parts(a, s, temme):
 
 
 def _huge_solve(a, ltp, ltq, z, upper):
-    """The quantile for a > _A_HUGE, solved in s = eta sqrt(a/2).
-
-    There x = a (1 + O(a^-1/2)) and ln x carries eps ln a. From a = 1e15
-    the log density a ln x - x - lnGamma(a) cancelled to noise and every
-    solve returned nan, and past ~1e30 the floats in ln x are spaced wider
-    than the whole distribution (found fixing the review of 2026-10-26).
-    In s, which is O(1), Temme's form gives ln P and ln Q directly, the
-    density has no cancellation, and x = a + a (lambda - 1) rounds once.
-    Returns (x, relative residual, s)."""
+    """(x, relative residual, s) for a > _A_HUGE, solved in s = eta sqrt(a/2).
+    In x the log density cancels to noise from a = 1e15, and past ~1e30 floats
+    in ln x are wider than the distribution; in s, O(1), nothing cancels."""
     temme = _gl.series_traced(a)[0]
 
     def f_and_df(s):
@@ -198,8 +141,7 @@ def _huge_solve(a, ltp, ltq, z, upper):
         f = jnp.where(upper, ltq - lq, lp - ltp)
         return f, jnp.exp(lden - jnp.where(upper, lq, lp))
 
-    # erfc(-s)/2 = Phi(s sqrt 2), and the root is within O(s^3 / sqrt(a))
-    # of that normal start, under 1e-3 here
+    # normal start: the root is within O(s^3 / sqrt(a)) of it, under 1e-3
     s0 = z / math.sqrt(2.0)
     s = newton_bisect(f_and_df, s0, s0 - 2.0, s0 + 2.0, 8)
     lp, lq, _, dm = _huge_parts(a, s, temme)
@@ -208,11 +150,9 @@ def _huge_solve(a, ltp, ltq, z, upper):
 
 
 def _huge_dx(a, da, s, upper, dlog):
-    """dx for a > _A_HUGE, implicit in s: with L = ln P on the lower lanes
-    and ln Q on the upper ones, dL = L_s ds + L_a da is dlog, the target's
-    own log tangent, and dx = X_s ds + X_a da for X = a + a (lambda - 1).
-    Everything stays in s and a, where the density in x cancels. da is
-    None for a symbolic zero."""
+    """dx for a > _A_HUGE, implicit in s: L_s ds + L_a da = dlog for L = ln P
+    (ln Q upper), dx = X_s ds + X_a da for X = a + a (lambda - 1). da None is a
+    symbolic zero."""
 
     def lfn(ss, aa):
         lp, lq, _, _ = _huge_parts(aa, ss, _gl.series_traced(aa)[0])
@@ -232,17 +172,10 @@ def _huge_dx(a, da, s, upper, dlog):
 
 
 def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
-    """gammaincinv_kernel.solve on the ln P and ln Q for this a's box.
-
-    use_recipe is a python constant (each lax.cond branch traces one):
-    "small" takes both logs from the a <= 10 gammainc tables, "large" from
-    the Temme-zone path (a > 10, relatively accurate on both sides
-    everywhere), each reconstructed once and closed over, so each step is
-    a fixed-degree polynomial; None uses jax's gammainc and gammaincc
-    (any a, but a whole-array while_loop per call). "huge" hands the solve
-    to _huge_solve, in Temme's variable, which checks its own residual.
-    Returns the kernel's (x, accepted, root below the floor, root above
-    the ceiling)."""
+    """gammaincinv_kernel.solve on this box's ln P and ln Q: use_recipe (a python
+    constant) "small" (a <= 10 tables), "large" (Temme zone), "huge"
+    (_huge_solve) or None (jax's gammainc). Returns (x, accepted, below floor,
+    above ceiling)."""
     lim = solver_limits(canon_tag())
     if use_recipe == "huge":
         x, rel, _ = _huge_solve(a, ltp, ltq, z, upper)
@@ -292,25 +225,18 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
 
 
 def _gammaincinv_solve(a, pc, use_recipe):
-    """Lower-tail entry to _gammainv_core: the target is p, exact on the
-    lower lanes, and 1 - p (exact for p >= 1/2) on the upper ones."""
+    """_gammainv_core targeting p, or 1 - p (exact) on the upper lanes."""
     return _gammainv_core(a, *_k.inv_targets(pc), use_recipe)
 
 
 def _gammainccinv_solve(a, yc, use_recipe):
-    """Upper-tail entry to _gammainv_core: the target is y, exact on the
-    upper lanes, and 1 - y (exact for y >= 1/2) on the lower ones.
-
-    Not a call to _gammaincinv_solve at 1 - y: that rounds to exactly 1
-    for y below eps, which is the whole range this exists for."""
+    """_gammainv_core targeting y, or 1 - y on the lower lanes; 1 - y alone
+    would round to 1 below eps."""
     return _gammainv_core(a, *_k.cinv_targets(yc), use_recipe, ceiling=True)
 
 
 def _dispatch_solve(solve, a, tc):
-    """Run solve(a, tc, mode) under the a-box conds: the small tables to
-    10, the Temme-zone tables above, solved in Temme's variable past
-    _A_HUGE, jax's gammainc below 0.1. Nested scalar conds, so only the
-    taken branch executes."""
+    """solve(a, tc, mode) under nested scalar conds on a's box."""
     in_small = (a >= _gt.ALO) & (a <= _gt.AHI)
     in_large = (a > _gt.AHI) & (a <= _A_HUGE)
     in_huge = (a > _A_HUGE) & (a <= _gl.AHI)
@@ -345,11 +271,7 @@ def _gammaincinv_jvp(primals, tangents):
     def in_x():
         xs = jnp.where(interior, x, 1.0)
         pdf = jnp.exp(_gamma_log_density(a, xs))
-        # dP/da through the differentiable wrapper: second derivatives in
-        # p and mixed p-a work; only d2/da2 remains unsupported (see
-        # _dPda). Symbolic zeros matter here: a materialized 0 tangent
-        # would still route the outer derivative through _dPda's a
-        # direction.
+        # symbolic zeros: a materialized 0 da would still reach _dPda's raise
         num = dp if not isinstance(dp, zero) else jnp.zeros_like(xs)
         if not isinstance(da, zero):
             num = num - _dPda_dispatch(a, xs) * da
@@ -409,9 +331,6 @@ def _gammainccinv_jvp(primals, tangents):
 _gammainccinv_scalar_cj.defjvp(_gammainccinv_jvp, symbolic_zeros=True)
 
 
-# What gammaincinv.py calls. The custom_jvp rules live on the private
-# names above and float_params normalizes every argument first, so an
-# integer, keyword or size-one parameter is a float scalar before any
-# tangent exists (see its docstring).
+# float_params makes every argument a float scalar before any tangent exists
 gammaincinv = float_params(_gammaincinv_scalar_cj, "gammaincinv_array")
 gammainccinv = float_params(_gammainccinv_scalar_cj, "gammainccinv_array")

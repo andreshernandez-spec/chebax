@@ -59,7 +59,7 @@ from chebax._src.recipes._common import (
     solver_limits,
 )
 from chebax._src.recipes.gammainc_small import eval_gammainc
-from chebax._src.recipes.gammainc_small import eval_logs as _gi_logs
+from chebax._src.recipes.gammainc_small import eval_logs_one_series
 from chebax._src.recipes.gammainc_small import series_traced as _gi_series
 
 
@@ -260,7 +260,7 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
 
     def log_pq(x):
         if use_recipe == "small":
-            lp_in, lq_tl = _gi_logs(a, x, lser, ltail)
+            lp_in, lq_tl = eval_logs_one_series(a, x, lser, ltail)
             inner = x <= _gt.XS
             lp = jnp.where(inner, lp_in, jnp.log1p(-jnp.exp(lq_tl)))
             lq = jnp.where(inner, jnp.log1p(-jnp.exp(lp_in)), lq_tl)

@@ -68,24 +68,18 @@ def temme_log_pq(y, aw, tval, rt):
     """(ln P, ln Q) in the Temme zone, from y = eta sqrt(a/2), a w = y^2,
     the table value T(v, eta) and rt = sqrt(2 pi a).
 
-    erfc and corr underflow f64 once a w > ~745, so each side assembles in
-    log space through erfcx: e.g. ln Q = -a w + ln(erfcx(y)/2 + T/rt). The
-    erfcx argument is masked to its own sign so the wrong-side lanes cannot
-    reach erfcx's e^(y^2) overflow (grad poison), and the far side is log1p
-    of the other probability, whose untaken lanes see a dummy 1/2 (log1p(-1)
-    is -inf, poisoning grads through the select). The quantile solver for
-    huge a calls this with y as its unknown."""
-    yq = jnp.where(y > 0.0, y, 0.0)
-    yp = jnp.where(y < 0.0, -y, 0.0)
-    lq_t = -aw + jnp.log(0.5 * erfcx(yq) + tval / rt)
-    lp_t = -aw + jnp.log(0.5 * erfcx(yp) - tval / rt)
-    corr = jnp.exp(-aw) / rt * tval
-    p_in = jnp.where(y > 0.0, 0.5, 0.5 * jax.scipy.special.erfc(-y) - corr)
-    q_in = jnp.where(y < 0.0, 0.5, 0.5 * jax.scipy.special.erfc(y) + corr)
-    return (
-        jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in)),
-        jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in)),
+    erfc and corr underflow f64 once a w > ~745, so the side y points to
+    (Q for y >= 0, P below) is -a w + ln(erfcx(|y|)/2 +- T/rt), and the
+    other is log1p(-exp(that)): one erfcx per point, never at the negative
+    argument whose e^(y^2) overflows. The own side is at most ~1/2, so
+    log1p never reaches -1. The quantile solver for huge a calls this with
+    y as its unknown."""
+    upper = y >= 0.0
+    own = -aw + jnp.log(
+        0.5 * erfcx(jnp.where(upper, y, -y)) + jnp.where(upper, tval, -tval) / rt
     )
+    other = jnp.log1p(-jnp.exp(own))
+    return jnp.where(upper, other, own), jnp.where(upper, own, other)
 
 
 def eval_large(a, x, temme, dlow, dup, kind):

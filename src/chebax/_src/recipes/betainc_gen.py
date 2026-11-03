@@ -1,25 +1,14 @@
 """Generator for the betainc tensor table. Build-time only; mpmath inside.
 
-The regularized incomplete beta factors as (DLMF 8.17.7)
+I_x(a, b) = x^a (1-x)^b / (a B(a, b)) F, F = 2F1(a+b, 1; a+1; x) (DLMF
+8.17.7), with the reflection I_x(a, b) = 1 - I_(1-x)(b, a) above x = 1/2, so
+the table spans x in [0, 1/2]. It holds ln F, which stays in [0.1, 6.7]
+where F spans 833x, as a 2-D series over (a, b) in [0.1, 10]^2 per
+x-coefficient: degrees x <= 19, a <= 58 (near small a), b <= 20
+(experiments/03). Three DCT stages in mpmath, x then b then a; the runtime
+contracts a, b, then x. Regenerate with:
 
-    I_x(a, b) = x^a (1-x)^b / (a B(a,b)) * F(a, b, x),
-    F = 2F1(a + b, 1; a + 1; x),
-
-with the reflection I_x(a,b) = 1 - I_{1-x}(b,a) covering x > 1/2, so the
-table only spans x in [0, 1/2], where F's singularity at x = 1 stays far
-away. F is positive (all series terms positive), and tabulating ln F
-flattens the tensor: raw F spans 833x over the (a,b) corners while ln F
-stays in [0.1, 6.7], so f64 coefficient noise cannot poison small values
-(the besselk lesson). This is the library's first TWO-parameter table: each
-x-coefficient is a 2-D Chebyshev series over (a, b) in [0.1, 10]^2.
-Measured degrees: x <= 19, a <= 58 (the costly axis, near small a),
-b <= 20 (reproduce via experiments/03_degree_measurement.py).
-
-Three fit stages, all in mpmath (the M1 floor rule): DCT in x per (a,b)
-node pair, then per x-coefficient a DCT along b, then along a. The runtime
-contracts in the reverse order: Clenshaw in a, then b, then x.
-
-Regenerate with:  python -m chebax._src.recipes.betainc_gen  (~5 min)
+    python -m chebax._src.recipes.betainc_gen      # ~5 min
 """
 
 import pathlib

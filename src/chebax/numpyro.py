@@ -1,43 +1,28 @@
-"""Truncated distributions and the Tweedie law for numpyro, backed by chebax.
+"""Truncated Gamma, Beta and Student-t, and the Tweedie law, for numpyro.
 
     from chebax.numpyro import TruncatedGamma, TruncatedBeta, TruncatedStudentT
     from chebax.numpyro import Tweedie
 
-numpyro's truncated-distribution machinery covers location-scale families;
-Gamma, Beta and Student-t need the inverse-CDF path (numpyro#969,
-numpyro#1187, numpyro#1365), which historically stalled on jax having no
-igammainv. chebax's differentiable quantiles fill that hole, so these
-classes implement the full Distribution contract: reparameterized
-sampling by inverse CDF (has_rsample = True, pathwise gradients in every
-parameter including the shapes), truncation-normalized log_prob,
-cdf/icdf, dependent interval support.
+numpyro's truncation covers location-scale families; these three need the
+inverse-CDF path (numpyro#969, #1187, #1365), which chebax's differentiable
+quantiles give: reparameterized sampling with pathwise gradients in every
+parameter, shapes included, truncation-normalized log_prob, cdf and icdf,
+dependent interval support.
 
-The truncation algebra runs entirely on logs. The normalizer is
-ln(F(hi) - F(lo)), built from a log-CDF and a log survival function
-through logdiffexp and taken in whichever tail holds both endpoints;
-icdf aims at a lower-tail or an upper-tail probability to match. A plain
-F(hi) - F(lo) is exactly zero as soon as both endpoints land on the same
-float, which happens early: under Gamma(3) both ends of [50, 51] give
-F = 1.0, and that interval has perfectly ordinary conditional moments.
-An interval in the BULK narrower than the CDF's own absolute error stays
-unresolvable, in logs as much as out of them, and comes back with a
-relative error of about eps over its mass.
+The truncation algebra runs on logs. The normalizer ln(F(hi) - F(lo)) comes
+from a log-CDF and a log survival function through logdiffexp, in whichever
+tail holds both endpoints, since F(hi) - F(lo) is exactly zero once both ends
+round to the same float (Gamma(3) on [50, 51]). An interval in the bulk
+narrower than the CDF's absolute error stays unresolvable either way.
 
-The chebax contract applies: shape parameters are uniform per call (a
-scalar, a size-one array or one traced latent each; batched shape arrays
-are not served, use chebax.pergroup for per-group shapes), and a shape
-holding more than one value is rejected at construction. Domains, from the underlying tables and
-checked eagerly when the value is not traced: TruncatedBeta needs
-(concentration1, concentration0) in [0.1, 100]^2; TruncatedStudentT
-needs df in [0.2, 200]; TruncatedGamma needs only concentration > 0,
-its normalizer falling back to jax's own gammainc pair below chebax's
-concentration = 0.1 (which costs the deep upper tail there, since jax's
-logs underflow; from 0.1 up the recipe serves every concentration, the
-Temme-zone tables taking over above 10). Rates, bounds and data are
-unrestricted.
+Shape parameters are uniform per call: one value, or one traced latent
+(chebax.pergroup serves per-group shapes); more than one value is rejected
+at construction. Boxes, checked eagerly when concrete: TruncatedBeta
+(concentration1, concentration0) in [0.1, 100]^2, TruncatedStudentT df in
+[0.2, 200], TruncatedGamma any concentration > 0 (jax's own gammainc pair
+below 0.1, whose logs underflow in the deep upper tail).
 
-numpyro is imported here and only here (the chebax runtime proper stays
-jax + numpy). Install with:  pip install chebax[numpyro]
+numpyro is imported here only: pip install chebax[numpyro].
 """
 
 import math
@@ -175,7 +160,7 @@ def _log_pq(a, x, use_recipe):
     jax's own gammainc pair outside it, whose logs bottom out where those
     functions do."""
     if use_recipe:
-        return chebax.log_gammainc_fn(a, x), chebax.log_gammaincc_fn(a, x)
+        return chebax.log_gammainc_scalar(a, x), chebax.log_gammaincc_scalar(a, x)
     return (
         jnp.log(jax.scipy.special.gammainc(a, x)),
         jnp.log(jax.scipy.special.gammaincc(a, x)),
@@ -396,11 +381,13 @@ class TruncatedBeta(_Truncated):
         # needs; below the median the survival is O(1) and does not care
         return (
             jnp.where(
-                inside, chebax.log_betainc_fn(a, b, v), jnp.where(below, -jnp.inf, 0.0)
+                inside,
+                chebax.log_betainc_scalar(a, b, v),
+                jnp.where(below, -jnp.inf, 0.0),
             ),
             jnp.where(
                 inside,
-                chebax.log_betainc_fn(b, a, 1.0 - v),
+                chebax.log_betainc_scalar(b, a, 1.0 - v),
                 jnp.where(below, 0.0, -jnp.inf),
             ),
         )
@@ -483,20 +470,12 @@ class TruncatedStudentT(_Truncated):
 
 class Tweedie(dist.Distribution):
     """Tweedie(mu, phi, power), the compound Poisson-gamma law, power in
-    [1.05, 1.95].
-
-    Y is exactly 0 with probability exp(-mu^(2-p) / (phi (2-p))) and
-    positive and continuous otherwise, so zeros and positive amounts share
-    one likelihood (insurance claims, rainfall, biomass). Mean mu, variance
-    phi mu^power. mu and phi broadcast freely, per-observation means being
-    the GLM case; power must be a scalar (or one traced latent) and is
-    checked against the box eagerly when concrete. log_prob is
-    chebax.tweedie_logpdf, differentiable in all three, so the power can be
-    sampled or fitted instead of fixed in advance.
-
-    Sampling draws the Poisson count and a gamma total; it is not
-    reparameterized (the count is discrete).
-    """
+    [1.05, 1.95]: Y = 0 with probability exp(-mu^(2-p) / (phi (2-p))),
+    positive and continuous otherwise; mean mu, variance phi mu^power. mu and
+    phi broadcast; power is one value (or one traced latent), checked eagerly
+    when concrete. log_prob is chebax.tweedie_logpdf, differentiable in all
+    three. Sampling draws the Poisson count and a gamma total, so it is not
+    reparameterized."""
 
     arg_constraints = _ArgConstraints(
         lambda: {

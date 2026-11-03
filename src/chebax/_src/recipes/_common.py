@@ -1,18 +1,16 @@
-"""Shared runtime machinery for recipes: parameter-table reconstruction,
-domain checks, the safeguarded root solver and its per-dtype constants,
-and a float64 digamma.
+"""Shared runtime for recipes: table reconstruction, domain checks, the
+safeguarded root solver and its per-dtype constants, a float64 digamma.
 
-Reconstruction convention (matches _gen_common's emitted axis note): for a
-2-D table, TABLE[k, j] is the j-th parameter-direction coefficient of the
-k-th argument-direction coefficient, the parameter mapped affinely from
-[lo, hi] onto [-1, 1]. `param_coefs` is the eager numpy path used by the
-cached factories; `traced_coefs` is the jax path used by the *_fn traced
-variants (differentiable in the parameter through the series custom_jvp).
+A 2-D TABLE[k, j] is the j-th parameter coefficient of the k-th argument
+coefficient, the parameter mapped from [lo, hi] onto [-1, 1] (_gen_common's axis
+note). param_coefs is numpy for the frozen factories; traced_coefs is jax for the
+_scalar paths, differentiable in the parameter.
 """
 
 import functools
 import inspect
 import math
+import warnings
 from collections import namedtuple
 
 import numpy as np
@@ -25,58 +23,57 @@ from chebax._src.series import _chebval
 
 
 def canon_tag():
-    """Cache-key tag for the canonical float dtype: factory instances built
-    under different x64 settings must not share a cache slot."""
+    """Cache-key tag for the canonical float dtype, so x64 modes never share."""
     return str(jnp.empty(()).dtype)
 
 
 def canon_float(x):
-    """Promote to the canonical float dtype (float64 under x64).
-
-    Solvers mix inputs with reconstructed float64 tables inside a fori_loop
-    carry; an explicit float32 input under x64 raised a carry dtype
-    mismatch instead of computing. One deliberate dtype for everything."""
+    """Promote to the canonical float dtype (float64 under x64): a float32 input
+    under x64 would mismatch the solvers' fori_loop carry."""
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
 
 
-def canon_param(p, who, name):
-    """A uniform-per-call parameter: scalar, or any array holding one value.
-
-    numpyro and pytensor both hand back a broadcast (1,) array where the
-    caller wrote a scalar. A censored StudentT is the case that found
-    this: numpyro's censoring wrapper broadcasts the base distribution,
-    so `self.df` reaches `cdf` with shape (1,), and every traced entry
-    point here died deep inside the table reconstruction on it, with
-    "coef must be a nonempty 1-D array, got shape (68, 1)" or "Branch
-    index must be scalar". None of those name the parameter or say what
-    to do.
-
-    One value is uniform whatever its shape, so take it. Anything larger
-    is a per-element parameter, which is out of scope by design and is
-    what chebax.pergroup is for; say so instead of failing later.
+def canon_param(p, who, name, array=None):
+    """A uniform-per-call parameter: a scalar, or any array holding one value
+    (numpyro and pytensor pass (1,) where the caller wrote a scalar, e.g. a
+    censored StudentT's df). More values are refused here by name, pointing to
+    the family's _array path (array) or chebax.pergroup, instead of failing deep
+    in the table reconstruction.
     """
     a = canon_float(p)
     if a.ndim == 0:
         return a
     if a.size == 1:
         return jnp.reshape(a, ())
+    per_elem = f"For {name} per element use chebax.{array}; for " if array else "For "
     raise ValueError(
         f"{who} takes {name} as a scalar (uniform per call), got shape "
-        f"{a.shape}. For one parameter set per group use "
+        f"{a.shape}. {per_elem}one parameter set per group use "
         f"chebax.pergroup({who}, group_idx)."
     )
 
 
+def per_element(*params):
+    """True when any parameter holds more than one value; static, so free."""
+    return any(jnp.size(p) > 1 for p in params)
+
+
+def deprecated_factory(name, frozen, *params, **kw):
+    """The 0.4 call name(params): the frozen callable, with a DeprecationWarning."""
+    warnings.warn(
+        f"{name}(...) without x is deprecated: call {frozen.__name__}(...) "
+        f"for the cached callable, or {name}(..., x) for values.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return frozen(*params, **kw)
+
+
 @jax.custom_jvp
 def edge_slope(s, x):
-    """Zero, carrying slope s in x.
-
-    A CDF-like recipe picks its endpoint values with a hard select, and
-    both branches there are constants, so AD sees no slope AT the endpoint
-    even where the true one-sided derivative is exact and finite (the
-    density). Adding this zero splices that slope back in without touching
-    a value. bake knows this rule by name and folds it, which costs the
-    artifact exactly that endpoint slope and is disclosed there."""
+    """Zero, carrying slope s in x: puts the density back as the slope at an
+    endpoint a hard select makes constant. bake folds it by name, losing that
+    slope (disclosed there)."""
     return jnp.zeros_like(x)
 
 
@@ -86,26 +83,12 @@ def _edge_slope_jvp(primals, tangents):
     return jnp.zeros_like(x), s * tangents[1]
 
 
-def float_params(impl):
-    """Public entry point for a custom_jvp'd implementation: normalize every
-    argument before the rule sees it.
-
-    A python or numpy INTEGER parameter is not a differentiable type, so
-    jax hands the rule a float0 tangent for it and the rule's own
-    arithmetic dies on that: grad through stdtr(4, t), besseli_fn(2, x)
-    and vonmises_cdf(5, t) all failed this way (review, 2026-08-02), and
-    nu=4 or kappa=5 is how anyone would write those. Converting OUTSIDE
-    the rule turns the parameter into an ordinary float constant, which
-    is what the caller meant; converting inside cannot work, since by
-    then the tangent already exists. A size-one parameter has the same
-    problem in another form: squeezed inside the rule, the tangent keeps
-    its shape and no longer matches the primal.
-
-    The library's argument order holds throughout: leading arguments are
-    uniform parameters (canon_param, so a size-one array counts as the
-    scalar it holds and a per-element one is refused by name) and the last
-    is the evaluation point. Keyword calls are bound to the same names
-    first; stdtr(nu=4, t=t) used to skip all of this (review, 2026-10-26).
+def float_params(impl, array=None):
+    """Public entry point for a custom_jvp'd impl: normalize every argument
+    before the rule sees it. Inside, an integer parameter (stdtr(4, t)) already
+    has a float0 tangent and a squeezed size-one one a mismatched tangent. Leading
+    arguments go through canon_param, the last (the point) through canon_float;
+    keyword calls are bound first. array is passed on to canon_param.
     """
     who = impl.__name__.lstrip("_").removesuffix("_cj")
     sig = inspect.signature(impl)
@@ -115,7 +98,8 @@ def float_params(impl):
     def public(*args, **kw):
         arg = sig.bind(*args, **kw).arguments
         return impl(
-            *(canon_param(arg[n], who, n) for n in params), canon_float(arg[point])
+            *(canon_param(arg[n], who, n, array) for n in params),
+            canon_float(arg[point]),
         )
 
     public.__name__ = public.__qualname__ = who
@@ -148,17 +132,16 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
-def newton_bisect(f_and_df, x0, lo0, hi0, iters):
-    """Fixed-count safeguarded Newton for increasing f: keep [lo, hi]
-    bracketing the root, fall back to the midpoint (or doubling while hi is
-    inf) when the Newton step leaves the bracket. The bounds test is
-    INCLUSIVE: a Newton step that stalls exactly at the current iterate
-    (converged) must be accepted, or a one-sided approach whose far bound
-    never tightened catapults a converged iterate to the midpoint of the
-    half-open bracket (measured, the quantile-toolkit bug)."""
+def newton_bisect(f_and_df, x0, lo0, hi0, iters, snap=None):
+    """Fixed-count Newton for increasing f, bracketed in [lo, hi], falling back to
+    the midpoint (doubling while hi is inf). The bounds test is inclusive: else a
+    converged step on a one-sided approach jumps to the bracket's midpoint. snap
+    maps an iterate to the point f_and_df evaluates (the gamma solve rounds t)."""
 
     def step(_, carry):
         x, lo, hi = carry
+        if snap is not None:
+            x = snap(x)
         f, df = f_and_df(x)
         lo = jnp.where(f < 0, x, lo)
         hi = jnp.where(f < 0, hi, x)
@@ -176,21 +159,12 @@ Limits = namedtuple("Limits", "lo hi v_hi n_beta n_gamma rtol")
 
 @functools.lru_cache(maxsize=4)
 def solver_limits(_tag):
-    """Solver constants for the canonical float dtype, keyed per x64 mode.
-
-    The log-space bracket is that dtype's own NORMAL exponent range. Below
-    log(tiny) exp and sigmoid both flush to zero, so nothing there is
-    reachable, and putting the floor at the last reachable point is what
-    makes the sign of the residual there decide "root below the floor"
-    instead of always reading as "not reached yet". float64's 709 ceiling
-    falls out of the same rule; its old -745 floor sat 37 e-folds inside
-    the flushed region, and both were 700 decades outside float32's range,
-    which left every float32 solve unbracketed. The ends are ln(tiny) and
-    ln(max) themselves, moved 4 ulps inward so XLA's exp stays normal and
-    finite there: rounding them to whole e-folds (-708, 709) put roots
-    in [tiny, e^-708] out of reach. Iteration counts and the residual bar
-    are measured per dtype (tests/test_quantiles.py); the beta and gamma
-    inverses share them."""
+    """Solver constants for the canonical float dtype, keyed per x64 mode. The
+    log-space bracket is the dtype's normal range, ln(tiny) to ln(max) moved 4 ulps
+    inward so XLA's exp stays normal: at the last reachable point the residual's
+    sign can say "root below the floor". Whole e-folds (-708, 709) miss roots in
+    [tiny, e^-708]. Iterations and the residual bar are measured per dtype
+    (tests/test_quantiles.py), shared by the beta and gamma inverses."""
     dt = np.dtype(_tag).type
     f = np.finfo(dt)
 
@@ -213,8 +187,8 @@ def solver_limits(_tag):
 
 
 def digamma64(z):
-    """float64 psi(z) for z >= 1: recurrence up to z >= 15, then the
-    Bernoulli series through z^-12 (A&S 6.3.5 / 6.3.18). Truncation < 1e-16."""
+    """float64 psi(z), z >= 1: recurrence to z >= 15, then A&S 6.3.18 to z^-12
+    (truncation < 1e-16)."""
     acc = 0.0
     while z < 15.0:
         acc -= 1.0 / z

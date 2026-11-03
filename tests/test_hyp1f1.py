@@ -56,8 +56,8 @@ def _rel(got, ref):
 def test_values_and_traced():
     for a, b in PAIRS:
         ref = _ref(a, b, XG)
-        got = np.asarray(chebax.hyp1f1(a, b)(XG))
-        gott = np.asarray(chebax.hyp1f1_fn(a, b, jnp.asarray(XG)))
+        got = np.asarray(chebax.hyp1f1_frozen(a, b)(XG))
+        gott = np.asarray(chebax.hyp1f1_scalar(a, b, jnp.asarray(XG)))
         assert np.max(_rel(got, ref)) <= 1.5e-12, (a, b)
         assert np.max(_rel(gott, ref)) <= 1.5e-12, (a, b)
 
@@ -68,22 +68,22 @@ def test_log_form_no_overflow():
         ref = np.array(
             [float(mp.log(mp.hyp1f1(mp.mpf(a), mp.mpf(b), mp.mpf(x)))) for x in xs]
         )
-        got = np.asarray(chebax.log_hyp1f1_fn(a, b, jnp.asarray(xs)))
+        got = np.asarray(chebax.log_hyp1f1_scalar(a, b, jnp.asarray(xs)))
         assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) <= 1.5e-12, (
             a,
             b,
         )
         # agreement with the linear form where it lives
-        lin = np.asarray(chebax.hyp1f1_fn(a, b, jnp.asarray(xs[:4])))
+        lin = np.asarray(chebax.hyp1f1_scalar(a, b, jnp.asarray(xs[:4])))
         np.testing.assert_allclose(np.exp(got[:4]), lin, rtol=1e-13)
 
 
 def test_endpoints_and_nan():
-    f = chebax.hyp1f1(2.5, 0.7)
+    f = chebax.hyp1f1_frozen(2.5, 0.7)
     assert float(f(0.0)) == 1.0
     assert np.isnan(float(f(-1.0)))
-    assert np.isnan(float(chebax.hyp1f1_fn(2.5, 0.7, np.nan)))
-    assert np.isnan(float(chebax.hyp1f1_fn(np.nan, 0.7, 1.0)))
+    assert np.isnan(float(chebax.hyp1f1_scalar(2.5, 0.7, np.nan)))
+    assert np.isnan(float(chebax.hyp1f1_scalar(np.nan, 0.7, 1.0)))
 
 
 def test_dx_against_contiguous_oracle():
@@ -102,7 +102,7 @@ def test_dx_against_contiguous_oracle():
             ]
         )
         g = np.asarray(
-            jax.vmap(jax.grad(lambda x: chebax.hyp1f1_fn(a, b, x)))(jnp.asarray(xs))
+            jax.vmap(jax.grad(lambda x: chebax.hyp1f1_scalar(a, b, x)))(jnp.asarray(xs))
         )
         lnm = np.array(
             [
@@ -126,7 +126,7 @@ def test_da_db_traced():
         db_ref = float(
             mp.diff(lambda t: mp.log(mp.hyp1f1(mp.mpf(a), t, mp.mpf(x))), mp.mpf(b))
         )
-        da, db = jax.grad(chebax.log_hyp1f1_fn, argnums=(0, 1))(
+        da, db = jax.grad(chebax.log_hyp1f1_scalar, argnums=(0, 1))(
             jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
         )
         scale = max(abs(da_ref), abs(db_ref), 1.0)
@@ -138,12 +138,12 @@ def test_seam_is_ordinary_point():
     xs = np.array([ht.XS - 1e-9, ht.XS + 1e-9])
     for a, b in [(0.15, 9.9), (9.9, 0.15), (5.0, 5.0)]:
         ref = _ref(a, b, xs)
-        got = np.asarray(chebax.hyp1f1_fn(a, b, jnp.asarray(xs)))
+        got = np.asarray(chebax.hyp1f1_scalar(a, b, jnp.asarray(xs)))
         assert np.max(_rel(got, ref)) <= 1.5e-12, (a, b)
 
 
 def test_jit_and_pytree():
-    f = chebax.hyp1f1(2.0, 3.0)
+    f = chebax.hyp1f1_frozen(2.0, 3.0)
     xs = jnp.asarray(XG[:6])
     y = jax.jit(lambda q, x: q(x))(f, xs)
     # a few ulp: jit fusion may reassociate the Clenshaw arithmetic
@@ -152,9 +152,9 @@ def test_jit_and_pytree():
 
 def test_param_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
-        chebax.hyp1f1(0.05, 1.0)
+        chebax.hyp1f1_frozen(0.05, 1.0)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.hyp1f1(1.0, 10.5)
+        chebax.hyp1f1_frozen(1.0, 10.5)
 
 
 @pytest.mark.slow
@@ -197,12 +197,12 @@ def test_origin_slope_and_infinity():
     # 0 where the exact one is a/b; it now rides the inner lane, where
     # log1p(0) is 0 exactly and the slope falls out (review, 2026-08-02).
     for a, b in ((2.0, 3.0), (0.5, 1.5), (9.0, 2.0)):
-        got = float(jax.grad(lambda x: chebax.hyp1f1_fn(a, b, x))(0.0))
+        got = float(jax.grad(lambda x: chebax.hyp1f1_scalar(a, b, x))(0.0))
         assert abs(got - a / b) <= 1e-14 * (a / b), (a, b, got)
-        assert float(chebax.hyp1f1_fn(a, b, 0.0)) == 1.0
-        assert float(chebax.log_hyp1f1_fn(a, b, 0.0)) == 0.0
+        assert float(chebax.hyp1f1_scalar(a, b, 0.0)) == 1.0
+        assert float(chebax.log_hyp1f1_scalar(a, b, 0.0)) == 0.0
     # M ~ Gamma(b)/Gamma(a) e^x x^(a-b) diverges for every a in the box;
     # the tail bracket was inf + (a - b) inf, which is nan at a = b
     for a, b in ((1.0, 1.0), (2.0, 3.0), (0.5, 0.5)):
-        assert np.isposinf(float(chebax.hyp1f1_fn(a, b, np.inf))), (a, b)
-        assert np.isposinf(float(chebax.log_hyp1f1_fn(a, b, np.inf))), (a, b)
+        assert np.isposinf(float(chebax.hyp1f1_scalar(a, b, np.inf))), (a, b)
+        assert np.isposinf(float(chebax.log_hyp1f1_scalar(a, b, np.inf))), (a, b)

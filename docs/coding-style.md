@@ -46,12 +46,26 @@ Keep these API conventions:
 
 | Form | Meaning |
 | --- | --- |
-| `name(params)` | Cached factory returning a callable recipe |
-| `name_fn(params, x)` | Traced-parameter counterpart of a factory |
-| `name(params, x)` | Direct function with no factory counterpart |
+| `name(params, x)` | The function, for any parameter shape: picks `_scalar` or `_array` from the shapes |
+| `name_scalar(params, x)` | One (traceable) value per parameter for the whole call |
+| `name_array(params, x)` | A parameter value per element, broadcast with x |
+| `name_frozen(params)` | Cached callable of x for concrete parameters; a Recipe, what bake takes |
 | `log_name...` | A logarithmic value computed without first forming an underflowing or overflowing value |
-| `name_dnu(params)` | Callable giving the order derivative |
+| `name_dnu(params, x)`, `name_dnu_frozen(params)` | The order derivative |
 | `scaled=True` | The family's documented exponential scaling |
+
+The plain name always exists. A family exposes a suffixed name for every
+path it has and only for those: gammainc has all three, gammaincinv
+`_scalar` and `_array`, besselk `_scalar` and `_frozen`, besselj only
+`_frozen`, and a function with a single path (stdtr, betaincinv) has only
+its plain name. The plain name never
+picks `_frozen`; where `_frozen` is the only path it calls it, and the
+parameters must then be concrete. Shape decides between `_scalar` and
+`_array`: a parameter holding one value, whatever its shape, is one value.
+A family without `_array` refuses an array of parameters and names
+`chebax.pergroup`. Renamed public names keep their old spelling for one
+release, warning through `chebax.__getattr__` (`_RENAMED`) or
+`_common.deprecated_factory`.
 
 Function parameters precede the evaluation point for new numerical APIs.
 Existing exceptions, such as `lambertw(x, k=0)` and optional configuration
@@ -59,6 +73,14 @@ arguments, keep their signatures. Do not rename public keywords to tidy an
 internal formula. Both positional and keyword calls must obey the same input
 contract. Internal aliases should disambiguate two implementations, not invent
 another name for a shared helper.
+
+A family's public entry points live in its `<family>.py`. Where its paths
+have separate implementations, each gets its own module named after the
+suffix (`gammainc_scalar.py`, `gammainc_array.py`, `gammainc_frozen.py`), and
+the entry points import them when first called, so a program loads only the
+tables of the paths it uses. Code the paths share and that reads no table
+goes in `<family>_kernel.py` (gammaincinv's solve). A family whose paths
+share one implementation keeps it beside the entry points.
 
 ## Functions and module organization
 
@@ -81,23 +103,18 @@ does not determine the boundary.
 
 ## Docstrings and comments
 
-A public numerical entry point must state what it computes, parameter and
-argument domains, scalar versus broadcasting behavior, dtype policy, endpoint
-and invalid-input behavior, and available derivatives. State a limitation next
-to the affected API, including unsupported higher derivatives. Add a small
-example when the call pattern is otherwise unclear.
+Keep both short: one line where one line works, a few for a public entry
+point, which states what it computes, its domains, its derivatives and any
+limitation. Policy the README and `docs/architecture.md` already give (dtype,
+broadcasting, the `_scalar`/`_array`/`_frozen` forms) is not repeated per
+function. A recipe's module docstring gives the factorization, panels, seams
+and floor in brief; its generator docstring records measured degrees.
 
-A recipe's module docstring explains the factorization, coordinate maps,
-panels, seams, and numerical floor. Its generator docstring records measured
-degrees and their evidence. Put a formula beside the code whose stability
-depends on it, and explain why a tempting rearrangement loses accuracy.
-
-Comments explain a choice, a boundary condition, or an invariant. Use plain
-words and short sentences. Avoid narrating assignments, repeating the code,
-or retaining a review conversation in a helper docstring. Keep review chronology
-and superseded decisions in `docs/increments.md` or a dated review, with a short
-link from the implementation when needed. Current degree measurements, floors,
-and numerical traps stay beside the relevant generator, runtime, or test.
+Comments explain a choice, a boundary condition or an invariant, in one line
+where possible. Say why a tempting rearrangement loses accuracy, with the
+number that shows it. Do not restate the code or the name. Review chronology
+and superseded decisions go in `docs/increments.md` or a dated review, not in
+the code.
 
 ## Numerical expressions
 

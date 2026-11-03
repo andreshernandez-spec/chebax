@@ -39,9 +39,9 @@ def test_betainc_ragged_shuffled_with_empty_group():
     b = rng.uniform(0.5, 9.5, 6)
     x = rng.uniform(0.01, 0.99, idx.shape)
 
-    f = chebax.pergroup(chebax.betainc_fn, idx, num_groups=6)
+    f = chebax.pergroup(chebax.betainc_scalar, idx, num_groups=6)
     got = np.asarray(f(a, b, x))
-    ref = _loop_reference(chebax.betainc_fn, (a, b), idx, x)
+    ref = _loop_reference(chebax.betainc_scalar, (a, b), idx, x)
     np.testing.assert_allclose(got, ref, rtol=5e-15)
     assert got.shape == idx.shape
 
@@ -53,11 +53,11 @@ def test_gradients_match_loop_and_empty_group_is_zero():
     b = jnp.asarray(rng.uniform(1.0, 5.0, 3))
     x = jnp.asarray(rng.uniform(0.1, 0.9, idx.shape))
 
-    f = chebax.pergroup(chebax.betainc_fn, idx, num_groups=3)
+    f = chebax.pergroup(chebax.betainc_scalar, idx, num_groups=3)
     ga, gb = jax.grad(lambda a, b: jnp.sum(f(a, b, x)), (0, 1))(a, b)
 
     def loop_sum(a, b):
-        return sum(chebax.betainc_fn(a[g], b[g], x[i]) for i, g in enumerate(idx))
+        return sum(chebax.betainc_scalar(a[g], b[g], x[i]) for i, g in enumerate(idx))
 
     ga_ref, gb_ref = jax.grad(loop_sum, (0, 1))(a, b)
     np.testing.assert_allclose(np.asarray(ga), np.asarray(ga_ref), rtol=1e-13)
@@ -71,9 +71,9 @@ def test_besselk_single_param_and_order_gradient():
     nu = jnp.asarray(rng.uniform(0.3, 9.5, 4))
     x = jnp.asarray(np.exp(rng.uniform(np.log(0.2), np.log(50.0), 40)))
 
-    f = chebax.pergroup(chebax.besselk_fn, idx)
+    f = chebax.pergroup(chebax.besselk_scalar, idx)
     got = np.asarray(f(nu, x))
-    ref = _loop_reference(chebax.besselk_fn, (np.asarray(nu),), idx, np.asarray(x))
+    ref = _loop_reference(chebax.besselk_scalar, (np.asarray(nu),), idx, np.asarray(x))
     np.testing.assert_allclose(got, ref, rtol=5e-15)
     g = jax.grad(lambda nu: jnp.sum(f(nu, x)))(nu)
     assert np.isfinite(np.asarray(g)).all()
@@ -82,17 +82,17 @@ def test_besselk_single_param_and_order_gradient():
 def test_jit_and_traced_parameters():
     idx = np.array([0, 1, 1, 0, 1])
     x = jnp.asarray([0.2, 0.4, 0.6, 0.8, 0.5])
-    f = jax.jit(chebax.pergroup(chebax.betainc_fn, idx))
+    f = jax.jit(chebax.pergroup(chebax.betainc_scalar, idx))
     a, b = jnp.asarray([2.0, 6.0]), jnp.asarray([3.0, 1.5])
     got = np.asarray(f(a, b, x))
     ref = _loop_reference(
-        chebax.betainc_fn, (np.asarray(a), np.asarray(b)), idx, np.asarray(x)
+        chebax.betainc_scalar, (np.asarray(a), np.asarray(b)), idx, np.asarray(x)
     )
     np.testing.assert_allclose(got, ref, rtol=5e-15)
     # values are free to change without retrace cost beyond the first
     got2 = np.asarray(f(a + 1.0, b, x))
     ref2 = _loop_reference(
-        chebax.betainc_fn, (np.asarray(a) + 1.0, np.asarray(b)), idx, np.asarray(x)
+        chebax.betainc_scalar, (np.asarray(a) + 1.0, np.asarray(b)), idx, np.asarray(x)
     )
     np.testing.assert_allclose(got2, ref2, rtol=5e-15)
 
@@ -111,7 +111,7 @@ def test_empty_group_parameter_is_inert(idx, ng, empty):
     rng = np.random.default_rng(3)
     x = jnp.asarray(np.exp(rng.uniform(np.log(0.2), np.log(30.0), idx.shape)))
     clean = rng.uniform(0.3, 9.5, ng)
-    f = chebax.pergroup(chebax.besselk_fn, idx, num_groups=ng)
+    f = chebax.pergroup(chebax.besselk_scalar, idx, num_groups=ng)
 
     def run(nu):
         nu = jnp.asarray(nu)
@@ -137,7 +137,7 @@ def test_empty_group_inert_with_two_parameters():
     idx = np.array([0, 0, 2, 2, 0])
     x = jnp.asarray([0.2, 0.45, 0.6, 0.85, 0.33])
     a0, b0 = np.array([2.0, 3.0, 4.5]), np.array([3.0, 2.5, 1.5])
-    f = chebax.pergroup(chebax.betainc_fn, idx, num_groups=3)
+    f = chebax.pergroup(chebax.betainc_scalar, idx, num_groups=3)
 
     def run(a, b):
         a, b = jnp.asarray(a), jnp.asarray(b)
@@ -163,7 +163,7 @@ def test_empty_group_neighbours_match_mpmath():
     idx = np.array([0, 2, 0, 2, 2, 0, 2, 0])
     nu = np.array([rng.uniform(0.3, 9.0), np.nan, rng.uniform(0.3, 9.0), 1e9])
     x = np.exp(rng.uniform(np.log(0.2), np.log(40.0), 8))
-    f = chebax.pergroup(chebax.besselk_fn, idx, num_groups=4)
+    f = chebax.pergroup(chebax.besselk_scalar, idx, num_groups=4)
 
     v = np.asarray(f(jnp.asarray(nu), jnp.asarray(x)))
     ref = np.array(
@@ -198,15 +198,16 @@ def test_empty_group_neighbours_match_mpmath():
 def test_padding_keeps_infinite_derivatives():
     # Ragged rows are padded with copies of live elements whose outputs
     # are discarded. A copy's zero cotangent times the infinite slope of
-    # betainc_fn(.5, b, x) at x = 0 was nan, added onto the element's own
+    # betainc_scalar(.5, b, x) at x = 0 was nan, added onto the element's own
     # +inf (review, 2026-10-26). The second layout puts that element in a
     # group an empty group copies from.
     a, b = jnp.asarray([0.5, 0.5, 0.5]), jnp.asarray([2.0, 2.0, 2.0])
     for idx, x in (([0, 0, 1], [0.2, 0.3, 0.0]), ([0, 0, 2], [0.0, 0.3, 0.5])):
-        f = chebax.pergroup(chebax.betainc_fn, np.array(idx), num_groups=3)
+        f = chebax.pergroup(chebax.betainc_scalar, np.array(idx), num_groups=3)
         x = jnp.asarray(x)
         ref = [
-            float(jax.grad(lambda t: chebax.betainc_fn(0.5, 2.0, t))(xi)) for xi in x
+            float(jax.grad(lambda t: chebax.betainc_scalar(0.5, 2.0, t))(xi))
+            for xi in x
         ]
         rev = jax.grad(lambda x: jnp.sum(f(a, b, x)))(x)
         fwd = jnp.diag(jax.jacfwd(lambda x: f(a, b, x))(x))
@@ -223,15 +224,15 @@ def test_padding_keeps_infinite_derivatives():
 
 def test_errors():
     idx = np.array([0, 1, 2])
-    f = chebax.pergroup(chebax.betainc_fn, idx)
+    f = chebax.pergroup(chebax.betainc_scalar, idx)
     a3 = jnp.ones(3)
     with pytest.raises(ValueError, match="shape"):
         f(a3, a3, jnp.ones(4))  # x shape != group_idx shape
     with pytest.raises(ValueError, match="parameter"):
         f(jnp.ones(2), a3, jnp.ones(3))  # param length != num_groups
     with pytest.raises(ValueError, match="lie in"):
-        chebax.pergroup(chebax.betainc_fn, idx, num_groups=2)
+        chebax.pergroup(chebax.betainc_scalar, idx, num_groups=2)
     with pytest.raises(ValueError, match="integers"):
-        chebax.pergroup(chebax.betainc_fn, np.array([0.0, 1.0]))
+        chebax.pergroup(chebax.betainc_scalar, np.array([0.0, 1.0]))
     with pytest.raises(ValueError, match="empty"):
-        chebax.pergroup(chebax.betainc_fn, np.array([], dtype=int))
+        chebax.pergroup(chebax.betainc_scalar, np.array([], dtype=int))

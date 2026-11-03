@@ -17,7 +17,12 @@ a,b, …) are *uniform per call* — static at trace time, or a call-time scalar
 parameter arrays are out of scope; that regime belongs to the branchy CPU-style kernels
 (bessel Track A / xsf). Finite domains are covered by segmented Chebyshev; infinite tails
 need a per-family asymptotic recipe (phase/modulus for oscillatory functions) — the
-machinery does not remove that analysis and does not claim to.
+machinery does not remove that analysis and does not claim to. One measured
+exception: `gammainc_array` (increment 35) takes gammainc's a per element, from
+small 2-D patches (144 coefficients per element in float64, 49 in float32),
+because a Gamma likelihood with a shape per observation is common and the
+uniform tables would pay ~4,300 coefficients per element there. Its
+inverses run on the same patches (`gammaincinv_array`, increment 37).
 
 **Name:** `chebax` — confirmed 2026-07-29. PyPI and GitHub free (nearest neighbors
 chebpy, pychebfun, ChebTools). The spec-* alternatives were rejected: "spec" reads as
@@ -25,7 +30,7 @@ spectroscopy in scientific Python (jaxspec, specutils). Reserving the PyPI name 
 publishing action and stays Andres's.
 
 **Status:** live. Public at https://github.com/andreshernandez-spec/chebax;
-0.4.1 released 2026-10-30 from its tag by `release.yml` (thirty-four
+0.4.1 released 2026-10-30 from its tag by `release.yml` (thirty-five
 increments in `docs/increments.md`; 0.4.0 was 2026-10-28, the first
 published from a tag, 0.3.0 2026-08-03, 0.2.0 2026-07-31). Open: the GPJax
 Matern play, upstream outreach (local notes in `drafts/`), and Wright
@@ -193,9 +198,9 @@ p.deriv()(x)             # chebder series (recomputed per deriv() call;
                          #  jit folds it for concrete coefficients)
 
 # recipes: prebuilt families, tables baked into the package
-jv = chebax.besselj(2.5)         # any real v in the table domain; no mpmath
+jv = chebax.besselj_frozen(2.5)  # any real v in the table domain; no mpmath
 jv(x); jax.grad(jv)(x)           # custom_jvp bound to the derivative series
-chebax.besselj_dnu(2.5)(x)       # order gradient, chebder along the nu axis
+chebax.besselj_dnu(2.5, x)       # order gradient, chebder along the nu axis
 
 # bake: self-contained artifacts for upstream targets
 chebax.bake.jax_module(jv, "besselj_2p5.py")
@@ -289,7 +294,10 @@ live group's element before the vmap.
 
 The per-element contract (one parameter per point, scipy's
 `jv(v_array, x_array)`) stays out of scope: that is the §2.5 dead end and no
-wrapper changes its arithmetic.
+wrapper changes its arithmetic. gammainc is the exception (increment 35): its
+per-element path is new arithmetic, patches small enough to evaluate per
+point, not a wrapper over the uniform tables, and its inverses solve on
+those patches (increment 37).
 
 MEASURED 2026-07-31 (`experiments/07_pergroup_crossover.py`, RTX 3080 Laptop,
 f64, plain vmap over equal groups): reconstruction overhead vs chebax's own

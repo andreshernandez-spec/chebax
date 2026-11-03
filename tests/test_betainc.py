@@ -5,7 +5,7 @@ absolute error is the standard contract for CDFs; near the endpoints the
 value itself decays, and users needing the small tail to relative accuracy
 evaluate the complement parameter-swapped, as documented). dI/dx uses the
 exact Beta density as its oracle; dI/da and dI/db are checked against
-mp.diff, including through jax.grad on the traced betainc_fn -- the
+mp.diff, including through jax.grad on the traced betainc_scalar -- the
 gradients jax itself lacks (jax#38610).
 """
 
@@ -57,9 +57,9 @@ def _iref(a, b):
 def test_values_and_traced():
     for a, b in PAIRS:
         ref = _iref(a, b)
-        got = np.asarray(chebax.betainc(a, b)(XB))
+        got = np.asarray(chebax.betainc_frozen(a, b)(XB))
         assert np.max(np.abs(got - ref)) <= 2e-14, (a, b)
-        gott = np.asarray(chebax.betainc_fn(a, b, XB))
+        gott = np.asarray(chebax.betainc_scalar(a, b, XB))
         assert np.max(np.abs(gott - ref)) <= 2e-14, (a, b)
 
 
@@ -74,7 +74,7 @@ def test_kernel_split_matches_every_table():
 
 
 def test_endpoints_exact():
-    f = chebax.betainc(2.5, 0.7)
+    f = chebax.betainc_frozen(2.5, 0.7)
     assert float(f(0.0)) == 0.0
     assert float(f(1.0)) == 1.0
 
@@ -87,7 +87,7 @@ def test_dx_against_beta_density():
             * (1 - xs) ** (b - 1)
             * math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b))
         )
-        g = np.asarray(jax.vmap(jax.grad(chebax.betainc(a, b)))(jnp.asarray(xs)))
+        g = np.asarray(jax.vmap(jax.grad(chebax.betainc_frozen(a, b)))(jnp.asarray(xs)))
         assert np.max(np.abs(g - pdf) / np.max(pdf)) <= 1e-13, (a, b)
 
 
@@ -105,7 +105,7 @@ def test_da_db_traced():
                 mp.mpf(b),
             )
         )
-        da, db = jax.grad(chebax.betainc_fn, argnums=(0, 1))(
+        da, db = jax.grad(chebax.betainc_scalar, argnums=(0, 1))(
             jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
         )
         scale = max(abs(da_ref), abs(db_ref))
@@ -115,14 +115,14 @@ def test_da_db_traced():
 
 def test_complement_identity():
     for a, b in [(0.3, 4.4), (6.6, 1.5)]:
-        s = np.asarray(chebax.betainc(a, b)(XB)) + np.asarray(
-            chebax.betainc(b, a)(1.0 - XB)
+        s = np.asarray(chebax.betainc_frozen(a, b)(XB)) + np.asarray(
+            chebax.betainc_frozen(b, a)(1.0 - XB)
         )
         assert np.max(np.abs(s - 1.0)) <= 5e-14
 
 
 def test_jit_and_pytree():
-    f = chebax.betainc(2.0, 3.0)
+    f = chebax.betainc_frozen(2.0, 3.0)
     xs = jnp.asarray(XB[:8])
     y = jax.jit(lambda q, x: q(x))(f, xs)
     np.testing.assert_allclose(np.asarray(y), np.asarray(f(xs)), rtol=0, atol=1e-15)
@@ -130,9 +130,9 @@ def test_jit_and_pytree():
 
 def test_param_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
-        chebax.betainc(0.05, 1.0)
+        chebax.betainc_frozen(0.05, 1.0)
     with pytest.raises(ValueError, match="table covers"):
-        chebax.betainc(1.0, 101.0)
+        chebax.betainc_frozen(1.0, 101.0)
 
 
 @pytest.mark.slow
@@ -151,7 +151,7 @@ def test_table_regenerates_bit_for_bit(tmp_path):
 def test_log_betainc():
     # Direct zone (x <= 1/2): error / max(1, |ln I|) measured worst
     # 8.1e-15 over the pairs below, grid down to x = 1e-100 (ln I ~ -2280;
-    # betainc_fn itself underflows below I ~ 1e-308). Reflected zone
+    # betainc_scalar itself underflows below I ~ 1e-308). Reflected zone
     # (x > 1/2): ln of an absolutely-accurate value, error is the value
     # path's absolute floor over I (measured 23 eps / I worst); the bar
     # carries the value bar 2e-14 divided by I. d ln I/da vs mp.diff measured
@@ -169,7 +169,7 @@ def test_log_betainc():
                 for x in xl
             ]
         )
-        got = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xl)))
+        got = np.asarray(chebax.log_betainc_scalar(a, b, jnp.asarray(xl)))
         assert np.max(np.abs(got - ref) / np.maximum(1.0, np.abs(ref))) <= 4e-14
         refr = np.array(
             [
@@ -181,17 +181,17 @@ def test_log_betainc():
                 for x in xr
             ]
         )
-        gotr = np.asarray(chebax.log_betainc_fn(a, b, jnp.asarray(xr)))
+        gotr = np.asarray(chebax.log_betainc_scalar(a, b, jnp.asarray(xr)))
         bar = 4e-14 * np.maximum(1.0, np.abs(refr)) + 2e-14 / np.exp(refr)
         assert np.all(np.abs(gotr - refr) <= bar), (a, b)
     # endpoints, nan, and agreement with the linear form where it lives
-    assert np.isneginf(float(chebax.log_betainc_fn(2.0, 3.0, 0.0)))
-    assert float(chebax.log_betainc_fn(2.0, 3.0, 1.0)) == 0.0
-    assert np.isnan(float(chebax.log_betainc_fn(2.0, 3.0, np.nan)))
+    assert np.isneginf(float(chebax.log_betainc_scalar(2.0, 3.0, 0.0)))
+    assert float(chebax.log_betainc_scalar(2.0, 3.0, 1.0)) == 0.0
+    assert np.isnan(float(chebax.log_betainc_scalar(2.0, 3.0, np.nan)))
     xs = np.linspace(0.05, 0.95, 9)
-    lin = np.asarray(chebax.betainc_fn(2.0, 3.0, jnp.asarray(xs)))
+    lin = np.asarray(chebax.betainc_scalar(2.0, 3.0, jnp.asarray(xs)))
     np.testing.assert_allclose(
-        np.exp(np.asarray(chebax.log_betainc_fn(2.0, 3.0, jnp.asarray(xs)))),
+        np.exp(np.asarray(chebax.log_betainc_scalar(2.0, 3.0, jnp.asarray(xs)))),
         lin,
         rtol=1e-13,
     )
@@ -213,7 +213,7 @@ def test_log_betainc():
         )
         gda = np.asarray(
             jax.vmap(
-                jax.grad(chebax.log_betainc_fn, argnums=0), in_axes=(None, None, 0)
+                jax.grad(chebax.log_betainc_scalar, argnums=0), in_axes=(None, None, 0)
             )(jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg))
         )
         assert np.max(np.abs(gda - da) / np.maximum(1.0, np.abs(da))) <= 1.5e-14
@@ -241,8 +241,8 @@ def test_wide_panels_values_and_gradients():
     # is untouched (the low-low panel IS the original tensor).
     for a, b in WIDE_PAIRS:
         ref = _iref(a, b)
-        got = np.asarray(chebax.betainc(a, b)(XB))
-        gott = np.asarray(chebax.betainc_fn(a, b, jnp.asarray(XB)))
+        got = np.asarray(chebax.betainc_frozen(a, b)(XB))
+        gott = np.asarray(chebax.betainc_scalar(a, b, jnp.asarray(XB)))
         assert np.max(np.abs(got - ref)) <= 8e-13, (a, b)
         assert np.max(np.abs(gott - ref)) <= 8e-13, (a, b)
     xg = np.array([0.1, 0.5, 0.9])
@@ -261,15 +261,15 @@ def test_wide_panels_values_and_gradients():
             ]
         )
         g = np.asarray(
-            jax.vmap(jax.grad(chebax.betainc_fn, argnums=0), in_axes=(None, None, 0))(
-                jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg)
-            )
+            jax.vmap(
+                jax.grad(chebax.betainc_scalar, argnums=0), in_axes=(None, None, 0)
+            )(jnp.asarray(a), jnp.asarray(b), jnp.asarray(xg))
         )
         assert np.max(np.abs(g - da)) <= 1e-14, (a, b)
     for a, b in [(55.0, 55.0), (2.0, 99.9), (99.9, 2.0)]:
         ps = np.array([1e-6, 0.05, 0.5, 0.95, 1 - 1e-6])
         x = np.asarray(chebax.betaincinv(a, b, jnp.asarray(ps)))
-        rt = np.asarray(chebax.betainc_fn(a, b, jnp.asarray(x)))
+        rt = np.asarray(chebax.betainc_scalar(a, b, jnp.asarray(x)))
         assert np.max(np.abs(rt - ps)) <= 3e-14, (a, b)
 
 
@@ -278,7 +278,7 @@ def test_panel_edges_are_ordinary_points():
     # a naive two-sided jump test would just measure dI/da * 2 eps
     for a in (10.0 - 1e-9, 10.0 + 1e-9):
         ref = _iref(a, 5.0)
-        got = np.asarray(chebax.betainc_fn(a, 5.0, jnp.asarray(XB)))
+        got = np.asarray(chebax.betainc_scalar(a, 5.0, jnp.asarray(XB)))
         assert np.max(np.abs(got - ref)) <= 8e-13, a
 
 
@@ -317,15 +317,19 @@ def test_wide_tables_regenerate_bit_for_bit(tmp_path):
 def test_endpoint_derivatives_are_the_density():
     # Both endpoint values come from a hard select, so AD read a slope of
     # 0 there even where the density is exact and finite: grad of
-    # betainc_fn(1, 3, .) at 0 gave 0 for a true 3 (review, 2026-08-02).
+    # betainc_scalar(1, 3, .) at 0 gave 0 for a true 3 (review, 2026-08-02).
     # f(0) = 1/B(1, b) = b when a = 1, f(1) = 1/B(a, 1) = a when b = 1;
     # 0 above the 1, infinite below it. Values are unchanged.
-    assert float(jax.grad(lambda x: chebax.betainc_fn(1.0, 3.0, x))(0.0)) == 3.0
-    assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 1.0, x))(1.0)) == 3.0
-    assert float(jax.grad(lambda x: chebax.betainc_fn(2.0, 3.0, x))(0.0)) == 0.0
-    assert float(jax.grad(lambda x: chebax.betainc_fn(3.0, 2.0, x))(1.0)) == 0.0
-    assert np.isposinf(float(jax.grad(lambda x: chebax.betainc_fn(0.5, 3.0, x))(0.0)))
-    assert np.isposinf(float(jax.grad(lambda x: chebax.betainc_fn(3.0, 0.5, x))(1.0)))
+    assert float(jax.grad(lambda x: chebax.betainc_scalar(1.0, 3.0, x))(0.0)) == 3.0
+    assert float(jax.grad(lambda x: chebax.betainc_scalar(3.0, 1.0, x))(1.0)) == 3.0
+    assert float(jax.grad(lambda x: chebax.betainc_scalar(2.0, 3.0, x))(0.0)) == 0.0
+    assert float(jax.grad(lambda x: chebax.betainc_scalar(3.0, 2.0, x))(1.0)) == 0.0
+    assert np.isposinf(
+        float(jax.grad(lambda x: chebax.betainc_scalar(0.5, 3.0, x))(0.0))
+    )
+    assert np.isposinf(
+        float(jax.grad(lambda x: chebax.betainc_scalar(3.0, 0.5, x))(1.0))
+    )
     for a, b in ((1.0, 3.0), (2.5, 0.5)):
-        assert float(chebax.betainc_fn(a, b, 0.0)) == 0.0
-        assert float(chebax.betainc_fn(a, b, 1.0)) == 1.0
+        assert float(chebax.betainc_scalar(a, b, 0.0)) == 0.0
+        assert float(chebax.betainc_scalar(a, b, 1.0)) == 1.0

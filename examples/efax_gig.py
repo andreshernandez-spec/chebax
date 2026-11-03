@@ -10,7 +10,7 @@ is a three-parameter exponential family with sufficient statistics
     A = ln 2 + (p/2) ln(b/a) + ln K_p(sqrt(ab))
 
 and its derivatives, including d ln K_p / dp, a derivative in the ORDER of
-the Bessel function. chebax.log_besselk_fn takes the order as a traced jax
+the Bessel function. chebax.log_besselk takes the order as a traced jax
 scalar, so plain jax.grad supplies it, and optimistix Newton differentiates
 through everything (second order included).
 
@@ -72,7 +72,7 @@ import chebax  # noqa: E402
 
 def _log_k(order, z):
     # K_{-v} = K_v; chebax tables cover v in [0, 10]
-    return chebax.log_besselk_fn(jnp.abs(order), z)
+    return chebax.log_besselk(jnp.abs(order), z)
 
 
 @dataclass

@@ -45,9 +45,9 @@ def _kref(v):
 def test_values_and_traced():
     for v in NUS:
         K = _kref(v)
-        rel = np.abs(np.asarray(chebax.besselk(v)(XK)) - K) / K
+        rel = np.abs(np.asarray(chebax.besselk_frozen(v)(XK)) - K) / K
         assert rel.max() <= 5e-14, v
-        relt = np.abs(np.asarray(chebax.besselk_fn(v, XK)) - K) / K
+        relt = np.abs(np.asarray(chebax.besselk_scalar(v, XK)) - K) / K
         assert relt.max() <= 5e-14, v
 
 
@@ -56,7 +56,7 @@ def test_dx():
         Kp = np.array(
             [float(mp.diff(lambda t: mp.besselk(mp.mpf(v), t), mp.mpf(x))) for x in XK]
         )
-        g = np.asarray(jax.vmap(jax.grad(chebax.besselk(v)))(jnp.asarray(XK)))
+        g = np.asarray(jax.vmap(jax.grad(chebax.besselk_frozen(v)))(jnp.asarray(XK)))
         assert np.max(np.abs(g - Kp) / np.abs(Kp)) <= 5e-14, v
 
 
@@ -65,10 +65,10 @@ def test_dnu_and_traced_grad():
         Kn = np.array(
             [float(mp.diff(lambda t: mp.besselk(t, mp.mpf(x)), mp.mpf(v))) for x in XK]
         )
-        got = np.asarray(chebax.besselk_dnu(v)(XK))
+        got = np.asarray(chebax.besselk_dnu_frozen(v)(XK))
         assert np.max(np.abs(got - Kn) / np.abs(Kn)) <= 1e-12, v
         gn = np.asarray(
-            jax.vmap(jax.grad(chebax.besselk_fn, argnums=0), in_axes=(None, 0))(
+            jax.vmap(jax.grad(chebax.besselk_scalar, argnums=0), in_axes=(None, 0))(
                 jnp.asarray(v), jnp.asarray(XK)
             )
         )
@@ -78,18 +78,18 @@ def test_dnu_and_traced_grad():
 def test_dnu_vanishes_at_zero_order():
     # K_{-v} = K_v, so dK/dv = 0 at v = 0
     xs = XK[:20]
-    d0 = np.abs(np.asarray(chebax.besselk_dnu(0.0)(xs)))
-    K0 = np.asarray(chebax.besselk(0.0)(xs))
+    d0 = np.abs(np.asarray(chebax.besselk_dnu_frozen(0.0)(xs)))
+    K0 = np.asarray(chebax.besselk_frozen(0.0)(xs))
     assert np.max(d0 / K0) <= 1e-13
 
 
 def test_clamp_below_xmin():
-    kv = chebax.besselk(1.5)
+    kv = chebax.besselk_frozen(1.5)
     assert float(kv(1e-8)) == float(kv(kt.XMIN))
 
 
 def test_underflow_graceful():
-    y = float(chebax.besselk(2.5)(800.0))
+    y = float(chebax.besselk_frozen(2.5)(800.0))
     assert y == 0.0
 
 
@@ -98,21 +98,21 @@ def test_nonfinite_x():
     # nan at the top of the range because the tail prefactor formed 2*x
     # first (inf), then 0 * inf in the jvp.
     for f in [
-        chebax.besselk(1.5),
-        chebax.besselk_dnu(1.5),
-        lambda t: chebax.besselk_fn(1.5, t),
+        chebax.besselk_frozen(1.5),
+        chebax.besselk_dnu_frozen(1.5),
+        lambda t: chebax.besselk_scalar(1.5, t),
     ]:
         assert float(f(np.inf)) == 0.0
         assert np.isnan(float(f(np.nan)))
-    assert float(chebax.log_besselk_fn(1.5, np.inf)) == -np.inf
-    assert np.isnan(float(chebax.log_besselk_fn(1.5, np.nan)))
-    assert np.isnan(float(jax.grad(chebax.log_besselk_fn, 1)(1.5, np.nan)))
-    assert float(jax.grad(chebax.besselk(1.5))(1e308)) == 0.0
-    assert float(jax.grad(chebax.besselk_fn, 1)(1.5, 1e308)) == 0.0
+    assert float(chebax.log_besselk_scalar(1.5, np.inf)) == -np.inf
+    assert np.isnan(float(chebax.log_besselk_scalar(1.5, np.nan)))
+    assert np.isnan(float(jax.grad(chebax.log_besselk_scalar, 1)(1.5, np.nan)))
+    assert float(jax.grad(chebax.besselk_frozen(1.5))(1e308)) == 0.0
+    assert float(jax.grad(chebax.besselk_scalar, 1)(1.5, 1e308)) == 0.0
 
 
 def test_jit_and_pytree():
-    kv = chebax.besselk(2.5)
+    kv = chebax.besselk_frozen(2.5)
     xs = jnp.asarray(XK[:10])
     y = jax.jit(lambda f, x: f(x))(kv, xs)
     np.testing.assert_allclose(np.asarray(y), np.asarray(kv(xs)), rtol=1e-15)
@@ -120,13 +120,13 @@ def test_jit_and_pytree():
 
 def test_order_out_of_range():
     with pytest.raises(ValueError, match="table covers"):
-        chebax.besselk(10.5)
+        chebax.besselk_frozen(10.5)
 
 
 def test_f32_moderate_domain():
     xs = np.logspace(-2, np.log10(30.0), 24)
     K = np.array([float(mp.besselk(mp.mpf(2.5), mp.mpf(x))) for x in xs])
-    y = chebax.besselk(2.5).astype(jnp.float32)(jnp.asarray(xs, jnp.float32))
+    y = chebax.besselk_frozen(2.5).astype(jnp.float32)(jnp.asarray(xs, jnp.float32))
     assert y.dtype == jnp.float32
     assert np.max(np.abs(np.asarray(y) - K) / K) <= 2e-5
 
@@ -154,7 +154,7 @@ def test_matern_learns_nu():
     def matern(rr, nu, ell, sig2):
         zz = jnp.sqrt(2.0 * nu) * rr / ell
         log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
-        return sig2 * jnp.exp(log_c + nu * jnp.log(zz)) * chebax.besselk_fn(nu, zz)
+        return sig2 * jnp.exp(log_c + nu * jnp.log(zz)) * chebax.besselk_scalar(nu, zz)
 
     def loss(theta):
         k = matern(rj, theta[0], jnp.exp(theta[1]), jnp.exp(theta[2]))
@@ -185,15 +185,15 @@ def test_log_besselk():
     for v in [0.03, 0.5, 1.0, 1.7, 5.5, 9.97]:
         for x in xs:
             ref = float(mp.log(mp.besselk(mp.mpf(v), mp.mpf(x))))
-            got = float(chebax.log_besselk_fn(v, x))
+            got = float(chebax.log_besselk_scalar(v, x))
             assert abs(got - ref) / max(1.0, abs(ref)) <= 1e-14, (v, x)
     for v in [0.5, 1.7, 9.97]:
         for x in [0.01, 8.0, 600.0, 1e6]:
             dn = float(mp.diff(lambda t: mp.log(mp.besselk(t, mp.mpf(x))), mp.mpf(v)))
-            gn = float(jax.grad(chebax.log_besselk_fn, 0)(v, x))
+            gn = float(jax.grad(chebax.log_besselk_scalar, 0)(v, x))
             assert abs(gn - dn) / max(1.0, abs(dn)) <= 2e-14, (v, x)
             dx = float(mp.diff(lambda t: mp.log(mp.besselk(mp.mpf(v), t)), mp.mpf(x)))
-            gx = float(jax.grad(chebax.log_besselk_fn, 1)(v, x))
+            gx = float(jax.grad(chebax.log_besselk_scalar, 1)(v, x))
             assert abs(gx - dx) / max(1.0, abs(dx)) <= 1e-14, (v, x)
 
 
@@ -209,7 +209,7 @@ def test_log_besselk_huge_x():
     xl = [float(x) for x in xs]
     for v in [0.0, 0.5, 1.7, 9.97]:
         ref = np.array([float(mp.log(mp.besselk(mp.mpf(v), mp.mpf(x)))) for x in xl])
-        got = np.asarray(chebax.log_besselk_fn(v, xs))
+        got = np.asarray(chebax.log_besselk_scalar(v, xs))
         assert np.all(np.isfinite(got)), v
         assert np.max(np.abs(got - ref) / np.abs(ref)) <= 1e-15, v
         # d/dx ln K = -(K_{v-1} + K_{v+1}) / (2 K_v), which tends to -1
@@ -226,7 +226,7 @@ def test_log_besselk_huge_x():
             ]
         )
         g = np.asarray(
-            jax.vmap(jax.grad(chebax.log_besselk_fn, 1), in_axes=(None, 0))(
+            jax.vmap(jax.grad(chebax.log_besselk_scalar, 1), in_axes=(None, 0))(
                 jnp.asarray(v), xs
             )
         )
@@ -240,7 +240,7 @@ def _gig_log_normalizer(p, a, b):
     return (
         jnp.log(2.0)
         + 0.5 * p * (jnp.log(b) - jnp.log(a))
-        + chebax.log_besselk_fn(jnp.abs(p), z)
+        + chebax.log_besselk_scalar(jnp.abs(p), z)
     )
 
 
@@ -287,7 +287,7 @@ def test_gig_log_normalizer_grads():
 def test_gig_exp_to_nat_newton():
     # the mean-to-natural conversion, which needs d ln K/dp inside Newton:
     # recover (p, a, b) from exact mean statistics (E[ln x], E[x], E[1/x]) by
-    # Newton in (p, ln a, ln b), Jacobian via jax.jacfwd through besselk_fn
+    # Newton in (p, ln a, ln b), Jacobian via jax.jacfwd through besselk_scalar
     def a_nat(eta):
         return _gig_log_normalizer(eta[0] + 1.0, -2.0 * eta[1], -2.0 * eta[2])
 
@@ -361,14 +361,14 @@ def test_scaled_form_survives_large_arguments():
         (1.0, 1e300),
         (10.0, 1e4),
     ):
-        got = float(chebax.besselk_fn(v, x, scaled=True))
+        got = float(chebax.besselk_scalar(v, x, scaled=True))
         assert np.isfinite(got), (v, x, got)
         worst = max(worst, abs(got / float(ref_scaled(v, x)) - 1))
     assert worst <= 1e-14, worst
     # and it is exactly e^x K where K itself is representable
     for v, x in ((2.5, 5.0), (0.0, 3.0)):
-        k = float(chebax.besselk_fn(v, x))
+        k = float(chebax.besselk_scalar(v, x))
         assert (
-            abs(float(chebax.besselk_fn(v, x, scaled=True)) / (k * np.exp(x)) - 1)
+            abs(float(chebax.besselk_scalar(v, x, scaled=True)) / (k * np.exp(x)) - 1)
             <= 1e-14
         )

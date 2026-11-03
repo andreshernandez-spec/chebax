@@ -1,36 +1,14 @@
-"""K_v for real v in [0, 10] on x in [1e-6, inf), from baked log-tables.
+"""K_v for real v in [0, 10] on x in [1e-6, inf), from log-tables split at x = 8:
 
-Two regions, one hard select at x = 8:
+    x <= 8:  K = exp(Ltil(v, ln x)) (x/2)^-v,  Ltil = ln[(x/2)^v K_v(x)],
+             v in two panels, [0, 1] and [1, 10], around the Gamma-pole feature
+    x > 8:   K = exp(Lt(v, 8/x)) sqrt(pi/(2x)) e^-x,  Lt = ln[sqrt(2x/pi) e^x K_v]
 
-- x in [1e-6, 8]:  K = exp(Ltil(v, ln x)) * (x/2)^(-v), where
-                   Ltil = ln[(x/2)^v K_v(x)] is tabulated in u = ln x, with
-                   v split into two instantiation-time panels ([0,1], [1,10])
-                   around the Gamma-pole cancellation feature near v = 0.
-- x > 8:           K = exp(Lt(v, 8/x)) * sqrt(pi/(2x)) * exp(-x), where
-                   Lt = ln[sqrt(2x/pi) e^x K_v(x)]. exp(-x) is computed as
-                   its own correctly-rounded factor, so accuracy does not
-                   decay with x; K underflows to 0 gracefully past x ~ 746.
-
-Tabulating logs of K directly is what dodges risk S3 (the I_{+-v}
-connection formula cancels catastrophically near integer v) and the ~15
-decades of dynamic range. The f64 floor is set by the (x/2)^(-v) prefactor:
-pow costs ~eps * v * |ln(x/2)|, up to ~3e-14 at (v=10, x=1e-6) — same
-mechanism as besselj's prefactor floor, larger constant because of the
-wider log range.
-
-Below XMIN = 1e-6 the input is clamped (values freeze, gradients vanish);
-extend the table via the generator if smaller x is ever needed. dK/dv is 0
-at v = 0 by evenness (K_{-v} = K_v). Near the underflow edge (x beyond
-~600, K below ~1e-260) relative accuracy of gradients becomes platform
-dependent: backends that flush subnormals (XLA CPU) lose small correction
-terms like the 1/(2x) piece of dK/dx once products dip under 1e-308.
-
-besselk(v)/besselk_dnu(v) mirror the besselj API (v fixed at instantiation,
-cached, no mpmath). besselk_fn(nu, x) additionally takes nu as a traced jax
-scalar (uniform per call): the coefficient reconstruction happens inside
-the computation, so jax.grad works with respect to nu directly — this is
-what lets a Matern kernel learn its smoothness by gradient descent. For
-traced nu the domain cannot be checked; keep nu in [0, 10] yourself.
+Logs of K avoid the I_{+-v} connection formula's cancellation near integer v.
+f64 floor ~eps v |ln(x/2)| from the prefactor pow, up to ~3e-14 at v = 10,
+x = 1e-6. x is clamped below 1e-6 (values freeze, gradients vanish). Past
+x ~ 600 (K < 1e-260), backends that flush subnormals (XLA CPU) lose small
+gradient terms such as the 1/(2x) in dK/dx.
 """
 
 import functools
@@ -46,15 +24,14 @@ from chebax._src.recipes._common import (
     canon_float,
     canon_tag,
     check_range,
+    deprecated_factory,
     param_coefs,
     param_coefs_der,
     traced_coefs,
 )
 from chebax._src.series import ChebSeries
 
-# sqrt(pi/2) and ln sqrt(pi/2) factored out: forming 2*x first overflows
-# above x ~ 9e307 (and above ~1.7e38 in f32), which sent ln K to -inf and
-# dK/dx to nan at finite x.
+# factored out: 2 x overflows past x ~ 9e307 (1.7e38 in f32)
 _SQRT_HALF_PI = math.sqrt(math.pi / 2)
 _LOG_SQRT_HALF_PI = 0.5 * math.log(math.pi / 2)
 
@@ -74,13 +51,8 @@ def _xout(x):
 
 
 def _eval_k(v, x, ltil, ltail, scaled=False):
-    """K_v(x), or e^x K_v(x) when scaled.
-
-    The tail is built from e^x K in the first place, so the scaled form is
-    the one WITHOUT the e^-x factor rather than a product that reinstates
-    it: exp(log K + x) loses the -x + x to rounding and takes the
-    -1/2 ln x with it (pytensor's Kve gave 1.0 at x = 1e20 for a true
-    1.25e-10; review, 2026-08-02)."""
+    """K_v(x), or e^x K_v(x) when scaled: the tail's own e^x K, since
+    exp(log K + x) loses the -1/2 ln x (1.0 for a true 1.25e-10 at x = 1e20)."""
     xi = _xin(x)
     inner = jnp.exp(ltil(jnp.log(xi))) * jnp.power(xi / 2, -v)
     if scaled:
@@ -93,8 +65,7 @@ def _eval_k(v, x, ltil, ltail, scaled=False):
 
 
 def _eval_k_dnu(v, x, ltil, ltail, ltil_nu, ltail_nu):
-    # dK/dv = K * d(ln K)/dv; inner ln K = Ltil - v ln(x/2), tail ln K has
-    # no explicit v beyond Lt
+    # dK/dv = K dlnK/dv, inner ln K = Ltil - v ln(x/2)
     xi = _xin(x)
     inner_k = jnp.exp(ltil(jnp.log(xi))) * jnp.power(xi / 2, -v)
     inner = inner_k * (ltil_nu(jnp.log(xi)) - jnp.log(xi / 2))
@@ -107,7 +78,7 @@ def _eval_k_dnu(v, x, ltil, ltail, ltil_nu, ltail_nu):
 
 @jax.tree_util.register_pytree_node_class
 class BesselK(Recipe):
-    """Callable K_v on [1e-6, inf). Build with besselk(v)."""
+    """Callable K_v on [1e-6, inf). Build with besselk_frozen(v)."""
 
     _static_fields = ("v",)
     _series_fields = ("ltil", "ltail")
@@ -121,7 +92,7 @@ class BesselK(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class BesselKdnu(Recipe):
-    """Callable dK_v/dv on [1e-6, inf). Build with besselk_dnu(v)."""
+    """Callable dK_v/dv on [1e-6, inf). Build with besselk_dnu_frozen(v)."""
 
     _static_fields = ("v",)
     _series_fields = ("ltil", "ltail", "ltil_nu", "ltail_nu")
@@ -167,34 +138,19 @@ def _traced_series(nu):
     return (ChebSeries(c_in, (_kt.U0, _kt.U1)), ChebSeries(c_tl, (0.0, 1.0)))
 
 
-def besselk_fn(nu, x, scaled=False):
-    """K_nu(x) with nu a (traceable) scalar, differentiable in both arguments.
-
-    nu must be uniform per call and inside [0, 10] (unchecked under trace).
-    Costs the coefficient reconstruction (~10k flops) once per call, not per
-    point; jit constant-folds it when nu is static.
-
-    scaled=True returns e^x K_nu(x), which stays finite where K itself
-    underflows (past x ~ 746) and is what a kve wants. It is the tail
-    table's own quantity, not exp(log K + x): that product cancels its
-    -x against +x and loses the -1/2 ln x underneath.
-    """
-    nu = canon_param(nu, "besselk_fn", "nu")
+def besselk_scalar(nu, x, scaled=False):
+    """K_nu(x), nu a traced scalar in [0, 10] (unchecked under trace),
+    differentiable in both. scaled=True gives e^x K (kve), finite past
+    x ~ 746 where K underflows."""
+    nu = canon_param(nu, "besselk_scalar", "nu")
     ltil, ltail = _traced_series(nu)
     return _eval_k(nu, canon_float(x), ltil, ltail, bool(scaled))
 
 
-def log_besselk_fn(nu, x):
-    """ln K_nu(x), same contract as besselk_fn but with no underflow ceiling.
-
-    besselk_fn returns K itself, which underflows to 0 past x ~ 746. The
-    tables store ln K, so the log evaluates directly: finite for every
-    finite x up to the largest double (ln K ~ -x), -inf at x = inf,
-    differentiable in nu and x, nu uniform per call in [0, 10]. This is
-    the log_kve shape that entropy and log-likelihood pipelines want
-    (e.g. a GIG log-normalizer needs ln K_p and its order derivative).
-    """
-    nu = canon_param(nu, "log_besselk_fn", "nu")
+def log_besselk_scalar(nu, x):
+    """ln K_nu(x) from the log-tables, finite for every finite x (-inf at
+    inf); otherwise as besselk_scalar."""
+    nu = canon_param(nu, "log_besselk_scalar", "nu")
     x = jnp.asarray(x)
     ltil, ltail = _traced_series(nu)
     xi = _xin(x)
@@ -204,14 +160,32 @@ def log_besselk_fn(nu, x):
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
-def besselk(v):
-    """K_v on [1e-6, inf) for real v in [0, 10]. Cached per order; no mpmath.
+def besselk(nu, x=None, scaled=False):
+    """K_nu(x) for one order nu in [0, 10] (besselk_scalar). Without x it is
+    the deprecated 0.4 factory. chebax.pergroup gives one order per group."""
+    if x is None:
+        return deprecated_factory("besselk", besselk_frozen, nu)
+    return besselk_scalar(nu, x, scaled)
 
-    v may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode."""
+
+def log_besselk(nu, x):
+    """ln K_nu(x) for one order nu in [0, 10]: log_besselk_scalar."""
+    return log_besselk_scalar(nu, x)
+
+
+def besselk_frozen(v):
+    """K_v on [1e-6, inf) for a concrete v in [0, 10]. Cached."""
     return _besselk_cached(float(v), canon_tag())
 
 
-def besselk_dnu(v):
-    """dK_v/dv on [1e-6, inf) for real v in [0, 10] (the order gradient)."""
+def besselk_dnu(v, x=None):
+    """dK_v/dv at x for a concrete v; for a traced v, differentiate
+    besselk_scalar. Without x it is the deprecated 0.4 factory."""
+    if x is None:
+        return deprecated_factory("besselk_dnu", besselk_dnu_frozen, v)
+    return besselk_dnu_frozen(v)(x)
+
+
+def besselk_dnu_frozen(v):
+    """dK_v/dv on [1e-6, inf) for v in [0, 10]; 0 at v = 0 (K is even in v)."""
     return _besselk_dnu_cached(float(v), canon_tag())

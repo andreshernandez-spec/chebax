@@ -1,32 +1,17 @@
-"""J_v for real v in [0, 10] on x >= 0, from baked nu-tables.
+"""J_v for real v in [0, 10] on x >= 0, from v-tables in three regions with hard
+seams (../../bessel/experiments/04):
 
-Three regions, assembled with predicated selects (both seams are hard
-switches, per ../../bessel/experiments/04):
+    x <= 8:       J = (x/2)^v / Gamma(v+1) g_v(x^2),  g_v = 0F1(; v+1; -z/4),
+                  so accuracy near 0 is relative
+    8 < x <= 30:  J_v(x) directly (g_v spans six decades at large v)
+    x > 30:       J = sqrt(2/(pi x)) (cos(x) A + sin(x) B), A = P cos(phi) +
+                  Q sin(phi), B = P sin(phi) - Q cos(phi), phi = (v/2 + 1/4) pi,
+                  P, Q in t = (30/x)^2
 
-- x in [0, 8]:   J = (x/2)^v / Gamma(v+1) * g_v(x^2), g_v = 0F1(; v+1; -z/4)
-                 entire, one short Chebyshev series in z (the M2 table). The
-                 factorization carries the x^v branch point, so accuracy near
-                 0 is relative, not just absolute.
-- x in (8, 30]:  J_v(x) as a direct Chebyshev series in x (no factorization
-                 needed away from 0; direct fitting keeps the table
-                 sup-accurate at large v where g_v spans six decades).
-- x > 30:        J = sqrt(2/(pi x)) (P cos w - Q sin w) with the exact
-                 modulus functions P, Q tabulated in t = (30/x)^2. The phase
-                 w = x - (v/2 + 1/4) pi is never formed: with phi = (v/2 +
-                 1/4) pi baked into instantiation constants,
-                     J = sqrt(2/(pi x)) (cos(x) A + sin(x) B),
-                     A = P cos(phi) + Q sin(phi),  B = P sin(phi) - Q cos(phi)
-                 so sincos(x) does its own argument reduction and the eps*x
-                 phase-subtraction error never appears.
-
-Instantiation reconstructs every coefficient vector at v by Clenshaw in v
-across the table rows (numpy, cached, no mpmath). dJ/dx flows through the
-series custom_jvp; besselj_dnu gives dJ/dv via chebder along the v axis (for
-the outer region, dA/dv and dB/dv pick up -(pi/2) B and +(pi/2) A from the
-phi rotation). Validated against mpmath to x = 1e4; the outer form has no
-upper limit beyond sincos accuracy. dJ/dv is log-singular at x = 0 (real for
-v = 0, where besselj_dnu returns nan at exactly 0). v outside [0, 10] raises
-at instantiation.
+The phase x - phi is never formed, so it costs no eps x. dJ/dv comes from the
+tables' v-derivative (outer: dA/dv, dB/dv gain -(pi/2) B, +(pi/2) A).
+Validated against mpmath to x = 1e4. dJ/dv is log-singular at x = 0 (nan at
+v = 0, x = 0).
 """
 
 import functools
@@ -41,6 +26,7 @@ from chebax._src.recipes import besselj_table_ext as _ext
 from chebax._src.recipes._common import (
     canon_tag,
     check_range,
+    deprecated_factory,
     digamma64,
     param_coefs,
     param_coefs_der,
@@ -76,10 +62,8 @@ class _JBase(Recipe):
         self._cphi = math.cos(phi)
         self._sphi = math.sin(phi)
 
-    # Branch inputs: the active branch must see the raw x right up to and
-    # including its own seam, or grad halves there (min/max ties split the
-    # tangent). Inactive branches get clamped constants; where() masks their
-    # gradients out.
+    # the active branch sees raw x up to and at its seam (min/max ties halve
+    # the gradient there); the others see clamped constants
     def _xin(self, x):
         return jnp.where(x <= _ext.MID_X0, x, _ext.MID_X0)
 
@@ -93,7 +77,7 @@ class _JBase(Recipe):
 
     def _inner(self, x):
         xi = self._xin(x)
-        # Integer powers avoid 0 * inf in higher derivatives at the origin.
+        # integer powers avoid 0 * inf in higher derivatives at 0
         power = int(self.v) if self.v.is_integer() else self.v
         pref = jnp.power(xi / 2, power)
         return self._inv_gamma * pref * self.g(xi * xi)
@@ -114,12 +98,8 @@ class _JBase(Recipe):
         )
 
     def _trim(self, x, y):
-        """nan outside a declared domain. A trimmed instance evaluates
-        only its own regions, so anything outside them would come back as
-        that region's polynomial extrapolated, which is silently wrong;
-        the whole point of naming a domain is that the caller promised to
-        stay inside it. The branch inputs are already clamped, so this
-        masks the OUTPUT and no gradient reaches a lane it should not."""
+        """nan outside a declared domain, where a trimmed instance would
+        silently extrapolate a region's polynomial."""
         if self.domain is None:
             return y
         lo, hi = self.domain
@@ -128,8 +108,7 @@ class _JBase(Recipe):
 
 @jax.tree_util.register_pytree_node_class
 class BesselJ(_JBase):
-    """Callable J_v on x >= 0, or on `domain` when one was given.
-    Build with besselj(v) or besselj(v, domain=(lo, hi))."""
+    """Callable J_v on x >= 0 or its domain. Build with besselj_frozen."""
 
     _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q")
@@ -157,8 +136,7 @@ class BesselJ(_JBase):
 
 @jax.tree_util.register_pytree_node_class
 class BesselJdnu(_JBase):
-    """Callable dJ_v/dv on x > 0, or on `domain` when one was given.
-    Build with besselj_dnu(v) or besselj_dnu(v, domain=(lo, hi))."""
+    """Callable dJ_v/dv on x > 0 or its domain. Build with besselj_dnu_frozen."""
 
     _static_fields = ("v", "domain")
     _series_fields = ("g", "jm", "p", "q", "gnu", "jmnu", "pnu", "qnu")
@@ -230,20 +208,19 @@ def _besselj_cached(v, domain, _tag):
     return BesselJ(v, domain, *_series_at(v))
 
 
-def besselj(v, domain=None):
-    """J_v on x >= 0 for real v in [0, 10]. Cached per order; no mpmath.
+def besselj(v, x=None, domain=None):
+    """J_v(x) for a concrete v in [0, 10], not traceable. Without x it is the
+    deprecated 0.4 factory."""
+    if x is None:
+        return deprecated_factory("besselj", besselj_frozen, v, domain=domain)
+    return besselj_frozen(v, domain)(x)
 
-    v may be a python number or a concrete jax scalar; the bounded cache
-    is keyed per x64 mode.
 
-    domain=(lo, hi) narrows the instance to the regions covering [lo, hi]
-    and drops the rest of the evaluation: the full callable computes all
-    three regions and selects, so an x-range inside one of them pays
-    about three times the arithmetic it needs (measured 2.5x f64 / 3.0x
-    f32 for the inner region alone, experiments/04). Outside the declared
-    domain the result is nan, since the regions that would have answered
-    are the ones that were dropped. The tables and their accuracy are
-    unchanged; this only removes work."""
+def besselj_frozen(v, domain=None):
+    """J_v on x >= 0 for a concrete v in [0, 10] (raises outside). Cached.
+
+    domain=(lo, hi) evaluates only the regions covering it, nan outside:
+    2.5x f64 / 3.0x f32 faster for the inner region alone (experiments/04)."""
     return _besselj_cached(float(v), _canon_domain("besselj", domain), canon_tag())
 
 
@@ -264,10 +241,16 @@ def _besselj_dnu_cached(v, domain, _tag):
     )
 
 
-def besselj_dnu(v, domain=None):
-    """dJ_v/dv on x > 0 for real v in [0, 10] (the order gradient).
+def besselj_dnu(v, x=None, domain=None):
+    """dJ_v/dv at x for a concrete v. Without x it is the deprecated 0.4
+    factory."""
+    if x is None:
+        return deprecated_factory("besselj_dnu", besselj_dnu_frozen, v, domain=domain)
+    return besselj_dnu_frozen(v, domain)(x)
 
-    domain=(lo, hi) trims the regions exactly as besselj's does."""
+
+def besselj_dnu_frozen(v, domain=None):
+    """dJ_v/dv on x > 0 for v in [0, 10]; domain= as in besselj_frozen."""
     return _besselj_dnu_cached(
         float(v), _canon_domain("besselj_dnu", domain), canon_tag()
     )

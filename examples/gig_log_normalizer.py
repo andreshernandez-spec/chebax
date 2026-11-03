@@ -16,7 +16,7 @@ mean-to-natural conversion, and the entropy is A - eta . grad A. The
 nonstandard ingredient is d ln K_p / dp, a derivative in the ORDER of the
 Bessel function.
 
-chebax.log_besselk_fn takes the order as a traced jax scalar, so plain
+chebax.log_besselk takes the order as a traced jax scalar, so plain
 jax.grad and jax.hessian work through A in all three parameters. This demo
 checks the gradient identities and runs the mean-to-natural Newton
 conversion: recover (p, a, b) from mean statistics alone.
@@ -38,7 +38,7 @@ import chebax  # noqa: E402
 
 def gig_log_normalizer(p, a, b):
     z = jnp.sqrt(a * b)
-    log_k = chebax.log_besselk_fn(jnp.abs(p), z)
+    log_k = chebax.log_besselk(jnp.abs(p), z)
     return jnp.log(2.0) + 0.5 * p * (jnp.log(b) - jnp.log(a)) + log_k
 
 
@@ -62,7 +62,7 @@ hess = jax.jit(jax.hessian(log_normalizer_nat))
 def exp_to_nat(mu, theta0, iters=20):
     # Solve grad A(eta) = mu by Newton in theta = (p, ln a, ln b): the log
     # coordinates keep a, b positive with no constraint handling, and the
-    # exact Jacobian comes from jax.jacfwd through besselk_fn. Backtrack on
+    # exact Jacobian comes from jax.jacfwd through besselk. Backtrack on
     # the residual norm; near the solution full steps are quadratic.
     def residual(theta):
         p, la, lb = theta
@@ -100,7 +100,7 @@ def main():
 
     # cross-check E[x] against the classical Bessel-ratio identity
     z = jnp.sqrt(true["a"] * true["b"])
-    ratio = chebax.besselk_fn(true["p"] + 1.0, z) / chebax.besselk_fn(true["p"], z)
+    ratio = chebax.besselk(true["p"] + 1.0, z) / chebax.besselk(true["p"], z)
     ex = jnp.sqrt(true["b"] / true["a"]) * ratio
     print(f"  E[x] via K_(p+1)/K_p ratio: {float(ex):+.12f}")
 

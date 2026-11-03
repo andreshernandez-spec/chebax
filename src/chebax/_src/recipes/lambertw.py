@@ -1,20 +1,7 @@
-"""Lambert W, real branches k = 0 and k = -1 (jax#13680).
-
-No tables: like gammaincinv, this is a fixed-count solver with an implicit
-gradient. Eight Halley iterations on f(w) = w e^w - x from closed-form
-initializers (the branch-point series in p = sqrt(2(1 + e x)) near x = -1/e,
-log-based asymptotics elsewhere); Halley's cubic convergence turns a
-0.5-accurate initializer into machine precision in three steps, and
-non-finite updates are simply kept back, so the iteration is branchless and
-jittable. The gradient never differentiates the loop: custom_jvp binds
-dW/dx = 1 / (e^W (1 + W)), exact by the implicit function theorem (infinite
-at the branch point x = -1/e, where W = -1, which is the true behavior).
-
-Domains: k=0 on [-1/e, inf); k=-1 on [-1/e, 0), accurate down to
-x ~ -1e-306 (where e^W leaves the normal range). Inputs outside the branch
-domain return nan. Near the branch point the achievable accuracy of ANY
-double routine degrades like sqrt(eps / (x + 1/e)) because 1 + e x cancels;
-the tests carry that allowance.
+"""Lambert W, real branches k = 0 and k = -1 (jax#13680): eight Halley steps on
+w e^w - x from the branch-point series in p = sqrt(2(1 + e x)) or log
+asymptotics, with dW/dx = 1 / (e^W (1 + W)). k = -1 is accurate down to
+x ~ -1e-306. Near -1/e any double routine loses sqrt(eps / (x + 1/e)).
 """
 
 import math
@@ -24,11 +11,8 @@ import jax.numpy as jnp
 
 _ITERS = 8
 
-# One canonical branch point. The true -1/e lies BETWEEN two doubles, and
-# 1/math.e (division) and math.exp(-1) (exp) round to different ones, so a
-# domain check against one form rejected the other with nan. Accept one ulp
-# of grace below the canonical rounding: any double that is the nearest
-# representation of -1/e maps to W = -1.
+# -1/e lies between two doubles (1/math.e and math.exp(-1) round apart), so
+# accept one ulp below
 _BR = -math.exp(-1.0)
 _BR_LO = math.nextafter(_BR, -math.inf)
 
@@ -44,19 +28,12 @@ def _halley(x, w):
     return w
 
 
-# Above this, k = 0 iterates on the logarithmic residual instead
 _LOG_FORM = 1e300
 
 
 def _halley_log(lx, w):
-    """Halley on g(w) = w + ln w - ln x, for x near the top of the range.
-
-    There w e^w - x overflows as soon as an iterate overshoots the root,
-    and so does e^w (w + 1) in the denominator: at x = max float no update
-    was finite and w stayed at its initializer, 3e-8 off (review,
-    2026-10-26). Every term of g is O(w). It costs about one more ulp than
-    the plain residual, whose error is eps / (1 + w) relative, so it is
-    used only up here."""
+    """Halley on w + ln w - ln x near the top of the range, where w e^w - x
+    overflows (3e-8 off at max float). About one ulp worse, so only up here."""
     for _ in range(_ITERS):
         g = w + jnp.log(w) - lx
         g1 = 1.0 + 1.0 / w
@@ -111,8 +88,7 @@ def _w0_jvp(primals, tangents):
 def _wm1_jvp(primals, tangents):
     (x,), (xdot,) = primals, tangents
     w = _wm1(x)
-    # on this branch W <= -1, so the boundary derivative is -inf; at exactly
-    # W = -1 the shared formula divides by +0 and would give the wrong sign
+    # W <= -1 here, so -inf at W = -1, where the formula divides by +0
     d = _dw(w)
     d = jnp.where(w <= -1.0, -jnp.abs(d), d)
     return w, d * xdot

@@ -1,22 +1,11 @@
 """Generator for the besseli log-tables. Build-time only; mpmath inside.
 
-I_v is positive and non-oscillatory, so it takes K's log treatment with J's
-factored form:
-
-- Inner, z = x^2 in [0, 64]:
-      Lh(v, z) = ln[ Gamma(v+1) (x/2)^(-v) I_v(x) ]
-  the log of the entire part h_v(z) = 0F1(; v+1; z/4). The z-degree is set
-  by the complex zeros of I_v (for v=0 the nearest sits at z = -j_{0,1}^2
-  ~ -5.78, giving rho ~ 1.8 and measured degree ~64); one v-panel suffices,
-  there is no Gamma-pole feature (measured v-degree 52).
-
-- Tail, t = 8/x on (0, 1]:
-      Lt(v, t) = ln[ sqrt(2 pi x) e^(-x) I_v(x) ]
-  The recessive e^(-2x) component is largest at half-integer v (measured
-  worst t-degree 39, at v = 0.5); still converges cleanly at 48 nodes.
-
-Both stages stay in mpmath (the M1 floor rule). Measured degrees reproduce
-via experiments/03_degree_measurement.py. Regenerate with:
+Inner, z = x^2 in [0, 64]: Lh(v, z) = ln[Gamma(v+1) (x/2)^(-v) I_v(x)], the
+log of the entire part 0F1(; v+1; z/4); the nearest complex zero of I_0, at
+z = -5.78, sets degree ~64 in z, and one v-panel suffices (degree 52). Tail,
+t = 8/x on (0, 1]: Lt(v, t) = ln[sqrt(2 pi x) e^(-x) I_v(x)], worst t-degree
+39 at v = 0.5, where the recessive e^(-2x) part is largest. Both stages stay
+in mpmath; degrees reproduce via experiments/03. Regenerate with:
 
     python -m chebax._src.recipes.besseli_gen
 """

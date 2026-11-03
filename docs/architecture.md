@@ -72,6 +72,14 @@ The runtime path is:
 uniform parameter -> reconstruct coefficients -> ChebSeries -> array of values
 ```
 
+That is the `_scalar` path (traced) and the `_frozen` path (eager, cached).
+gammainc also has an `_array` path, a parameter value per element: each
+element finds its patch of a tensor grid over (parameter, argument) and
+evaluates that patch's small 2-D polynomial directly, with no reconstruction
+and no ChebSeries (increment 35). Its inverses run the same Newton solve on
+either path's ln P and ln Q (increment 37). The plain `name(params, x)` picks
+between `_scalar` and `_array` from the parameters' shapes (increment 36).
+
 All fit stages in a recipe generator stay in mpmath at the recorded precision
 before one final float64 conversion. Tables record axes, parameter domains,
 node counts, working precision, mpmath version, and the generator/shared-helper
@@ -79,13 +87,13 @@ source hash. Slow tests compare emitted modules byte for byte. The wide-beta
 and hyp1f1 tables have documented partial CI regeneration checks; use the full
 `CHEBAX_FULL_REGEN=1` checks when their omitted panels change.
 
-An eager factory uses NumPy reconstruction and a bounded private cache. Its
-key includes normalized parameters, structural options, and canonical dtype.
-The public wrapper normalizes concrete cache keys; construction validates
-parameters before reconstruction. A traced counterpart
-uses JAX reconstruction without inserting traced results into a Python cache.
-Constructing an eager factory during tracing is supported where its inputs are
-concrete; a traced parameter uses the direct numerical entry point.
+A `_frozen` factory uses NumPy reconstruction and a bounded private cache.
+Its key includes normalized parameters, structural options, and canonical
+dtype. The public wrapper normalizes concrete cache keys; construction
+validates parameters before reconstruction. The `_scalar` counterpart uses
+JAX reconstruction without inserting traced results into a Python cache.
+Constructing a `_frozen` callable during tracing is supported where its
+inputs are concrete; a traced parameter uses `_scalar` or the plain name.
 
 `ChebSeries`, `PiecewiseCheb`, and `Recipe` instances are immutable. Recipe
 subclasses declare static fields and series children, take them in that order,
@@ -100,6 +108,9 @@ value. Normalize them through `canon_param`; reject larger arrays with the
 parameter name and guidance to `pergroup`. Evaluation points may be arrays.
 Some direct functions, notably Tweedie, additionally broadcast parameters such
 as mean and dispersion; their own docstrings state which arguments broadcast.
+gammainc's `_array` functions, and its inverses', broadcast a with x on
+purpose: they are a separate path with its own table, and every `_scalar`
+function keeps refusing per-element arrays.
 The NumPyro constructors follow the same rule for shape parameters.
 
 Public entry points must apply the same normalization to positional and

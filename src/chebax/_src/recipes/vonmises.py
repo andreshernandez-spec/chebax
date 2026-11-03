@@ -1,27 +1,11 @@
-"""von Mises (mu = 0) CDF and quantile, kappa in [0, 50], theta in [-pi, pi].
+"""von Mises (mu = 0) CDF and quantile, kappa in [0, 50], theta in [-pi, pi]:
 
-The circular-distribution gap: numpyro has the sampler but no cdf/icdf,
-which blocks truncated and reparameterized circular models. Structure:
+    F(theta; kappa) = 1/2 + theta/(2 pi) + theta H(theta^2; kappa),
 
-    F(theta; kappa) = 1/2 + theta/(2 pi) + theta * H(theta^2; kappa)
-
-with H from a baked (w = theta^2, r = sqrt(kappa)) table — the dawsn move
-makes oddness and the theta = 0 gradient exact by construction, and puts
-the large-kappa boundary layer at the endpoint where Chebyshev clusters.
-
-vonmises_cdf(kappa, theta) takes kappa traced (uniform per call, in
-[0, 50], unchecked under trace): jax.grad works with respect to kappa —
-learnable concentration. dF/dtheta is AD through the series; its exact
-value is the von Mises density (the test oracle). vonmises_icdf(kappa, p)
-is the fixed-count safeguarded solver with implicit-function-theorem
-gradients, same as the other quantiles, and like them it checks its final
-CDF residual instead of assuming convergence. The structure above is
-accurate absolutely, not relatively, so far-tail probabilities stop being
-resolvable below min(p, 1-p) ~ 4096 eps, whatever kappa is: past that
-floor the quantile returns nan rather than a wrong angle (see its
-docstring). I_0(kappa) for the density comes
-from chebax's own besseli. theta outside [-pi, pi] is the caller's problem
-(wrap first); mu != 0 is a shift: F(theta - mu) with wrapping.
+H tabulated in (theta^2, sqrt(kappa)), so oddness and the theta = 0 gradient
+are exact. kappa is a traced scalar (unchecked under trace). F is accurate
+absolutely, not relatively, so the quantile returns nan below
+min(p, 1-p) = 4096 eps. Wrap theta first; mu != 0 is F(theta - mu).
 """
 
 import jax
@@ -31,23 +15,16 @@ from chebax._src.recipes import vonmises_table as _vt
 from chebax._src.recipes._common import float_params
 from chebax._src.recipes._common import newton_bisect
 from chebax._src.recipes._common import traced_coefs
-from chebax._src.recipes.besseli import besseli_fn
+from chebax._src.recipes.besseli import besseli_scalar
 from chebax._src.series import ChebSeries
 
-# a solve is accepted when its CDF residual is this small relative to
-# min(p, 1-p); healthy solves land at the eps floor below instead
+# accepted CDF residual relative to min(p, 1-p)
 _RESID_RTOL = 1e-6
 
 
 def _solver_consts():
-    """Newton count, residual floor and resolvable-probability floor for the
-    canonical dtype.
-
-    The residual floor is the measured worst converged |F(theta) - p|
-    (2.8 eps in float64, 8.5 eps in float32) with the usual 4x bar. F is
-    accurate ABSOLUTELY, so that residual buys only ~32 eps / min(p, 1-p)
-    of RELATIVE accuracy: the probability floor is where that reaches
-    ~1e-4 (measured worst 1.0e-4 just above it, see the icdf docstring)."""
+    """Newton count, residual floor (4x the measured 2.8 eps f64, 8.5 eps f32)
+    and probability floor, where 32 eps / min(p, 1-p) reaches ~1e-4."""
     eps = float(jnp.finfo(jnp.empty(()).dtype).eps)
     return (32 if eps < 1e-10 else 20), 32.0 * eps, 4096.0 * eps
 
@@ -66,10 +43,8 @@ def _cdf_impl(kappa, theta):
 
 @jax.custom_jvp
 def _vonmises_cdf_cj(kappa, theta):
-    """CDF of vonMises(mu=0, kappa) at theta in [-pi, pi]; kappa traceable.
-
-    The kappa gradient is finite on the whole documented domain including
-    kappa = 0, where it is the exact Fourier limit sin(theta)/(2 pi)."""
+    """CDF of vonMises(0, kappa) at theta in [-pi, pi], differentiable in
+    both; d/dkappa at kappa = 0 is the exact sin(theta)/(2 pi)."""
     return _cdf_impl(kappa, theta)
 
 
@@ -79,10 +54,7 @@ def _vonmises_cdf_jvp(primals, tangents):
     dkappa, dtheta = tangents
     F = _cdf_impl(k, th)
     _, d_th = jax.jvp(lambda t: _cdf_impl(k, t), (th,), (dtheta,))
-    # kappa direction: the table lives on r = sqrt(kappa), so AD divides
-    # the (noisy, unconstrained) slope at r = 0 by 2 sqrt(kappa) -> inf at
-    # the documented boundary. Below 1e-8 use the exact Fourier limit
-    # dF/dkappa|_0 = sin(theta)/(2 pi) (the neglected terms are O(kappa)).
+    # AD divides by 2 sqrt(kappa), so below 1e-8 use sin(theta)/(2 pi) + O(kappa)
     ks = jnp.maximum(k, 1e-8)
     _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (dkappa,))
     interior = (th > -jnp.pi) & (th < jnp.pi)
@@ -91,35 +63,22 @@ def _vonmises_cdf_jvp(primals, tangents):
         * dkappa
     )
     dF = d_th + jnp.where(k < 1e-8, lead, d_k_ad)
-    # nan has to survive reverse mode too: a where whose nan branch is a
-    # constant is linear in nothing and transposes to a zero cotangent.
+    # scale, not select, so nan survives reverse mode
     return F, dF * jnp.where(jnp.isnan(F), jnp.nan, 1.0)
 
 
 def _log_pdf(kappa, theta):
-    i0 = besseli_fn(jnp.asarray(0.0), jnp.asarray(kappa))
+    i0 = besseli_scalar(jnp.asarray(0.0), jnp.asarray(kappa))
     return jnp.asarray(kappa) * jnp.cos(theta) - jnp.log(2 * jnp.pi * i0)
 
 
 @jax.custom_jvp
 def _vonmises_icdf_cj(kappa, p):
-    """Quantile of vonMises(mu=0, kappa): inverse of vonmises_cdf in theta.
-
-    Guarantee instead of silent saturation: the final CDF residual is
-    checked against max(1e-6 min(p, 1-p), 32 eps) and a solve that misses
-    it returns nan. The absolute half of that bar is the real limit. F is
-    built as 1/2 + theta/(2 pi) + theta H(theta^2), which is accurate to a
-    few eps ABSOLUTELY and carries no relative accuracy in the tails, so
-    the best a converged solve can promise is ~32 eps / min(p, 1-p)
-    relative. That bound is set by the CDF's representation, not by kappa:
-    measured worst relative error is 1.2e-5 at min(p, 1-p) = 1e-11 and
-    1.0e-4 just above the floor, across kappa in {2, 10, 25, 50} alike. Below
-    min(p, 1-p) = 4096 eps (9.1e-13 in float64, 4.9e-4 in float32) the
-    quantile returns nan rather than an angle whose CDF is off by a
-    percent or more (at 1e-15 the relative error reaches 0.11).
-
-    NaN inputs and p outside [0, 1] return nan; the endpoints return
-    -pi and pi exactly."""
+    """Quantile of vonMises(0, kappa). A solve whose CDF residual exceeds
+    max(1e-6 min(p, 1-p), 32 eps) returns nan, and so does min(p, 1-p) below
+    4096 eps (9.1e-13 f64, 4.9e-4 f32), where the error would reach 0.11 at
+    1e-15. Measured worst relative error 1.2e-5 at 1e-11 and 1.0e-4 just above
+    the floor, for kappa in {2, 10, 25, 50}. p = 0, 1 give -pi, pi exactly."""
     iters, resid_atol, pmin_floor = _solver_consts()
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
@@ -129,12 +88,8 @@ def _vonmises_icdf_cj(kappa, p):
         f = 0.5 + th / (2 * jnp.pi) + th * h(th * th) - pc
         return f, jnp.exp(_log_pdf(kappa, th))
 
-    # Start from the large-kappa Gaussian limit theta ~ N(0, 1/kappa),
-    # clipped to the circle (kappa -> 0 clips to the endpoint, where the
-    # uniform CDF is linear and one Newton step is exact). The uniform
-    # start 2 pi (p - 1/2) sits at the far end of the interval once kappa
-    # concentrates and Newton then creeps additively: measured, it needed
-    # 25 iterations where this one is converged by 15.
+    # start at the Gaussian limit N(0, 1/kappa), clipped: converged by 15
+    # iterations where the uniform start 2 pi (p - 1/2) needs 25
     tiny = jnp.finfo(pc.dtype).tiny
     th0 = jnp.clip(
         jax.scipy.special.ndtri(pc) / jnp.sqrt(jnp.maximum(kappa, tiny)),
@@ -145,9 +100,6 @@ def _vonmises_icdf_cj(kappa, p):
     th = newton_bisect(
         f_and_df, th0, jnp.full_like(th0, -jnp.pi), jnp.full_like(th0, jnp.pi), iters
     )
-    # Convergence is checked, never assumed, and so is resolvability: a
-    # residual at the eps floor means nothing where the density is too
-    # small to turn it into a theta (see the docstring).
     f_fin, _ = f_and_df(th)
     pmin = jnp.minimum(pc, 1.0 - pc)
     bad = (jnp.abs(f_fin) > jnp.maximum(_RESID_RTOL * pmin, resid_atol)) | (
@@ -169,13 +121,10 @@ def _vonmises_icdf_jvp(primals, tangents):
     pdf = jnp.exp(_log_pdf(kappa, ths))
     _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths), (kappa,), (dkappa,))
     dth = (dp - d_cdf) / pdf
-    # scale, not select: the endpoints are a genuine zero, and a rejected
-    # solve must hand back nan in reverse mode as well as forward
+    # scale, not select: zero at the endpoints, nan for a rejected solve
     return th, dth * jnp.where(interior, 1.0, jnp.where(jnp.isnan(th), jnp.nan, 0.0))
 
 
-# Public entry points: the rules sit on the private names so an integer,
-# keyword or size-one kappa is a float scalar before any tangent exists
-# (see _common.float_params).
+# rules on the private names, so kappa is a float scalar before any tangent
 vonmises_cdf = float_params(_vonmises_cdf_cj)
 vonmises_icdf = float_params(_vonmises_icdf_cj)

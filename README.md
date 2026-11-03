@@ -18,34 +18,52 @@ jax.config.update("jax_enable_x64", True)   # before building instances: tables
 import jax.numpy as jnp
 import chebax
 
-jv = chebax.besselj(2.5)                    # any real order in [0, 10]; cached
 x = jnp.linspace(0.1, 30.0, 200)
-jv(x), jax.vmap(jax.grad(jv))(x)            # values and dJ/dx, jit/vmap-safe
-
-chebax.besselk_fn(1.7, x)                   # order as a traced scalar:
-jax.grad(chebax.besselk_fn)(1.7, 5.0)       #   jax.grad w.r.t. the ORDER
-chebax.betainc_fn(2.0, 3.0, 0.4)            # dI/da, dI/db via jax.grad (jax#38610)
+chebax.besselk(1.7, x)                      # parameters first, then x
+jax.grad(chebax.besselk)(1.7, 5.0)          # jax.grad w.r.t. the ORDER
+chebax.betainc(2.0, 3.0, 0.4)               # dI/da, dI/db via jax.grad (jax#38610)
+chebax.gammainc(jnp.asarray([0.5, 2.5, 40.0]), 3.0)  # a per element
 chebax.betaincinv(2.0, 3.0, 0.05)           # differentiable Beta quantile (jax#2399)
+
+jv = chebax.besselj_frozen(2.5)             # a cached callable for one order
+jv(x), jax.vmap(jax.grad(jv))(x)            # values and dJ/dx, jit/vmap-safe
 ```
+
+Every function has one name that takes any parameter shape, `name(params, x)`,
+and one name per path for callers who know which path they want:
+
+| suffix | the parameters are | example |
+|---|---|---|
+| `_scalar` | one value for the whole call, traceable | `gammainc_scalar(2.5, x)` |
+| `_array` | one value per element, broadcast with x | `gammainc_array(a, x)` |
+| `_frozen` | concrete; returns a cached callable of x, what `bake` takes | `gammainc_frozen(2.5)(x)` |
+
+The plain name picks `_scalar` for a parameter holding one value and `_array`
+for an array, from the shape, so the choice is fixed at trace time. Only
+gammainc and its inverses have an `_array` path so far; for the other
+families an array of parameters raises and names `chebax.pergroup`. Log forms are `log_name...`.
+The 0.4 spellings (`besselk_fn`, the one-argument `besselk(nu)`) still work
+for now, with a DeprecationWarning naming the replacement.
 
 ## What's in
 
-| family | factory | traced params | param derivative | notes |
+| family | functions | paths | param derivative | notes |
 |---|---|---|---|---|
-| `besselj` | `besselj(v)`, `besselj(v, domain=(lo, hi))` | — | `besselj_dnu(v)` | x ≥ 0, validated to 1e4; `domain=` keeps only the regions covering the window and drops the rest of the evaluation, measured 2.5x f64 / 2.6x f32 (`experiments/04`), nan outside it |
-| `bessely` | `bessely(v)` | — (structural) | `bessely_dnu(v)` | x ≥ 1e-6 |
-| `besseli` | `besseli(v, scaled=)` | `besseli_fn`, `besseli_ratio` | `besseli_dnu(v, scaled=)` | `scaled` = scipy's ive; the ratio I_{v+1}/I_v is the circular-statistics workhorse |
-| `besselk` | `besselk(v)` | `besselk_fn`, `log_besselk_fn` | `besselk_dnu(v)` | x ≥ 1e-6; the log form has no underflow ceiling |
-| Matérn | — | `matern(nu, r, lengthscale)` | via `grad` | unit-variance correlation, LEARNABLE smoothness ν ∈ (0, 10] |
-| `betainc` | `betainc(a, b)` | `betainc_fn`, `log_betainc_fn` | via `grad` of `_fn` | (a, b) ∈ [0.1, 100]² (panels, split at 10); the log form resolves the lower tail with no underflow floor |
-| `gammainc` | `gammainc(a)`, `gammaincc(a)` | `gammainc_fn`, `gammaincc_fn`, `log_gammainc_fn`, `log_gammaincc_fn` | via `grad` of `_fn` | a ≥ 0.1 (above 10 via Temme-zone tables, whose v = 10/a axis reaches a = ∞), x ≥ 0; branchless (no while_loop), measured 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`) |
-| `hyp1f1` | `hyp1f1(a, b)` | `hyp1f1_fn`, `log_hyp1f1_fn` | via `grad` of `_fn` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
-| spherical | `spherical_jn/yn(n)` | — | — | n ∈ [0, 9], via half-integer tables |
-| quantiles | — | `betaincinv`, `gammaincinv`, `gammainccinv`, `chi2inv`, `stdtr`, `stdtrit` | via `grad` (IFT) | jax#2399/#5350/#20358; chi-squared at real dof to 2000; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
-| von Mises | — | `vonmises_cdf/icdf` | via `grad` | κ ∈ [0, 50] |
-| erf family | — | `dawsn`, `erfcx` | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
-| Lambert W | — | `lambertw(x, k)` | — | both real branches, jax#13680 |
-| Tweedie | — | `tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` | via `grad` | power p ∈ [1.05, 1.95] (uniform per call), μ, φ > 0 and y ≥ 0 broadcast, the zero mass included; Wright's Φ(ρ, 0; z) with ρ = (2−p)/(p−1) ∈ [1/19, 19]; 89–130x scipy's `log_wright_bessel` on one CPU core, 254–331x on the GPU (`experiments/21`) |
+| `besselj` | `besselj(v, x, domain=)` | `_frozen` (order concrete) | `besselj_dnu` | x ≥ 0, validated to 1e4; `domain=` keeps only the regions covering the window and drops the rest of the evaluation, measured 2.5x f64 / 2.6x f32 (`experiments/04`), nan outside it |
+| `bessely` | `bessely(v, x)` | `_frozen` (order structural) | `bessely_dnu` | x ≥ 1e-6 |
+| `besseli` | `besseli(nu, x, scaled=)`, `besseli_ratio(nu, x)` | `_scalar`, `_frozen` | `besseli_dnu`, or `grad` of `besseli` | `scaled` = scipy's ive; the ratio I_{v+1}/I_v is the circular-statistics workhorse |
+| `besselk` | `besselk(nu, x)`, `log_besselk(nu, x)` | `_scalar`, `_frozen` | `besselk_dnu`, or `grad` of `besselk` | x ≥ 1e-6; the log form has no underflow ceiling |
+| Matérn | `matern(nu, r, lengthscale)` | — | via `grad` | unit-variance correlation, LEARNABLE smoothness ν ∈ (0, 10] |
+| `betainc` | `betainc(a, b, x)`, `log_betainc(a, b, x)` | `_scalar`, `_frozen` | via `grad` | (a, b) ∈ [0.1, 100]² (panels, split at 10); the log form resolves the lower tail with no underflow floor |
+| `gammainc` | `gammainc(a, x)`, `gammaincc`, `log_gammainc`, `log_gammaincc` | `_scalar`, `_array`, `_frozen` (P and Q) | via `grad` | a ≥ 0.1 (above 10 via Temme-zone tables, whose v = 10/a axis reaches a = ∞), x ≥ 0; branchless (no while_loop). `_scalar`: 10–27x vs jax's on GPU f64 at a ≤ 10 (`experiments/05`). `_array`: one small 2-D patch per element (144 coefficients, 49 in float32), 2.3–18x vs jax's gammainc on values and 2.8–23x on value_and_grad on GPU f64, 4.5–66x / 6.6–95x f32 (`experiments/22`) |
+| `hyp1f1` | `hyp1f1(a, b, x)`, `log_hyp1f1(a, b, x)` | `_scalar`, `_frozen` | via `grad` | Kummer M, (a, b) ∈ [0.1, 10]², x ≥ 0; jax's is documented-unstable (jax#21503); the log form has no overflow ceiling |
+| spherical | `spherical_jn/yn(n, x)` | `_frozen` | — | n ∈ [0, 9], via half-integer tables |
+| Gamma quantiles | `gammaincinv(a, p)`, `gammainccinv(a, y)`, `chi2inv(k, p)` | `_scalar`, `_array` | via `grad` (IFT) | jax#5350; `_scalar` any a > 0 (jax's gammainc below 0.1), `_array` a ≥ 0.1 with second derivatives, d²/da² included; both cover every finite a. `_array` vs TFP's `igammainv` on GPU: 0.93–7.3x f64 and 2.6–34x f32 on values, growing with the spread of a (`experiments/23`) |
+| quantiles | `betaincinv`, `stdtr`, `stdtrit` | — | via `grad` (IFT) | jax#2399/#20358; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
+| von Mises | `vonmises_cdf/icdf` | — | via `grad` | κ ∈ [0, 50] |
+| erf family | `dawsn`, `erfcx` | — | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
+| Lambert W | `lambertw(x, k)` | — | — | both real branches, jax#13680 |
+| Tweedie | `tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` | — | via `grad` | power p ∈ [1.05, 1.95] (uniform per call), μ, φ > 0 and y ≥ 0 broadcast, the zero mass included; Wright's Φ(ρ, 0; z) with ρ = (2−p)/(p−1) ∈ [1/19, 19]; 89–130x scipy's `log_wright_bessel` on one CPU core, 254–331x on the GPU (`experiments/21`) |
 
 Plus the generic core (`fit`, `ChebSeries`, `PiecewiseCheb`) and bake emitters
 (`chebax.bake.jax_module`, `chebax.bake.xsf_header`: self-contained pure-jax
@@ -99,11 +117,12 @@ integration examples with no notebook counterpart (a GIG distribution for
 efax, learned Matérn smoothness, truncated sampling, `chebax.numpyro` with
 latent shape parameters under NUTS).
 
-Parameters come first, evaluation point last (opposite of scipy). Orders/shapes
-are uniform per call, meaning one value whatever its shape: a scalar or any
-size-1 array, which is what numpyro and pytensor hand back after broadcasting.
-Per-element parameter arrays are out of scope by design and say so by name.
-The middle ground is `chebax.pergroup(fn, group_idx)`: a static integer array
+Parameters come first, evaluation point last (opposite of scipy). Outside
+gammainc, orders and shapes are uniform per call, meaning one value whatever
+its shape: a scalar or any size-1 array, which is what numpyro and pytensor
+hand back after broadcasting. Per-element parameter arrays are out of scope
+for those families by design and say so by name; gammainc takes them on its
+`_array` path. The middle ground is `chebax.pergroup(fn, group_idx)`: a static integer array
 assigns each element to a group, each group gets its own (traceable) parameter
 set — one group per chain, mixture component, or plate level.
 Accuracy is validated against mpmath at 40 dps — measured worst cases and the

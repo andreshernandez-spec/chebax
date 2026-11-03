@@ -906,7 +906,268 @@ the mean it is log(y/mu) now (the ratio is within [1/e, 3/4]): 7.6e-14, and
 3.9e-13 for that density. A test of the half-deviance and its y-partial
 against mpmath in each form catches it directly.
 
-## 35. erfcx from 32 panels in t = 3/(3 + x) (2026-11-01)
+## 35. gammainc with a per element (2026-11-01)
+
+Every table here collapses its parameter axis once per call. A Gamma
+likelihood with a shape per observation therefore paid that collapse per
+element through vmap: about 4,300 coefficients per element, counting both
+sides of the a = 10 dispatch. `gammainc_array`, `gammaincc_array` and
+their logs take a per element and evaluate one small 2-D patch instead
+(`gammainc_array_gen.py`, `gammainc_array.py`).
+
+The pieces, each measured on its own first (generator docstring):
+
+- The parameter is u = ln(1 + a) up to a = 10. 1F1(1; a+1; .)'s pole at
+  a = -1 goes to infinity, and the a-axis needs 37 coefficients globally
+  instead of 53 in linear a.
+- a < 1 splits at x = a + 1, with x scaled by a + 1 on each side, so the
+  transition sits at a fixed coordinate. This also removes the uniform
+  recipe's x = 8 seam, below which ln Q comes from 1 - P down to Q ~ 1e-6;
+  here the far side never sees Q below 0.024.
+- a >= 1 keeps gammainc_large's three zones and its Temme function,
+  refitted in w = 1/a down to a = 1. The a-only prefactor (lnGamma(a+1),
+  or its Stirling remainder above a = 1) is folded into each table, so no
+  lgamma runs.
+- Each zone is a tensor grid, halved until every patch's coefficients
+  outside 12 x 12 sum to at most 1e-15: 65 patches, 9,360 coefficients.
+  float32 reads the leading 7 x 7 of each.
+
+Float traps, the last three found in review:
+
+- XLA's float64 log1p (increment 34) again, through phi = d - log1p(d) at
+  d ~ -0.4: 5.5e-14 in ln P. The uniform large-a path has the same exposure
+  (w_eta and temme_log_pq's far side; its 6e-14 bars hold it). Here it is
+  log(1 + x) below x = -1/4. The textbook fix, x log(u)/(u - 1), is undone
+  by XLA's simplifier (u - 1 becomes x): 1.4e-13 in float64, 1.7e-4 in
+  float32.
+- w_eta switches to its series at |d| = 1e-3, a float64 choice: in float32
+  the direct form loses about 4 digits next to lambda = 1. phi comes from
+  z = d/(2 + d) instead (log1p(d) = 2 atanh z), with no cancellation in
+  either dtype.
+- An unused branch must not divide by x. A select zeroes its cotangent, but
+  a partial that overflows turns that 0 into nan: jax.grad of gammainc_array
+  in x at (1, 1e-20) in float32 was nan. Each branch now gets x masked off
+  its own lanes.
+- Differentiating -a phi as a product cancels two terms of size x/a in the
+  upper tail. d ln Q/da at (2.5, 1e8) was 13.6 for 17.7 in float32, and
+  4e83 at x = 1e100 in float64. Written as -(x - a) + a ln lambda, d/da
+  stays at ln lambda. ln lambda's slope is written out (through the ratio,
+  x/a^2 and 1/lambda leave the float range at its ends).
+- x/a underflows deep in the lower tail: ln P at (1000, 1e-36) was -inf in
+  float32. ln lambda is log(x/a) only where that ratio is a normal number,
+  and ln x - ln a below. P = exp(ln P) gets slope 0 where P is 0, since
+  forward mode otherwise multiplies 0 by an overflowed a/x.
+
+Measured against mpmath on 2,300 points: float64 ln P 8.9e-16 and ln Q
+8.4e-15. The ln Q floor is the far side of a < 1, x <= a + 1, where
+Q = 1 - P and Q gets down to 0.024; elsewhere it is 7.8e-16. Gradients are
+within 2e-13, and float32 is 4.5e-7 for ln P and 2.9e-6 for ln Q. In the
+far tails (x to 1e300, x/a underflowing) values and slopes in both modes
+are within 2.2e-16 in float64 and 1.0e-7 in float32.
+
+Speed (`experiments/22`, x drawn from Gamma(a)): the cost does not depend
+on how a is spread. float64 runs at 12.3-12.6 ns per value and 23 ns per
+value_and_grad on the GPU, and 0.67-0.70 / 0.98-1.06 us on one CPU core.
+That is 2.3-18x jax's gammainc on GPU values and 2.8-23x on value_and_grad,
+and 54x vmap of gammainc_scalar on value_and_grad. float32 on the GPU is
+1.1 / 1.7 ns, 4.5-66x and 6.6-95x jax's. jax's own gammainc is off by 1.4e-11 (float64)
+and 7e-3 (float32) near x ~ a ~ 1e4.
+
+## 36. One naming convention (2026-11-01)
+
+The names had grown per call pattern: `besselk(nu)` was a cached factory,
+`besselk_fn(nu, x)` its traced twin, and #35 added `gammainc_elem(a, x)`
+for a per element. None of the suffixes says what it means, and the
+gammainc entry points sat in three files.
+
+Every function now has one name that takes any parameter shape,
+`name(params, x)`, and one name per path:
+
+- `_scalar`: one traceable value per parameter for the whole call (the
+  old `_fn`);
+- `_array`: a value per element, broadcast with x (gammainc only);
+- `_frozen`: a cached callable for concrete parameters, the Recipe that
+  bake takes (the old one-argument factory).
+
+The plain name picks `_scalar` or `_array` from the parameters' shapes,
+which are static, so the choice costs nothing at run time. Families without
+`_array` refuse an array of parameters and name `pergroup`; families whose
+only path is `_frozen` (besselj, bessely, spherical) call it, and need a
+concrete order. Order derivatives follow suit: `besselk_dnu(nu, x)` and
+`besselk_dnu_frozen(nu)`.
+
+gammainc's entry points are all in `gammainc.py` now, and each path's
+implementation is in its own module (`gammainc_scalar.py`,
+`gammainc_array.py`, `gammainc_frozen.py`, with the a <= 10 and a > 10
+numerics the scalar and frozen paths share in `gammainc_small.py` and
+`gammainc_large.py`). The entry points import a path's module when it is
+first called, so calling `gammainc_scalar` loads 104 KB of tables and
+`gammainc_array` its own 231 KB, never both (`test_lazy_imports`).
+
+The 0.4 spellings still work for one release: the eleven `*_fn` names warn
+through `chebax.__getattr__` and return the `_scalar` function, and the
+one-argument factory calls warn and return the `_frozen` object (a bool in
+x's place is besseli's 0.4 positional `scaled`). `gammainc_elem` was never
+released and has no alias.
+
+## 37. Gamma quantiles with a per element (2026-11-02)
+
+gammaincinv, gammainccinv and chi2inv took one a per call, and a shape
+per element went through vmap of that path, whose lax.conds on a then
+run every branch for every element, jax's gammainc among them (a
+6-element call did not finish compiling in 12 minutes on the CPU). They
+now have the two paths gammainc has: `_scalar` (one traced a, any a > 0)
+and `_array` (a per element, a >= 0.1), and the plain names pick one from
+the shape of a. Both run one Newton solve, `gammaincinv_kernel.py`, on
+their own ln P and ln Q: the scalar path on the tables its a-box picks,
+the array path on `gammainc_array`'s patches.
+
+The solve, changed for both paths:
+
+- It is in t = ln(x/a) instead of v = ln x. v carries eps ln a of
+  absolute error, which in float32 is 1e-6 relative to x at a = 1e5: the
+  scalar path returned nan in the deep tails from there and for every p
+  from a = 1e7 to 1e10. Near the mode x = a + a expm1(t), which reaches
+  every float (a e^t steps two floats at a time), and each Newton step
+  starts from the t the rounded x stands for, so the slope and the
+  residual describe one point; at a = 5e14 in float32 one float step of x
+  is 1.5 standard deviations.
+- The lower tail starts from the larger of Wilson-Hilferty and the
+  asymptotic x^a / Gamma(a+1) = p, which is never above the root since
+  P <= x^a / Gamma(a+1). Below p = 0.01 the asymptotic alone started at
+  x ~ a/e at a = 1e17, where ln P is -1e16 and the slope has no digits.
+- A solve is accepted when its residual is within the bar or changes
+  sign across the next float, which makes x the root to within one float
+  step. From a ~ 1e20 in float64 one float step moves ln P by more than
+  the bar.
+- Everything after the loop (x, both neighbours, and the ceiling for
+  gammainccinv) is one stacked call, so the program holds the residual
+  twice instead of five times. The floor needs no residual: at the smallest normal x,
+  P = x^a / Gamma(a+1) to rounding.
+
+The scalar path keeps judging its bar on the side its tables compute
+directly. Below a = 10 they give Q as 1 - P under x = 8, which in float32
+is up to 1e-2 off once Q is small; judged on Q, those solves came back
+nan. The array path computes Q there directly. Its small-a mode skips the
+near-mode x and the Stirling density, which cost 28% of its GPU time; it
+is 4-5% slower than the v = ln x solve below a = 10 and 7-11% above
+(`experiments/09`).
+
+The array path:
+
+- Halley steps, at the price of a Newton step: the curvature is exact
+  and free, since with g = ln(x pdf) either side's log S has
+  S'' = S' (g' - S') and g' = -a expm1(t), so newton_bisect takes the
+  slope df (1 - f f''/(2 df^2)). 8 steps in float64 and 6 in float32,
+  twice the most any of 1e5 random lanes needed for the tail probability
+  (a to 1e30, p down to the smallest normal); Newton needed 7 and 4 by a
+  looser measure. The scalar path stays on Newton: its 40 steps are
+  fixed, so Halley would only add work per step (19% on the GPU).
+- A tighter bar, 256 eps |ln target|: both logs are accurate there, so a
+  converged solve sits at the rounding of its target's log, and one that
+  stopped short returns nan.
+- Derivatives from the implicit function theorem on the same ln P and
+  ln Q, by AD, in both modes and to second order, d2x/da2 included.
+  1/pdf takes its value from exp(ln p) |L_x| and its derivatives from the
+  closed-form density, whose x-derivative (a - 1)/x - 1 has no
+  cancellation: differentiating ln p + ln L_x puts two terms of size 1/x
+  against each other, and d2x/dp2 at a = 1, p = 1e-20 was 98304 for 1
+  (-3 at p = 1e-7 in float32).
+- Above a = 1e3 both derivatives are taken at the root found again,
+  unrounded. L_x at the float x is off by its change over one float
+  step, eps sqrt(a) (1 + |z|): 0.3% at a = 1e30, and at a = 1e35,
+  p = 1e-20 x rounds to a, nine standard deviations from the root, where
+  one Halley step from x gave dx/dp 2e17 times too small. `_log_pq` takes
+  d = x/a - 1 exactly instead of x, and Halley steps in t from the
+  Wilson-Hilferty point (O(z^3/a) off there) converge in at most 3 on 2e4
+  random lanes; the result is nan if they did not. dx/da there is
+  (1 + d) - (dL/d ln a)/(dL/dd): slopes in a and x carry tangents of size
+  1/a, flushed to zero from a ~ 2e307. With d exact, a phi = y^2: phi
+  alone is subnormal for |d| < 2e-154.
+- Every finite a. Above a = 1e36 (1e18 in float32) every p in (0, 1) has
+  |z|/sqrt(a) < eps/4, so the quantile is a itself; the solve there met
+  1/a subnormal from 4.5e307, which jit flushed inside (x - a)/a. The
+  lower-tail start takes lnGamma(a + 1)/a - ln a by Stirling above
+  a = 100 (lnGamma overflowed, and gammaincinv_array(1e306, 0.3) was
+  nan), the bracket's top is at least x = a, and sqrt(2 pi a) is
+  sqrt(2 pi) sqrt(a) here and in the scalar path's Temme solve, whose
+  dx/dp was 0 from a = 2.9e307 (and from 9e307 through 2/a, flushed).
+- The masks sit in the tangent coefficients: a nan or 0 placed on the
+  tangent is not linear in it, and reverse mode returned 0 where x is nan.
+
+XLA on the CPU (jax 0.11):
+
+- On AVX-512 CPUs, XLA hoisting the a-only work of `_log_pq` out of the
+  Newton loop (while-loop invariant code motion) gave wrong roots, 8e-9
+  off at a = 30, p = 0.956 among 128 lanes and depending on the array
+  length, and nan on other lanes. Capping the ISA at AVX2, the old CPU
+  fusion emitter, or disabling that pass each avoid it; the array path
+  hands `_log_pq` a + 0 x, which XLA cannot fold, so nothing is hoisted.
+  gammainc_array alone and inside loops agrees between AVX-512 and AVX2.
+- gammainc_array's values take ~23 s to compile with the new CPU fusion
+  emitter, 0.5 s with the old one (`--xla_cpu_use_fusion_emitters=false`):
+  LLVM spends it on one elementwise fusion. Which fusions trip it depends
+  on their shape, not on one operation: its gradients compile in 0.8 s,
+  the array quantile's values in ~1 s and its value_and_grad in ~42 s
+  (26 s of it without the large-a root; 93-99 s on one pinned core).
+
+Accuracy (`tests/test_gammaincinv_array.py`): the float64 round trip
+against mpmath is 6.2e-13 for a <= 1000 (the gammainc tables' own floor
+there; the scalar path gives 9.3e-13 at the same point) and 2.3e-12 at
+a = 1e6, p = 1e-300 (where one float step of x moves P by 8e-12).
+Gradients 7.9e-15, d2x/dp2 1.4e-13, d2x/da2 4.6e-12; float32 3.3e-5.
+Above a = 1e3 against mpmath dx/dp is within 2.3e-13 and dx/da 3.6e-16,
+and against the scalar path's Temme solve to a = 1e35, 1.1e-13 and
+2.2e-16. The exponential case a = 1 is exact to 2.4e-14 through
+d2x/dp2 (1.9e-6 in float32).
+
+Speed (`experiments/23`, p uniform, against TFP's igammainv, which is
+what pytensor's JAX backend falls back to for a per element; TFP 0.25
+does not import under jax 0.11, tfp-nightly does): the array path's
+values cost the same on every layout of a, and TFP's cost follows the
+spread. GPU float64 0.93x / 2.3x / 7.3x on values for a = 2.5 each /
+spread / wide, float32 2.6x / 7.0x / 34x; one CPU core float64
+0.61x / 1.6x / 5.2x, float32 0.19x / 0.50x / 2.8x. value_and_grad costs
+more once some a passes 1e3, where the root is found again (GPU float64
+358 ns on "wide" against 229 ns), and is 4.8x TFP there. TFP's round trip
+is 2.0e-11 in float64 and 1.1e-2 in float32 on the wide layout, against
+1.0e-14 and 8.4e-6 here. When a is one value the scalar path is faster
+(GPU float32 2.7 vs 13.3 ns), and the plain name runs it.
+
+## 38. One series per point in the scalar Gamma quantile (2026-11-02)
+
+The scalar path's residual evaluated both regions on every point and
+selected, in every one of its 40 Newton steps: the inner and tail series
+below a = 10, and erfcx and erfc at both y+ and y- in the Temme zone.
+
+- Below a = 10 the solve now runs `gammainc_small.eval_logs_one_series`:
+  `series.chebval_either` picks each point's coefficients per Clenshaw
+  step, so a point runs only the series of its side of x = 8, and one log.
+  The same operations as the select, so the quantiles are unchanged (bit
+  for bit on the GPU). It has no custom rule: under reverse mode the
+  coefficient cotangent runs at full length for both series, which made
+  the a-gradient of gammainc_scalar 1.6-2.4x slower on the CPU in a
+  prototype. So the forward functions keep both series and select.
+- `temme_log_pq` forms the side y points to through one erfcx(|y|) and the
+  other as log1p(-exp(own side)), as gammainc_array does. Quantiles move
+  by at most 3.8e-16, log Q's worst on a dense sweep against mpmath from
+  7.7e-15 to 7.8e-15.
+
+`experiments/09`, GPU float64, N = 2^20: the recipe column 128 -> 97 ms
+below a = 10 and 417-437 -> 259-278 ms above. On one CPU at N = 2^18,
+6-14% faster, and the value_and_grad compiles in 7.5-7.9 s instead of 9.3.
+
+Tried and dropped:
+
+- Dropping table coefficients whose sum is below 2e-16 over the whole
+  parameter box (26 of 32 inner, 22 of 26 tail): worst values unchanged,
+  but dP/dx multiplies coefficient k by k^2, and its error went from
+  6.5e-13 to 2.6e-11 where the density is small against P (bar 1.5e-12).
+  Keeping dP/dx at its floor leaves 29-30 of 32, a few percent of speed.
+- One erfc per point in the Temme zone's P and Q (not logs): no
+  measurable gain.
+
+## 39. erfcx from 32 panels in t = 3/(3 + x) (2026-11-01)
 
 erfcx's [0, 6] series, its (6/x)^2 tail and the select between them are gone.
 x >= 0 maps onto t = K/(K + x) in (0, 1] (Schonfelder, Math. Comp. 32, 1978),

@@ -24,8 +24,8 @@ import chebax  # noqa: E402
 
 
 def truncated_beta_sample(a, b, lo, hi, u):
-    flo = chebax.betainc_fn(a, b, lo)
-    fhi = chebax.betainc_fn(a, b, hi)
+    flo = chebax.betainc(a, b, lo)
+    fhi = chebax.betainc(a, b, hi)
     return chebax.betaincinv(a, b, flo + u * (fhi - flo))
 
 

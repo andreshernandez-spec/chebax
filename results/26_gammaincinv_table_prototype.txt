@@ -1,0 +1,27 @@
+tables at TOL = 1e-08, 10 x 10 blocks, 14 nodes per patch, mpmath 1.3.0
+  zone 0: 1 x 3 patches  [5 s]
+  zone 1: 1 x 3 patches  [10 s]
+  zone 2: 1 x 3 patches  [17 s]
+  zone 4: 1 x 1 patches  [57 s]
+  zone 5: 1 x 1 patches  [75 s]
+  zone 6: 1 x 3 patches  [101 s]
+  zone 7: 1 x 2 patches  [110 s]
+  zone 8: 1 x 1 patches  [110 s]
+  17 patches of 10 x 10, 1700 coefficients; ln lambda(eta): 15 terms  [111 s]
+
+round trip |F(x)/target - 1| on 264 points, a in [0.1, 1000], both tails
+  method                           worst    median  worst at
+  table + 0 Newton step(s)      1.49e-06  3.66e-10  a=1000, p=1e-100
+  table + 1 Newton step(s)      5.93e-13  1.23e-15  a=0.1, q=1e-300
+  table + 2 Newton step(s)      5.93e-13  1.18e-15  a=0.1, q=1e-300
+  chebax.gammaincinv_array      3.76e-13  1.13e-15  a=10, q=1e-300
+
+cpu, N = 16384, float64, ns per element (median of 7)
+  table + 0 Newton step(s):    144.9
+  table + 1 Newton step(s):    317.2
+  chebax.gammaincinv_array:    3430.5
+
+gpu, N = 1048576, float64, ns per element (median of 7)
+  table + 0 Newton step(s):     13.7
+  table + 1 Newton step(s):     29.3
+  chebax.gammaincinv_array:     191.2

@@ -1,34 +1,17 @@
-"""Generic artifact emission: trace a Recipe instance's __call__ to a jaxpr
-and print it as self-contained Python-jax or C++17 source.
+"""Trace a Recipe instance's __call__ to a jaxpr and print it as Python-jax or
+C++17 source, so artifacts derive from the computation that runs.
 
-The runtime is the single source of truth: recipes stay plain, typed jnp
-code, and artifacts are derived from the very computation that runs. Two
-structural facts (probed, and load-bearing):
-
-- Every ChebSeries evaluation appears as ONE custom_jvp_call equation whose
-  unrolled Clenshaw is contained in its call_jaxpr, never opened here; the
-  coefficient vector arrives as a jaxpr constant, matched back to the
-  instance's series field BY VALUE to recover its name and domain, and the
-  whole equation folds to `clenshaw(C_<FIELD>, <affine-mapped arg>)`.
-- After that fold, recipe formulas use a tiny primitive vocabulary
-  (arithmetic, comparisons, select, exp/log/sqrt/sin/cos/pow), mapped
-  one-to-one below. `jit`-wrapped helpers (jnp.where, clip) are recursed
-  into, except for a small fold table of named functions with direct
-  library equivalents (gammaln -> std::lgamma).
-
-Equations whose inputs are all literals (jnp.sqrt(2/pi) and friends) are
-evaluated here and inlined as constants. Left as ops they would be
-recomputed in whatever dtype the process running the artifact happens to
-use, which for float32 is not what was traced.
-
-Tracing is done at float64 (bake rejects float32 tables), so a recipe's
-python-level control flow is resolved at float64 and only the float64
-artifact reproduces it exactly; chebax.bake's docstring states the contract.
-
-Solver-based callables (anything containing while/scan/cond) are not
-bakeable and raise. The emitter runs at development time only: if a jax
-upgrade changes jaxpr structure it fails loudly at regeneration, and
-already-committed artifacts remain valid.
+Two facts of the jaxpr the emitter relies on: every ChebSeries evaluation is
+one custom_jvp_call whose constant coefficient vector is matched to the
+instance's series field by value and folded to clenshaw(C_<FIELD>, arg); the
+rest of a recipe is a small primitive vocabulary (arithmetic, comparisons,
+select, exp/log/sqrt/sin/cos/pow) mapped one to one, with jit-wrapped helpers
+recursed into and a few named functions folded (gammaln -> std::lgamma).
+All-literal equations are evaluated here and inlined, so an artifact does not
+recompute them in whatever dtype it runs in. Tracing is at float64 (bake
+rejects float32 tables). Solvers (while, scan, cond) raise. The emitter runs
+at development time only: a jax upgrade that changes jaxpr structure fails
+loudly at regeneration, and committed artifacts stay valid.
 """
 
 import numpy as np
@@ -204,15 +187,10 @@ _ENDPOINT_JVP = ("edge_slope", "chebax/_src/recipes/_common.py")
 
 
 def _is_endpoint_slope_jvp(eqn):
-    """True only for chebax's own endpoint-slope helper, and only when it
-    really does evaluate to zero.
-
-    Two independent checks, because either alone is unsafe. The name and
-    source file say the author INTENDED the fold and accepted what it
-    costs (the one-sided slope at the endpoint, disclosed in the emitted
-    artifact). Evaluating the primal says the fold cannot change a value:
-    if it is not identically zero on probe inputs, refuse regardless of
-    what it calls itself."""
+    """True for chebax's own endpoint-slope helper when its primal evaluates
+    to zero on probe inputs: the name says the fold was intended (its cost,
+    the one-sided slope, is disclosed in the artifact), the evaluation says
+    the fold cannot change a value. Either check alone is unsafe."""
     cj = eqn.params.get("call_jaxpr")
     if cj is None:
         return False

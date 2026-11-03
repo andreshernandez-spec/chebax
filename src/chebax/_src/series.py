@@ -1,18 +1,11 @@
-"""Runtime evaluation in jax: single and segmented Chebyshev series.
-
-Only two algorithms run per call: Clenshaw, and (for gradients) one more
-Clenshaw on the derivative coefficients. Differentiation and integration act
-on coefficients through the closed forms of the numpy references in
-algorithms.py, written in jax so they work on traced values, in O(n) time
-and with no cached state. For concrete coefficients jit constant-folds them,
-so the per-call gradient cost is one extra Clenshaw; deriv() itself is O(n)
-and is recomputed per call (caching a possibly-traced result on the instance
-would leak tracers).
-
-Series are pytrees: coefficients are leaves, domains and breakpoints are
-static. Full float64 accuracy needs jax's x64 mode. Evaluation promotes x
-and the coefficients to a common dtype first (a float32 x against float64
-tables computes in float64, matching the segmented path).
+"""Runtime evaluation in jax: single and segmented Chebyshev series. Per
+call, Clenshaw, and one more Clenshaw on the derivative coefficients for a
+gradient; differentiation and integration act on coefficients through the
+closed forms of algorithms.py, in jax so they work on traced values (jit
+folds them for concrete coefficients; deriv() is recomputed per call, since a
+cached traced result would leak). Series are pytrees: coefficients are
+leaves, domains and breakpoints static. Evaluation promotes x and the
+coefficients to a common dtype; full float64 accuracy needs x64.
 """
 
 import jax
@@ -142,15 +135,10 @@ def _dcoef(coef, domain):
 
 
 def _to_unit(x, mid, half):
-    """(x - mid) / half, the affine map onto [-1, 1].
-
-    Past half = 1/tiny of x's dtype (2^1022 in float64, a domain wider than
-    about 9e307), XLA folds the division into a multiplication by the
-    reciprocal, which is subnormal, and the CPU flushes it to zero: every
-    point of a vectorized jit call evaluated at t = 0 (found fixing the
-    review of 2026-10-26). There both sides are scaled by tiny, an exact
-    power of two, and a barrier keeps XLA from folding the scaled
-    numerator back into one subnormal constant; half * tiny is O(1)."""
+    """(x - mid) / half, the affine map onto [-1, 1]. Past half = 1/tiny
+    (domains wider than ~9e307 in float64) XLA folds the division into a
+    subnormal reciprocal, which the CPU flushes to zero, so there both sides
+    are scaled by tiny, an exact power of two, behind a barrier."""
     tiny = float(jnp.finfo(x.dtype).tiny)
     if half * tiny < 1.0:
         return (x - mid) / half

@@ -262,7 +262,7 @@ def _besseli_dnu_cached(v, scaled, _tag):
     )
 
 
-def _besseli_fn_impl(nu, x, scaled):
+def _besseli_impl(nu, x, scaled):
     inv_gamma = jnp.exp(-jax.scipy.special.gammaln(nu + 1.0))
     return _eval_i(
         nu,
@@ -286,7 +286,7 @@ def _d2_series_traced(nu):
 def _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu):
     """dI_nu/dnu * dnu with nu traced; d_ad is the AD route, already scaled."""
     zero = jnp.zeros_like(nu)
-    ratio = _besseli_fn_impl(nu, x, True) / _besseli_fn_impl(zero, x, True)
+    ratio = _besseli_impl(nu, x, True) / _besseli_impl(zero, x, True)
     k0 = besselk_scalar(zero, x)
     if scaled:
         k0 = k0 * jnp.exp(-x)
@@ -307,25 +307,25 @@ def _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu):
 
 
 @functools.partial(jax.custom_jvp, nondiff_argnums=(2,))
-def _besseli_fn(nu, x, scaled):
-    return _besseli_fn_impl(nu, x, scaled)
+def _besseli_scalar_cj(nu, x, scaled):
+    return _besseli_impl(nu, x, scaled)
 
 
-@_besseli_fn.defjvp
-def _besseli_fn_jvp(scaled, primals, tangents):
+@_besseli_scalar_cj.defjvp
+def _besseli_scalar_jvp(scaled, primals, tangents):
     nu, x = primals
     dnu, dx = tangents
-    val = _besseli_fn_impl(nu, x, scaled)
-    _, d_x = jax.jvp(lambda xx: _besseli_fn_impl(nu, xx, scaled), (x,), (dx,))
+    val = _besseli_impl(nu, x, scaled)
+    _, d_x = jax.jvp(lambda xx: _besseli_impl(nu, xx, scaled), (x,), (dx,))
     # AD on dnu itself: a unit tangent scaled afterwards stalls XLA's simplifier
-    _, d_ad = jax.jvp(lambda n: _besseli_fn_impl(n, x, scaled), (nu,), (dnu,))
+    _, d_ad = jax.jvp(lambda n: _besseli_impl(n, x, scaled), (nu,), (dnu,))
     return val, d_x + _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu)
 
 
 def besseli_scalar(nu, x, scaled=False):
     """I_nu(x), nu a traced scalar in [0, 10] (unchecked under trace),
     differentiable in both to second order, also near nu = 0."""
-    return _besseli_fn(
+    return _besseli_scalar_cj(
         canon_param(nu, "besseli_scalar", "nu"), canon_float(x), bool(scaled)
     )
 

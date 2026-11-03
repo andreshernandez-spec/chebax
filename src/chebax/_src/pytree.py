@@ -1,19 +1,10 @@
-"""Base class for recipe callables, retiring per-class pytree boilerplate.
-
-A recipe instance is a pytree whose children are ChebSeries (listed in
-_series_fields) and whose auxiliary data are static scalars (listed in
-_static_fields). Constructors take statics first, series after, in field
-order; _post_init derives cached constants (called by both __init__ and
-tree_unflatten). astype casts every series; __repr__ shows the statics and
-the coefficient dtype.
-
-Subclasses register themselves with the standard
-@jax.tree_util.register_pytree_node_class decorator at the class site.
-
-Instances are frozen once _post_init returns. The factories hand the SAME
-object to every caller asking for the same parameters (they are lru_cached),
-so a caller mutating one would corrupt every later call served from that
-slot; build a new instance instead.
+"""Base class for recipe callables. An instance is a pytree whose children
+are ChebSeries (_series_fields) and whose auxiliary data are static scalars
+(_static_fields); constructors take statics first, series after; _post_init
+derives cached constants for __init__ and tree_unflatten alike; astype casts
+every series. Subclasses register with register_pytree_node_class. Instances
+are frozen once _post_init returns: the factories hand the same cached object
+to every caller.
 """
 
 

@@ -1,33 +1,20 @@
 """Generator for the wide betainc panels. Build-time only; mpmath inside.
 
-Widens betainc's (a, b) box from [0.1, 10]^2 to [0.1, 100]^2 with three
-additional tensor panels of the same kernel L = ln 2F1(a+b, 1; a+1; x)
-(x in [0, 1/2], reflection beyond), raw axes per panel, split at 10:
+Three more panels of the kernel L = ln 2F1(a+b, 1; a+1; x), x in [0, 1/2],
+raw axes, split at 10:
 
     LOxHI  a in [0.1, 10] x b in [10, 100]   (x deg <= 62, a 52, b 49)
     HIxLO  a in [10, 100] x b in [0.1, 10]   (x deg <= 19, a 49, b 15)
     HIxHI  a in [10, 100] x b in [10, 100]   (x deg <= 62, a 50, b 49)
 
-Degrees measured in experiments/11 (2026-08-01): the a-axis carries the
-pole structure, so per-panel raw a (deg ~50) beats a global log
-transform (deg 95) and far beats global raw (175); b is mild and log-b
-is WORSE; x grows 19 -> 62 where the CDF transition x* = a/(a+b) is
-interior and sharp. The existing [0.1, 10]^2 tensor stays untouched as
-the fourth (LOxLO) panel, so in-box users pay nothing: the runtime
-dispatches with one lax.switch on the scalar (a, b). Each panel keeps
-its own node counts; branch shapes never meet.
+Per-panel raw a beats a global log transform (degree 95) and global raw
+(175), log-b is worse than raw, and x needs 62 where the transition a/(a+b)
+is interior (experiments/11). The [0.1, 10]^2 tensor stays the LOxLO panel
+and the runtime picks one with lax.switch. Dense f64, ~600k coefficients:
+Tucker compression was declined, since a float SVD is BLAS-dependent and
+would break bit-for-bit regeneration. Regenerate with:
 
-Storage is dense f64 (~600k coefficients, ~11 MB module). Tucker
-compression was considered and DECLINED for checked-in tables: the
-factorization needs an SVD, float SVDs are BLAS-build-dependent, and
-the bit-for-bit regeneration contract is deterministic today precisely
-because every fit stage is pure mpmath; an mpmath SVD of these
-unfoldings is computationally infeasible. Revisit only with a
-deterministic factorization.
-
-Regenerate with:
-
-    python -m chebax._src.recipes.betainc_wide_gen
+    python -m chebax._src.recipes.betainc_wide_gen      # ~25 min
 """
 
 from chebax._src.recipes._gen_common import (

@@ -1,36 +1,16 @@
 """Generator for the bessely tables. Build-time only; mpmath inside.
 
-Y_v combines every hard case: singular at x = 0 with a v-dependent exponent,
-sign-changing (so no log-tabulation), and defined through the J_{+-v}
-connection formula that cancels catastrophically near integer v (the R6/S3
-structure). The classical resolution (Temme) adapted to tables:
-
-- Reduce to small order: mu = v - floor(v) in [0, 1). The floor (not round)
-  decomposition matters: the (x/2)^mu scaling below only removes the
-  singular branch when mu >= 0 — for negative mu the divergent piece of
-  Y_mu goes like (x/2)^{+mu}, T_a blows up like (x/2)^{-2|mu|} (~1e3 at
-  mu=-0.3), and that magnitude leaks ~1e-11 of noise into every
-  mu-reconstruction (measured; the first cut of this generator had it).
-  On [0, 1) the pair Y_mu, Y_{mu+1} is tabulated DIRECTLY (mpmath at 40 dps
-  absorbs the connection-formula cancellation during generation; the tables
-  never see a pole), then the runtime lifts to v with the upward recurrence
-  Y_{k+1} = (2k/x) Y_k - Y_{k-1}, which amplifies the dominant solution
-  (= Y itself) and is therefore stable; measured lift error from f64 base
-  pairs is <= 4e-16 at the x = 5 seam. The step count floor(v) is fixed at
-  instantiation, so the unrolled loop stays branchless.
-
-- Scale out the singular growth: the tables hold
-      T_a(mu, u) = (x/2)^mu     Y_mu(x)
-      T_b(mu, u) = (x/2)^(mu+1) Y_{mu+1}(x)
-  in u = ln x on [ln 1e-6, ln 5]: bounded O(10) quantities, smooth in both
-  variables (Y_0's log divergence becomes a linear-in-u term).
-
-- Mid, x in [5, 30]: Y_v fitted directly in x (same reasoning as besselj's
-  mid region). Tail, x > 30: NO new tables — besselj's P, Q give
-  Y = sqrt(2/(pi x)) (sin(x) A - cos(x) B) with the same A, B constants.
-
-Both fit stages stay in mpmath (the M1 floor rule). Measured degrees
-reproduce via experiments/03_degree_measurement.py. Regenerate with:
+Y_v is singular at 0 with a v-dependent exponent, changes sign, and its
+connection formula cancels near integer v, so (Temme's route) the tables
+hold the pair Y_mu, Y_(mu+1) for mu = v - floor(v) in [0, 1), and the
+runtime lifts to v by the upward recurrence, which amplifies the dominant
+solution Y and is stable (lift error <= 4e-16 at the x = 5 seam); floor(v)
+is fixed at instantiation. floor, not round: a negative mu leaves a
+(x/2)^(-2|mu|) piece that leaked 1e-11 of noise. Inner, u = ln x on
+[ln 1e-6, ln 5]: T_a = (x/2)^mu Y_mu and T_b = (x/2)^(mu+1) Y_(mu+1), bounded
+and smooth. Mid, x in [5, 30]: Y_v directly in x. Tail: besselj's P and Q.
+Both stages stay in mpmath; degrees reproduce via experiments/03.
+Regenerate with:
 
     python -m chebax._src.recipes.bessely_gen
 """

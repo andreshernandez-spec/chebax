@@ -1,37 +1,20 @@
 """Generator for the Tweedie slice of Wright's function. Build-time only.
 
-    W(rho, z) = Phi(rho, 0; z) = sum_{n>=1} z^n / (n! Gamma(rho n))
+W(rho, z) = Phi(rho, 0; z) = sum_{n >= 1} z^n / (n! Gamma(rho n)), what the
+Tweedie density needs for 1 < p < 2 (rho = (2-p)/(p-1)), at beta = 0 only.
+Design measured in experiments/20: at large z the saddle point gives
+ln W ~ Z + ln(t0)/2 - ln(2 pi (1+rho))/2 + R, t0 = (rho z)^(1/(1+rho)),
+Z = (1+rho) t0/rho, R -> c1(rho)/Z, and the table holds T = Z R in
+s = Z1(rho)/Z in (0, 1]. Below Z1 = ZA + S1 (1+rho)^2 the runtime sums the
+series directly (N_TERMS terms, lgamma(rho n) once per call). The split is
+in Z: the terms peak at n0 = Z/(1+rho) with variance Z/(1+rho)^2, and below
+a variance of ~2 the sum has a ripple exp(-2 pi^2 variance) no degree
+resolves. Parameter axis ln rho on [-ln 19, ln 19] (degree 51 against 63 in
+p); degree 24 in s at rho = 1/19, 5 at rho = 19. The reference sums a
+window around the peak term to 1e-52 of it. Both stages stay in mpmath.
+Regenerate with:
 
-is what the Tweedie compound Poisson-gamma density needs for 1 < p < 2
-(rho = (2-p)/(p-1), see tweedie.py), and only at beta = 0, so this is a
-2-D table rather than the 3-D (rho, beta, z) tensor experiments/17 sized
-for the general function. Design measured in experiments/20:
-
-- Large z: a saddle point of the Hankel integral gives
-      ln W ~ Z + ln(t0)/2 - ln(2 pi (1+rho))/2 + R,
-      t0 = (rho z)^(1/(1+rho)),  Z = (1+rho) t0 / rho,
-  with R -> 0 like c1(rho)/Z. The table holds T = Z R (T -> c1(rho), so the
-  1/Z variation stays out of the rho direction) in s = Z1(rho)/Z in (0, 1].
-- Below the split Z1(rho) = ZA + S1 (1+rho)^2 the runtime sums the series
-  directly over n = 1..N_TERMS; only rho n appears inside Gamma, and rho is
-  uniform per call, so lgamma(rho n) is per call and the per-point work is
-  N_TERMS exp and multiply-adds. No table there.
-- The split is in Z, not z, and holds two things at once. The terms peak at
-  n0 = Z/(1+rho) with variance Z/(1+rho)^2; below a variance of ~2 the sum
-  is a few discrete terms and differs from its smooth saddle form by a
-  ripple of size exp(-2 pi^2 variance), one period per term, which no
-  degree resolves (rho = 19 saturates 64 nodes at a fixed n0 split). That is
-  the S1 (1+rho)^2 term. ZA keeps small rho off the poorly converged
-  Z ~ 2 end of the expansion. Smooth in rho, as the table needs.
-- Parameter axis ln rho = -logit(p - 1) on [-ln 19, ln 19], p in
-  [1.05, 1.95]: degree 51 in ln rho against 63 in p, and c1 is symmetric
-  under rho -> 1/rho. Degree 24 in s at rho = 1/19, 5 at rho = 19.
-- The reference sums a window around the peak term (terms are log-concave in
-  n) to 1e-52 of the peak, so z ~ 1e9 costs O(sqrt(n0)) terms.
-
-Both fit stages stay in mpmath (the M1 floor rule). Regenerate with:
-
-    python -m chebax._src.recipes.tweedie_gen
+    python -m chebax._src.recipes.tweedie_gen      # ~25 s
 """
 
 import math

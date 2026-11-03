@@ -152,10 +152,7 @@ def test_chebval_domain_mapping():
 
 
 def test_chebval_either_is_the_select():
-    """One Clenshaw with per-point coefficients does the select's arithmetic:
-    equal op by op, and under jit, whose fusions round either program
-    differently, to Clenshaw's floor (measured 6.3e-16 sup-normalized on the
-    CPU)."""
+    """Equal op by op; under jit XLA fuses each form differently (6.3e-16 on CPU)."""
     from chebax._src.series import chebval_either
 
     rng = np.random.default_rng(3)

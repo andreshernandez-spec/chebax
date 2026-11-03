@@ -191,13 +191,9 @@ def _chebval_jvp(domain, primals, tangents):
 
 
 def chebval_either(use0, s0, x0, s1, x1):
-    """s0(x0) where use0, else s1(x1), with one Clenshaw per point instead of
-    both series on every point: each point maps its own argument and reads
-    its own coefficients, the shorter series padded with zeros. The same
-    operations as the select (equal op by op; under jit XLA may fuse either
-    with different rounding). No custom rule: reverse mode runs the
-    coefficient cotangent at full length for both series, so this belongs
-    in loops nothing differentiates (the quantile solves)."""
+    """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
+    coefficients. Not for AD: reverse mode runs both coefficient cotangents at
+    full length (CPU a-grads 1.6-3x slower), so only undifferentiated solves."""
 
     def unit(s, x):
         a, b = s.domain

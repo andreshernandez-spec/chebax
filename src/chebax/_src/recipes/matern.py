@@ -1,11 +1,5 @@
-"""The Matern correlation with a differentiable smoothness parameter.
-
-    k(r) = 2^(1-nu)/Gamma(nu) * z^nu * K_nu(z),   z = sqrt(2 nu) r / l
-
-Unit variance (k(0) = 1 exactly); multiply by a signal variance for a
-covariance. Learning nu by gradient needs dK_nu/dnu, a derivative in the
-ORDER of the Bessel function, which is what besselk_scalar's traced order
-supplies; no mainstream GP stack offers it.
+"""The Matern correlation k(r) = 2^(1-nu)/Gamma(nu) z^nu K_nu(z),
+z = sqrt(2 nu) r / l, differentiable in nu through besselk_scalar's order.
 """
 
 import jax
@@ -17,28 +11,11 @@ from chebax._src.recipes.besselk import besselk_scalar
 
 
 def matern(nu, r, lengthscale=1.0):
-    """Matern correlation at distances r, differentiable in everything.
-
-    nu must be uniform per call (a scalar or one traced latent) and
-    inside (0, 10]; r >= 0 and the lengthscale broadcast freely.
-    jax.grad works with respect to nu (learnable smoothness), r and the
-    lengthscale. Half-integer nu (1/2 = exponential, 3/2, 5/2) are
-    ordinary points of the K table, and the tests use their closed
-    forms as oracles.
-
-    r = 0 (every covariance diagonal) returns exactly 1 by hard select,
-    with masked lanes fed a safe dummy so log(0) cannot poison
-    gradients; the gradient at exactly r = 0 is masked to 0 (the true
-    one-sided slope is 0 for nu > 1/2 anyway). Scaled arguments
-    z = sqrt(2 nu) r / lengthscale below besselk's 1e-6 clamp are
-    clamped CONSISTENTLY (prefactor and K together), so tiny nonzero
-    distances read as k at the clamp - which is ~1 for nu >= 1/2 but
-    genuinely below 1 at small nu (1 - k ~ (z/2)^(2 nu); at nu = 0.05
-    the correlation has already dropped ~0.25 by z = 1e-6: that is the
-    Matern, not the clamp). Found by GPJax's distance function, which
-    returns ~1e-18 for identical inputs: an inconsistent clamp made the
-    prefactor collapse and the diagonal read ~0. A signal variance is
-    deliberately not a parameter: multiply the result."""
+    """Matern correlation (unit variance) at r >= 0, nu in (0, 10] uniform per
+    call, differentiable in nu, r and the lengthscale. k(0) = 1 exactly, with
+    gradient 0. z below besselk's 1e-6 clamp clamps prefactor and K together
+    (GPJax's distances give ~1e-18 for identical inputs); at small nu that k
+    is below 1 (~0.75 at nu = 0.05), as the Matern is."""
     nu = canon_param(nu, "matern", "nu")
     r = jnp.asarray(r)
     pos = r > 0.0
@@ -47,9 +24,7 @@ def matern(nu, r, lengthscale=1.0):
     z = jnp.maximum(z, _kt.XMIN)
     log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
     k = jnp.exp(log_c + nu * jnp.log(z)) * besselk_scalar(nu, z)
-    # r = inf is zero correlation, not the nan the K tail produces there,
-    # and a NEGATIVE distance is a domain error rather than the r = 0
-    # branch it used to fall into and answer 1 for (review, 2026-08-02)
+    # 0 at r = inf (the K tail gives nan), nan for r < 0
     out = jnp.where(pos, k, 1.0)
     out = jnp.where(r == jnp.inf, 0.0, out)
     out = jnp.where(r < 0.0, jnp.nan, out)

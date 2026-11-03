@@ -1166,3 +1166,41 @@ Tried and dropped:
   Keeping dP/dx at its floor leaves 29-30 of 32, a few percent of speed.
 - One erfc per point in the Temme zone's P and Q (not logs): no
   measurable gain.
+
+## 39. erfcx from 32 panels in t = 3/(3 + x) (2026-11-01)
+
+erfcx's [0, 6] series, its (6/x)^2 tail and the select between them are gone.
+x >= 0 maps onto t = K/(K + x) in (0, 1] (Schonfelder, Math. Comp. 32, 1978),
+erfcx(x) = t h(t), with h smooth on [0, 1] and h(0) = 1/(K sqrt(pi)). One
+series in t needs 26 terms above 2^-56 min h at K = 3 (25-26 for K in
+[2.5, 5]); 32 equal t-panels need 8 each, picked by floor(32 t), with no
+select on x. The table keeps 9 per panel: the ninth takes the derivative's
+worst case from 6.8e-15 to 7.0e-16, at the panel edges where a truncated
+series' derivative errs most. ERFCX_PL keeps each coefficient's rounding
+residue for compiled kernels that carry the leading coefficient past f64.
+
+The single series came first, for pytensor's Numba backend, where a
+branch-free kernel vectorizes. Inside PyMC's fused loops it does not (the
+gathers and the gradient's scatter-adds share the loop), and one element at
+a time 26 dependent steps lost to scipy's erfcx and glibc's erfc; 8 steps
+per panel do not. The panels are also faster here than the single series:
+one gather per coefficient (rows were 2x slower on XLA's CPU) and 8 steps.
+
+The reflection 2 e^{x^2} - erfcx(-x) put up to x^2 eps into e^{x^2}: 5.7e-14
+at x = -22.75, with any series. x^2 is split exactly now, x_hi by a bit mask
+(no fma, so no contraction can move the split). lo reaches 2^-25 x^2, so
+1 + lo is not e^lo (that cost 8e-14 at x = -4.3 before it was caught), and
+e^hi e^lo is no good either: under jit XLA folds a product of exps into the
+exp of the sum, which rounds x^2 again, and the eager tests did not see it.
+It is e^hi (1 + expm1(lo)), expm1 by three terms of its series (exact to
+1e-20 for |lo| <= 2.1e-5; XLA's expm1 cost 2 ms per 2^20 points on the CPU),
+and the value tests run jitted too. A custom JVP gives d/dx e^{x^2} =
+2x e^{x^2}: through the split, reverse mode met inf * 0 at overflowing x
+whose lo is exactly 0 (x = -27) and returned nan where the derivative is
+-inf.
+
+Against mpmath on 8702 points: values 4.4e-16 / 5.8e-16 (x < 0 / x >= 0;
+the two tables 5.7e-14 / 4.8e-16), derivative 5.9e-16 / 7.0e-16 (5.7e-14 /
+1.4e-14), the same on CPU and GPU and on jax 0.5.3. Against the two tables,
+values / gradient take 0.52x / 0.46x the time on one CPU thread and 0.42x /
+0.52x on the GPU (experiments/27).

@@ -102,7 +102,23 @@ def _log_ratio_jvp(primals, tangents):
     # off by 1 at x = 1e-306, a = 10)
     x, a = primals
     tx, ta = tangents
-    return _log_ratio(x, a), tx / x - ta / a
+    return _log_ratio(x, a), _over(tx, x) - _over(ta, a)
+
+
+@jax.custom_jvp
+def _over(t, v):
+    """t / v, differentiated as dt/v - (t/v)(dv/v). jax 0.5's rule forms
+    t dv / v^2, and v^2 underflows to 0 at v = 1e-300 (1e-20 in float32),
+    so where t is 0 a second derivative read 0/0: d2x/dp2 of
+    gammaincinv_array at a = 1, p = 1e-300 was nan on the jax floor."""
+    return t / v
+
+
+@_over.defjvp
+def _over_jvp(primals, tangents):
+    (t, v), (dt, dv) = primals, tangents
+    out = t / v
+    return out, dt / v - out * (dv / v)
 
 
 @jax.custom_jvp

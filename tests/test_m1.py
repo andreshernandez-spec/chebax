@@ -152,7 +152,8 @@ def test_chebval_domain_mapping():
 
 
 def test_chebval_either_is_the_select():
-    """Equal op by op; under jit XLA fuses each form differently (6.3e-16 on CPU)."""
+    """Equal op by op. Under jit XLA fuses each form differently, so both carry
+    Clenshaw's rounding, which grows with degree (12 eps sum|c| on jax 0.5.3)."""
     from chebax._src.series import chebval_either
 
     rng = np.random.default_rng(3)
@@ -164,7 +165,8 @@ def test_chebval_either_is_the_select():
     want = np.asarray(jnp.where(use0, s0(x0), s1(x1)))
     assert np.array_equal(np.asarray(chebval_either(use0, s0, x0, s1, x1)), want)
     got = np.asarray(jax.jit(chebval_either)(use0, s0, x0, s1, x1))
-    assert sup_err(got, want) <= 2.5e-15
+    floor = np.finfo(np.float64).eps * float(jnp.abs(s1.coef).sum())
+    assert np.max(np.abs(got - want)) <= 2 * len(s1.coef) * floor
 
 
 def test_chebder_chebint_match_numpy():

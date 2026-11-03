@@ -1,0 +1,51 @@
+mpmath 1.3.0, dps 40, 28 nodes per axis
+
+zone edges as lower-tail probabilities p (nan: not in the float range)
+         a      s=0.3      s=0.4  eta0=-0.7   eta0=2.6      tau=1    tau=0.5
+       0.1     0.9408     0.9683        nan        nan     0.9679     0.9943
+       0.5     0.7569      0.874        nan        nan     0.8972     0.9838
+       1.0        0.6        0.8      0.242     0.9953     0.8647     0.9817
+       3.0      0.288     0.6827     0.1127          1     0.8535     0.9893
+      10.0    0.04221     0.7495    0.01343          1     0.8915     0.9991
+     100.0  1.494e-10        nan   1.28e-12          1     0.9607          1
+    1000.0  8.927e-91        nan 7.125e-109          1     0.9874          1
+  [0 s]
+
+lower zone: rho(s, a) = x/y - 1, y = (p Gamma(a+1))^(1/a), s = y/(a+1)
+  S = 0.3, u [0.1, 1]                max 2.51e-01 | last>1e-08: arg 10 par  5 | last>1e-15: arg 21 par 10
+  S = 0.3, u [1, 10]                 max 2.72e-01 | last>1e-08: arg 13 par  6 | last>1e-15: arg 26 par 14
+  S = 0.3, v a in [10, 1000]         max 2.92e-01 | last>1e-08: arg 14 par  8 | last>1e-15: arg 27 par 21
+  S = 0.4, u [0.1, 1]                max 4.48e-01 | last>1e-08: arg 16 par  5 | last>1e-15: arg 27 par 10
+  S = 0.4, u [1, 10]                 max 5.64e-01 | last>1e-08: arg 27 par 13 | last>1e-15: arg 27 par 27
+  S = 0.45, u [0.1, 1]               max 6.23e-01 | last>1e-08: arg 22 par  7 | last>1e-15: arg 27 par 15
+  [24 s]
+
+centre zone (a >= 1): eps(eta0, w) = eta - eta0, eta0 = ndtri(p)/sqrt(a)
+  eta0 (-0.7, 2.6), w (0.001, 0.1)   max 1.56e-02 | last>1e-08: arg  7 par  3 | last>1e-15: arg 17 par  7
+  eta0 (-0.7, 2.6), w (0.1, 1.0)     max 1.75e-01 | last>1e-08: arg  8 par  6 | last>1e-15: arg 19 par 15
+  eta0 (-1.0, 3.0), w (0.001, 0.1)   max 1.56e-02 | last>1e-08: arg  8 par  3 | last>1e-15: arg 18 par  7
+  eta0 (-1.0, 3.0), w (0.1, 1.0)     max 1.74e-01 | last>1e-08: arg 10 par  6 | last>1e-15: arg 21 par 16
+centre zone: ln lambda(eta), one series
+  eta (-1.0, 3.0)                    max 1.57e+00 | last>1e-08: arg 10 par  0 | last>1e-15: arg 21 par  0
+  eta (-1.3, 3.3)                    max 1.85e+00 | last>1e-08: arg 12 par  0 | last>1e-15: arg 23 par  0
+  [62 s]
+
+upper zone: delta(tau, a) = x/x_W - 1, x_W - (a-1) ln x_W = -ln q - lnGamma(a)
+  tau (0.0, 1.0), u [0.1, 1]         max 6.48e-02 | last>1e-08: arg 13 par  6 | last>1e-15: arg 27 par 12
+  tau (0.0, 1.0), u [1, 10]          max 8.42e-02 | last>1e-08: arg 11 par  9 | last>1e-15: arg 23 par 17
+  tau (0.0, 1.0), v a in [10, 1000]  max 9.91e-02 | last>1e-08: arg 22 par 27 | last>1e-15: arg 27 par 27
+  tau (0.0, 0.5), u [0.1, 1]         max 2.42e-02 | last>1e-08: arg 10 par  5 | last>1e-15: arg 25 par 11
+  tau (0.0, 0.5), u [1, 10]          max 1.46e-02 | last>1e-08: arg  7 par  8 | last>1e-15: arg 15 par 15
+  tau (0.0, 0.5), v a in [10, 1000]  max 9.98e-03 | last>1e-08: arg  8 par  8 | last>1e-15: arg 16 par 20
+  tau (0.5, 1.0), u [0.1, 1]         max 8.53e-02 | last>1e-08: arg  6 par  6 | last>1e-15: arg 14 par 12
+  tau (0.5, 1.0), u [1, 10]          max 9.27e-02 | last>1e-08: arg  7 par  9 | last>1e-15: arg 16 par 17
+  tau (0.5, 1.0), v a in [10, 1000]  max 9.93e-02 | last>1e-08: arg 16 par 27 | last>1e-15: arg 27 par 27
+  tau (0.0, 0.25), u [0.1, 1]        max 7.86e-03 | last>1e-08: arg  7 par  5 | last>1e-15: arg 18 par 10
+  tau (0.0, 0.25), u [1, 10]         max 3.06e-03 | last>1e-08: arg  5 par  7 | last>1e-15: arg 11 par 14
+  tau (0.0, 0.25), v a in [10, 1000] max 1.73e-03 | last>1e-08: arg  5 par  5 | last>1e-15: arg 11 par 11
+  tau (1.0, 1.5), u [0.1, 1]         max 1.64e-01 | last>1e-08: arg  5 par  7 | last>1e-15: arg 11 par 13
+  tau (1.0, 1.5), v a in [10, 1000]  max 5.96e-01 | last>1e-08: arg 16 par 27 | last>1e-15: arg 27 par 27
+  tau (0.0, 1.5), u [0.1, 1]         max 1.08e-01 | last>1e-08: arg 16 par  7 | last>1e-15: arg 27 par 13
+  tau (0.0, 1.5), v a in [10, 1000]  max 4.72e-01 | last>1e-08: arg 27 par 27 | last>1e-15: arg 27 par 27
+  [204 s]
+

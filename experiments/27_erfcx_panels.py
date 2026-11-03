@@ -31,7 +31,7 @@ the exp.
 
 FINDINGS (2026-11-01, RTX 3080 Laptop, jax 0.11.0)
 --------------------------------------------------
-results/22_erfcx_panels.txt. One series takes 26 terms at K = 3 (25-26
+results/27_erfcx_panels.txt. One series takes 26 terms at K = 3 (25-26
 for K in [2.5, 5]); the worst of 32 panels takes 8 for values, and the
 table keeps 9 so the derivative's worst case is 7.0e-16 rather than
 6.8e-15 at a panel edge. Values: 4.4e-16 for x < 0 and 5.8e-16 for x >= 0

@@ -6,7 +6,7 @@ Axes: 1-D coefficient vectors; DAWSN_E on z = x^2 in [0, XS^2], DAWSN_G on t = (
 
 import numpy as np
 
-META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'np_erfcx': 32, 'nn_erfcx': 24, 'ntp_erfcx': 9, 'xs': 6.0, 'k': 3.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': 'd435446e40819bcb'}
+META = {'nz_dawsn': 44, 'nt_dawsn': 16, 'np_erfcx': 32, 'nn_erfcx': 24, 'ntp_erfcx': 9, 'xs': 6.0, 'k': 3.0, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '9799592f2d4ef1fd'}
 XS = 6.0
 K = 3.0
 NP = 32

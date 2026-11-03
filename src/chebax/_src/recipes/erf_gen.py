@@ -1,29 +1,20 @@
 """Generator for the dawsn/erfcx tables. Build-time only; mpmath inside.
 
-Both are parameter-free, so these are plain 1-D fits — no order tables.
+dawsn: D(x) = x E(x^2) with E on z in [0, 36], degree 37; tail x D(x) = G(t),
+t = (6/x)^2, degree 10. The seam is at 6, not 4: the recessive e^{-x^2}
+part (1e-7 at x = 4) slows the tail fit there. erfcx: x >= 0 maps onto
+t = K/(K + x) (Schonfelder, Math. Comp. 32, 1978), erfcx(x) = t h(t) with
+h smooth on [0, 1], h(1) = 1, h(0) = 1/(K sqrt(pi)). One series in t needs
+26 terms above 2^-56 min h; NP equal t-panels of NTP terms instead, each
+fitted on 24 nodes (experiments/27): 32 panels need 8 terms for values
+(16 need 10, 64 need 7), and the ninth takes the derivative's worst case
+from 6.8e-15 to 7.7e-16 at the panel edges. Fewer dependent steps per
+point is what makes it faster, on XLA and in a compiled kernel. ERFCX_PL
+holds each coefficient's rounding residue c - fl(c) for kernels that carry
+the leading coefficient past f64 (pytensor's Numba backend); the jax
+runtime does not use it. Regenerate with:
 
-- dawsn: odd and entire, D(x) = x E(x^2) with E fitted on z in [0, 36]
-  (degree 37 measured); tail x D(x) = G(t), t = (6/x)^2, degree 10. The
-  seam sits at 6, not 4: the recessive e^{-x^2} component (~1e-7 at x=4)
-  measurably slows the tail fit there, while e^{-36} is below f64.
-- erfcx: x >= 0 is mapped onto t = K / (K + x) in (0, 1] (the map of
-  Schonfelder, Math. Comp. 32, 1978), erfcx(x) = t h(t), with
-  h(t) = erfcx(x) (K + x) / K smooth on [0, 1], h(1) = 1 and
-  h(0) = 1 / (K sqrt(pi)). One series in t needs 26 terms above
-  2^-56 min h; it is split into NP equal t-panels instead, each fitted on
-  24 nodes and kept to NTP terms (experiments/22). For values 32 panels
-  need 8 terms (16 need 10, 64 need 7); the ninth brings the derivative's
-  worst case from 6.8e-15 to 7.7e-16 (at the panel edges, where a
-  truncated series' derivative errs most). A panel is picked by floor(NP t), with
-  no select on x. Fewer dependent steps per point is what makes it
-  faster, on XLA and in a compiled kernel run one element at a time.
-  Negative x is a runtime reflection, erfcx(-x) = 2 e^{x^2} - erfcx(x),
-  which correctly overflows past x ~ -26.6.
-  ERFCX_PL holds each coefficient's rounding residue c - fl(c), for
-  kernels that carry the leading coefficient past f64 (pytensor's Numba
-  backend); the jax runtime does not use them.
-
-Regenerate with:  python -m chebax._src.recipes.erf_gen
+    python -m chebax._src.recipes.erf_gen
 """
 
 import pathlib

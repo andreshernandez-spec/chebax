@@ -1203,4 +1203,4 @@ Against mpmath on 8702 points: values 4.4e-16 / 5.8e-16 (x < 0 / x >= 0;
 the two tables 5.7e-14 / 4.8e-16), derivative 5.9e-16 / 7.0e-16 (5.7e-14 /
 1.4e-14), the same on CPU and GPU and on jax 0.5.3. Against the two tables,
 values / gradient take 0.52x / 0.46x the time on one CPU thread and 0.42x /
-0.52x on the GPU (experiments/22).
+0.52x on the GPU (experiments/27).

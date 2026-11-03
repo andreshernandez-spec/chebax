@@ -1,20 +1,9 @@
-"""dawsn and erfcx (recent jax ships both; kept for the C++ bake path).
-
-Parameter-free, so these are plain functions, not factories.
-
-- dawsn(x): odd, one hard select at |x| = 6. Inner: x * E(x^2) with E a
-  Chebyshev series on [0, 36] — writing it that way (raw x, even series)
-  makes the oddness and the gradient at 0 exact. Tail:
-  sign(x) * G((6/x)^2) / |x|.
-- erfcx(x): t h(t) with t = K / (K + |x|) in (0, 1], h from one of NP
-  t-panels picked by floor(NP t), so no select on x; negative x by the
-  reflection erfcx(-x) = 2 e^{x^2} - erfcx(x), which
-  correctly overflows to inf past x ~ -26.6. x^2 is split exactly before
-  the exp: rounded, it puts up to x^2 eps of relative error into e^{x^2}
-  (5.7e-14 at x = -22.75). The |x| used for the positive-branch input is
-  built from a select (not jnp.abs) so the derivative at exactly 0 is
-  right; abs would zero it by its tie convention.
-
+"""dawsn and erfcx (jax ships both; kept for the C++ bake path). dawsn is
+x E(x^2) up to |x| = 6, so oddness and the gradient at 0 are exact, and a
+(6/x)^2 tail beyond. erfcx is t h(t) with t = K/(K + |x|), h from one of NP
+t-panels picked by floor(NP t), and erfcx(-x) = 2 e^{x^2} - erfcx(x) below
+0 with x^2 split exactly (rounded, it costs up to x^2 eps: 5.7e-14 at
+x = -22.75). |x| is a select, since jnp.abs zeroes the derivative at 0.
 Test oracles: D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
 """
 
@@ -44,18 +33,14 @@ def _series_cached(_tag):
 
 
 def _series():
-    """The two dawsn series and the erfcx panel table, keyed per x64 mode: a
-    cache filled under x64 off would otherwise pin float32 coefficients
-    after the flip."""
+    """The two dawsn series and the erfcx panels, keyed per x64 mode."""
     return _series_cached(canon_tag())
 
 
 @jax.custom_jvp
 def _exp_sq(x):
-    """e^{x^2} with x^2 = hi + lo split, hi exact. x_hi keeps the top half
-    of the significand (a bit mask, so no fma or contraction can change
-    the split); lo = (x - x_hi)(x + x_hi) is up to 2^-25 x^2 in f64, too
-    big for 1 + lo to stand in for e^lo."""
+    """e^{x^2} with x^2 = hi + lo, hi exact by a bit mask (no fma can move
+    the split); lo reaches 2^-25 x^2, too big for 1 + lo to stand in for e^lo."""
     dt = x.dtype
     it, low = (jnp.int64, 27) if dt == jnp.float64 else (jnp.int32, 12)
     # an infinite x would make x - x_hi nan; e^{x^2} is inf long before
@@ -95,9 +80,7 @@ def dawsn(x):
 
 
 def erfcx(x):
-    """Scaled complementary error function e^{x^2} erfc(x), any real x.
-
-    Overflows to inf (correctly) for x below ~ -26.6."""
+    """e^{x^2} erfc(x), any real x; inf below x ~ -26.6."""
     _, _, panels = _series()
     x = jnp.asarray(x)
     ax = jnp.where(x >= 0, x, -x)

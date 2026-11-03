@@ -195,7 +195,7 @@ def vonmises():
 def erf():
     dawsn = lambda x: mp.sqrt(mp.pi) / 2 * mp.exp(-x * x) * mp.erfi(x)
     erfcx = lambda x: mp.erfc(x) * mp.exp(x * x)
-    # erfcx's own claims (terms above 2^-56 min h, one series by K and per panel) are experiments/22
+    # erfcx's own claims (terms above 2^-56 min h, one series by K and per panel) are experiments/27
     print("erf family (claims: dawsn E 37 / G 10, seam 6; erfcx 32 t-panels in t = 3/(3+x), 9 terms)")
     report("dawsn E z-dir", fit_axis(lambda z: dawsn(mp.sqrt(z)) / mp.sqrt(z), 44, 1e-10, 36), [38, 42])
     report("dawsn G t-dir", fit_axis(lambda t: (lambda x: x * dawsn(x))(6 / mp.sqrt(t)), 16, 1e-8, 1), [12, 14])

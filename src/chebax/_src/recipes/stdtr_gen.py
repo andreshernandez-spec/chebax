@@ -1,21 +1,15 @@
 """Generator for the stdtr slice tables. Build-time only; mpmath inside.
 
-stdtr/stdtrit evaluate betainc only at (1/2, nu/2) and (nu/2, 1/2), so a
-pair of 2-D slices of the betainc kernel L = ln 2F1(a+b, 1; a+1; x)
-extends the Student-t range far beyond the 3-D tensor's [0.1, 10] box at
-a thousandth of the widening cost (experiments/11: full widening needs
-~650k coefficients and breaks the CI regen budget; these four tables
-hold ~13k). Orientation A is L(1/2, b, x) (the direct branch and the
-central-w branch), orientation B is L(b, 1/2, x) (the reflection and the
-tail branch); each spans b in [0.1, 100] in two raw-b panels split at 10
-(measured worst tails, experiments/03: A x 18/53, b 21/35; B x 18/18,
-a 53/45; raw beats log on the b-like axis, panels beat global transforms
-on the a-like axis). All four tables share NX x-nodes so the runtime's
-panel select works elementwise on the coefficient vectors.
-
+stdtr and stdtrit evaluate betainc only at (1/2, nu/2) and (nu/2, 1/2), so
+two 2-D slices of the kernel L = ln 2F1(a+b, 1; a+1; x), orientation A =
+L(1/2, b, x) and B = L(b, 1/2, x), extend Student-t to b in [0.1, 100] at
+~13k coefficients where the full tensor widening needs ~650k
+(experiments/11). Each has two raw-b panels split at 10 (worst tails,
+experiments/03: A x 18/53, b 21/35; B x 18/18, a 53/45). All four tables
+share NX x-nodes so the runtime's panel select works elementwise.
 Regenerate with:
 
-    python -m chebax._src.recipes.stdtr_gen
+    python -m chebax._src.recipes.stdtr_gen      # ~4 min
 """
 
 from chebax._src.recipes._gen_common import (

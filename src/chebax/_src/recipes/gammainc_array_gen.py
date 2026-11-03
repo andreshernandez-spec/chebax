@@ -1,16 +1,11 @@
 """Generator for the per-element gammainc table. Build-time only; mpmath inside.
 
-gammainc_array evaluates P(a, x) and Q(a, x) with a different a on every
-element. The scalar path collapses each 2-D table's a-axis once per
-call and then runs 1-D series of up to 68 terms; with a per element that
-collapse runs per element, about 4,300 coefficients counting both sides of
-its dispatch. Here an element evaluates one small 2-D polynomial instead,
-from a patch of a tensor grid over its zone, so it costs one KY x KP block.
-
-Zones (lambda = x/a, phi = lambda - 1 - ln lambda, eta = sign(lambda - 1)
-sqrt(2 phi), Gc(a) = lnGamma(a+1) - [(a + 1/2) ln a - a + ln(2 pi)/2], the
-Stirling remainder). Each table folds the a-only part of its prefactor in,
-so the runtime calls no lgamma:
+gammainc_array takes a per element, so instead of collapsing a 2-D table's
+a-axis per element (~4,300 coefficients) each element evaluates one KY x KP
+patch of a tensor grid over its zone. Zones (lambda = x/a, phi = lambda - 1
+- ln lambda, eta = sign(lambda - 1) sqrt(2 phi), Gc(a) = lnGamma(a+1) minus
+its Stirling form); each table folds the a-only prefactor in, so the runtime
+calls no lgamma:
 
 a < 1, split at x = a + 1, parameter u = ln(1 + a):
   A0  r = x/(a+1) in [0, 1]:   ln P = a ln x - x + A0(u, r),
@@ -25,36 +20,20 @@ a >= 1, by lambda:
   U   s = a/x in [0, S_HI]:    ln Q = -a phi - ln(2 pi a)/2 - ln lambda + U(p, s),
                                U = ln[Gamma(a, x) x^(1-a) e^x] - Gc(a)
 L and U take p = u for a <= 10 (L1, U1) and p = v = 10/a above (L2, U2);
-T is gammainc_large's Temme function, refitted in w down to a = 1.
-LAM_LO and LAM_HI are lambda at eta = ELO and EHI, gammainc_large's band.
+T is gammainc_large's Temme function, refitted in w down to a = 1, and
+LAM_LO, LAM_HI are lambda at eta = ELO, EHI.
 
-Why these variables: in u = ln(1 + a) the pole of 1F1(1; a+1; .) at
-a = -1 moves to infinity. Across a in [0.1, 10], ln 1F1 then needs degree
-17 in u at the x -> 0 edge instead of 53 in linear a, and 33 instead of 46
-at x = 8 (experiments/03). Splitting at x = a + 1
-with x scaled by a + 1 puts the transition at a fixed coordinate, so A0
-and B0 stay small down to a = 0.1, and removes the uniform recipe's
-x = 8 seam, where Q falls to ~1e-6 at small a before its direct zone
-starts. Above a = 1 the erfc factor of the Temme zone carries the
-transition, and v = 10/a reaches a = inf.
-
-Each zone is cut on a tensor grid: start from the whole box, fit every
-patch at NODES x NODES first-kind nodes (both DCT stages in mpmath), and
-while some patch's coefficients outside its leading KY x KP block sum to
-more than TOL, halve that patch's argument or parameter interval, whichever
-holds the larger tail, across the whole grid. TOL bounds the dropped part
-of the log quantity, so it is a relative bound on P or Q. Measured layout
-at KY = KP = 12 (this generator's output):
-
-    A0 1 x 2, B0 1 x 9, L1 6 x 2, U1 7 x 2, L2 5 x 3, U2 1 x 1, T 3 x 4
-    (parameter x argument intervals), 65 patches, 9,360 coefficients
-
-B0 splits toward t = 0, where the asymptotic series diverges (a
-C-infinity endpoint, as in the uniform tail table), and L1/U1 toward
-a = 1, where Gc's branch point at a = 0 sits ln 2 away in u. float32
-uses the leading KY32 x KP32 block of the same patches, the smallest one
-whose dropped coefficients stay within TOL32 on every patch: 7 x 7.
-Regenerate with:
+u = ln(1 + a) moves the pole of 1F1(1; a+1; .) at a = -1 to infinity
+(degree 17 in u against 53 in a at x -> 0, experiments/03); the split at
+x = a + 1 puts the transition at a fixed coordinate and removes the uniform
+recipe's x = 8 seam. Each zone starts as one patch, fitted at NODES x NODES
+nodes in mpmath, and a patch whose coefficients outside its leading KY x KP
+block sum to more than TOL (a relative bound on P or Q) is halved along the
+axis holding the larger tail, until every patch fits: 65 patches at 12 x 12
+(A0 1 x 2, B0 1 x 9, L1 6 x 2, U1 7 x 2, L2 5 x 3, U2 1 x 1, T 3 x 4,
+parameter x argument intervals), B0 splitting toward t = 0 (a C-infinity
+endpoint) and L1, U1 toward a = 1. float32 reads the leading KY32 x KP32
+block, the smallest within TOL32 on every patch: 7 x 7. Regenerate with:
 
     python -m chebax._src.recipes.gammainc_array_gen      # ~1 min
 """

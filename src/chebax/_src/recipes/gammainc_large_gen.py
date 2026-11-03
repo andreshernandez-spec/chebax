@@ -1,39 +1,16 @@
 """Generator for the large-a gammainc tables. Build-time only; mpmath inside.
 
-Extends the gammainc recipe from a in [0.1, 10] to all of a > 10 with
-three small 2-D tables on v = 10/a in [0, 1], zoned by
-lambda = x/a (degrees measured in experiments/14 and 15):
-
-- Temme transition zone, eta in [-0.7, 2.6]:
-      eta(lambda) = sign(lambda - 1) sqrt(2 (lambda - 1 - ln lambda))
-      Q = 1/2 erfc(eta sqrt(a/2)) + e^(-a eta^2/2) / sqrt(2 pi a) * T
-  with T(v, eta) tabulated (T -> -1/3 at eta = 0, a -> inf). The
-  complement is computed the same way on its own erfc side,
-  P = 1/2 erfc(-eta sqrt(a/2)) - correction, so BOTH tails keep
-  relative accuracy. eta-degree 20, v-degree 7: the whole transition
-  of the incomplete gamma for a up to 1000 fits in a 26x10 table.
-- Lower zone, lambda in [0, 1/2] (eta(0.5) = -0.63 > -0.7):
-      D(v, lambda) = ln 1F1(1; a+1; a lambda)
-  the existing inner kernel in scaled coordinates;
-  P = exp(a ln x - x - lnGamma(a+1) + D).
-- Upper zone, s = (a-1)/x in [0, 1/6] (eta(5.4) = 2.42 < 2.6):
-      U(v, s) = ln[ Gamma(a, x) x^(1-a) e^x ]
-  the existing tail kernel in the uniform variable s;
-  Q = exp((a-1) ln x - x - lnGamma(a) + U).
-
-v = 0 is a -> inf, and a regular point of all three kernels: they tend
-to their asymptotic limits there (D -> -ln(1 - lambda),
-U -> -ln(1 - s), T -> Temme's leading coefficient), which is why the
-v-axis reaches it and the box has no upper end. First-kind nodes never
-sample v = 0 itself; the smallest is v = 5.0e-4 (a = 2.0e4) at 36
-nodes. The earlier a = 1000 cap was a REFERENCE limit: mpmath's
-gammainc stops converging near lambda ~ 1 for a >~ 1e5, so Q comes
-from Legendre's continued fraction here (experiments/16) and P from
-the 1F1 series, each on the side where it converges, and the erfc
-split is always taken on its small side (experiments/14; the naive
-subtraction is catastrophic past ~92 nats). All ~1.4k coefficients
-regenerate in seconds, so the bit-for-bit test covers the whole module
-with no canary split. Regenerate with:
+a > 10 through three 2-D tables on v = 10/a in [0, 1], zoned by lambda =
+x/a (experiments/14 and 15). Temme's zone, eta = sign(lambda - 1) sqrt(2
+(lambda - 1 - ln lambda)) in [-0.7, 2.6]: Q = erfc(eta sqrt(a/2))/2 +
+e^(-a eta^2/2) T(v, eta)/sqrt(2 pi a), and P the same on its own erfc side
+(eta-degree 20, v-degree 7). Lower, lambda in [0, 1/2]: D(v, lambda) =
+ln 1F1(1; a+1; a lambda). Upper, s = (a-1)/x in [0, 1/6]: U(v, s) =
+ln[Gamma(a, x) x^(1-a) e^x]. v = 0 is a regular point of all three, so the
+box has no upper end. References: Legendre's continued fraction for Q and
+the 1F1 series for P, each on its converging side, with the erfc split on
+its small side (mpmath's gammainc stalls near lambda = 1 past a ~ 1e5; the
+naive subtraction fails past ~92 nats). Regenerate with:
 
     python -m chebax._src.recipes.gammainc_large_gen
 """

@@ -1,37 +1,18 @@
 """Generator for the hyp1f1 log-tables. Build-time only; mpmath inside.
 
-Kummer's M(a, b, x) = 1F1(a; b; x) for (a, b) in [0.1, 10]^2,
-x in [0, inf). Two regions split at x = XS = 30, both tabulating a
-logarithm so the singular parts live in exactly-computed prefactors:
+M(a, b, x) = 1F1(a; b; x) for (a, b) in [0.1, 10]^2, split at x = XS = 30.
+Inner: ln R with M = 1 + (a/b) x R, R(a, b, 0) = 1; R has positive terms,
+its nearest zero at x ~ -2(b+1)/(a+1) and poles from b = -1, where ln M's
+zero at x ~ -b/a (x-degree past 150 at (10, 0.1)) and 1F1's poles from
+b = 0 (raw b-degree 137-172) make it unfittable; the runtime forms
+log1p((a/b) x exp(ln R)). Tail, t = XS/x: T = ln[M Gamma(a)/Gamma(b) e^-x
+x^(b-a)], the log-remainder of DLMF 13.7.1, C-infinity at t = 0 and
+T(a, a, t) = 0; XS = 30 brings the worst t-degree from ~100 to 33.
+Parameter axes are logs except the tail's b (raw 20 beats log 44); worst
+degrees inner (x 112, ln a 26, ln b 36), tail (t 33, ln a 26, b 20),
+experiments/13. Regenerate with:
 
-- Inner, x in [0, XS]:
-      ln R(a, b, x),  where  M = 1 + (a/b) x R,  R(a, b, 0) = 1.
-  R = sum_m (a+1)_m / ((b+1)_m (m+1)!) x^m has positive terms, its
-  nearest x-zero sits at ~ -2(b+1)/(a+1), and its b-poles start at
-  b = -1. Tabulating ln M directly fails on both counts: M's zero at
-  x ~ -b/a hugs the origin when b << a (x-degree past 150 at the
-  (10, 0.1) corner; ln R needs 112), and 1F1's denominator poles
-  start at b = 0, only 0.1 from the box edge (raw b-degree 137-172).
-  Runtime: ln M = log1p((a/b) x exp(ln R)), full relative accuracy
-  (identity checked in mpmath to 1e-40, experiments/13).
-
-- Tail, x >= XS, t = XS/x:
-      T(a, b, t) = ln[ M(a, b, x) Gamma(a)/Gamma(b) e^-x x^(b-a) ]
-  the log-remainder of the DLMF 13.7.1 asymptotic; T -> 0 as t -> 0
-  (C-infinity endpoint, the besselk/gammainc tail shape) and
-  T(a, a, t) = 0 identically (M(a, a, x) = e^x), a built-in sanity
-  row. XS = 8 is not asymptotic for |b - a| ~ 10 (t-degree ~100);
-  XS = 30 brings the worst t-degree to 33.
-  Runtime: ln M = lgamma(b) - lgamma(a) + x + (a - b) ln x + T.
-
-Axes (measured in experiments/13, ~20% node margin): the parameter
-axes are log-transformed except the tail's b (raw 20 beats log 44
-there); worst measured degrees inner (x 112, ln-a 26, ln-b 36), tail
-(t 33, ln-a 26, b 20).
-
-Regenerate with:
-
-    python -m chebax._src.recipes.hyp1f1_gen
+    python -m chebax._src.recipes.hyp1f1_gen      # ~11 min
 """
 
 from chebax._src.recipes._gen_common import (

@@ -1,38 +1,17 @@
-"""Generators for the besselj tables. Build-time only; mpmath imported inside.
+"""Generators for the besselj tables. Build-time only; mpmath inside.
 
-Inner table (besselj_table.py): the experiments/02 construction. Fit the
-degree-24 Chebyshev coefficients of g_v(z) = 0F1(; v+1; -z/4) on z in [0, 64]
-at 64 Chebyshev nodes in v over [0, 10], then fit each coefficient as a
-Chebyshev series in v.
-
-M3 tables (besselj_table_ext.py), two regions:
-
-- Mid, x in [8, 30]: J_v(x) fitted directly in x. There is no x = 0 branch
-  point inside the interval, so the factorization is unnecessary here. This is
-  NOT the unfactored dead end of ../bessel/PROJECT.md 2.5 (stated explicitly
-  per the house rule): that verdict is about intervals containing 0. Direct
-  fitting is also what keeps the table sup-accurate for large v, where g_v
-  spans six orders of magnitude by x = 30 and its f64 Clenshaw floor would
-  destroy envelope-relative accuracy.
-
-- Outer, x >= 30: the exact modulus functions, t = s^2 with s = 30/x,
-
-      P(v,x) = sqrt(pi x/2) (J cos w + Y sin w),   w = x - (v/2 + 1/4) pi
-      Q(v,x) = sqrt(pi x/2) (Y cos w - J sin w)
-
-  so J = sqrt(2/(pi x)) (P cos w - Q sin w) exactly, with P and Q/s fitted in
-  t on [0, 1]. Both are numerically analytic there: the asymptotic
-  non-analyticity at t = 0 is O(e^{-2x}) <= e^{-60}. The runtime never forms
-  w (that subtraction would cost eps*x of phase); it expands the cosine by
-  the angle addition identity and lets sincos(x) do its own reduction.
-
-Every stage of every fit stays in mpmath and rounds to float64 only at the
-end (the M1 floor rule). Regenerate with:
+Inner (besselj_table.py): the degree-24 coefficients of g_v(z) =
+0F1(; v+1; -z/4) on z in [0, 64] at 64 nodes in v on [0, 10], each then
+fitted in v (experiments/02). Mid (besselj_table_ext.py), x in [8, 30]: J_v
+fitted directly in x, which has no branch point inside and keeps the table
+sup-accurate at large v, where g_v spans six decades by x = 30. Outer,
+x >= 30, t = (30/x)^2: the modulus functions P = sqrt(pi x/2) (J cos w +
+Y sin w) and Q/s, Q = sqrt(pi x/2) (Y cos w - J sin w), w = x - (v/2 + 1/4)
+pi, s = 30/x, so J = sqrt(2/(pi x)) (P cos w - Q sin w); the runtime never
+forms w (eps x of phase) and expands the cosine instead. Every fit stage
+stays in mpmath; degrees reproduce via experiments/03. Regenerate with:
 
     python -m chebax._src.recipes.besselj_gen
-
-The output must reproduce the checked-in tables bit for bit (tested).
-Measured degrees are reproducible via experiments/03_degree_measurement.py.
 """
 
 import pathlib

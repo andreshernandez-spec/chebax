@@ -1,62 +1,23 @@
-"""Opt-in pytensor JAX dispatches backed by chebax.
+"""Opt-in pytensor JAX dispatches backed by chebax: `import chebax.pytensor`
+registers them and is the whole API. Needs pytensor >= 3.2 (python >= 3.12);
+pytensor is imported here only.
 
-    import chebax.pytensor  # noqa: F401
+Each registration takes a scalar (0-d or size-one) shape parameter, which is
+what a sampled scalar RV lowers to; batched shapes fall back to tfp when it
+is installed and raise NotImplementedError otherwise, except where noted:
 
-registers JAX lowerings for the pytensor scalar ops that otherwise need
-tfp-nightly on the JAX backend (pm.sample with nuts_sampler="numpyro" or
-"blackjax"), and gives betainc gradients with respect to its shape
-parameters. Needs pytensor >= 3.2, which itself needs python >= 3.12. Importing this module is the entire API; it does nothing
-else. pytensor is imported here and only here (the chebax runtime proper
-stays jax + numpy).
+- Erfcx, Erfcinv: pure jax, no restrictions.
+- GammaIncInv, GammaIncCInv, BetaIncInv: chebax's inverses; BetaIncInv is nan
+  outside the (a, b) box [0.1, 100]^2.
+- Ive, Kve: besseli_scalar and besselk_scalar(|v|) for |v| <= 10, nan outside.
+- GammaInc, GammaIncC, BetaInc: chebax's tables in box, jax's own loop outside,
+  through a lax.cond (a select would run the loop on every lane). BetaInc
+  gets a/b derivatives from forward mode off the tables, nan out of box;
+  batched shapes keep the plain jax op. Speed: experiments/18 and 19.
 
-What gets registered, and the contracts:
-
-- Erfcx, Erfcinv: pure jax (native erfcx; erfcinv via ndtri). No chebax
-  tables, no tfp, no restrictions.
-- GammaIncInv, GammaIncCInv: chebax.gammaincinv / chebax.gammainccinv
-  for a SCALAR shape (0-d or size-1; that is what a sampled scalar RV
-  lowers to). The complemented inverse takes p directly, so the upper
-  tail resolves as deep as the lower one. Batched shape arrays fall
-  back to tfp when installed, else raise NotImplementedError at trace
-  time.
-- BetaIncInv: chebax.betaincinv for scalar (a, b) inside chebax's
-  domain box (a, b) in [0.1, 100]^2; outside the box the result is nan
-  (loud, never silently wrong). Batched shapes fall back as above.
-- Ive: chebax.besseli_scalar(scaled=True) for a scalar order v in [0, 10]
-  and x >= 0; nan outside (I_{-v} differs from I_v, so negative orders
-  are not folded). Batched orders fall back as above.
-- Kve: besselk_scalar(|v|, x, scaled=True) for scalar |v| <= 10, x >= 1e-6
-  (K_{-v} = K_v). nan outside; batched orders fall back as above.
-- GammaInc, GammaIncC: chebax.gammainc_scalar / gammaincc_scalar for a SCALAR
-  shape from a = 0.1 up, jax's own igamma below that through a lax.cond
-  (never a select, which would evaluate the loop on every lane). These
-  are plain forward functions a user may call anywhere, so unlike the
-  inverse CDFs they answer everywhere rather than nan out of box. The
-  loop leaves the compiled program for a concrete shape; for a traced one
-  it stays in the module and the conditional does not execute it.
-  Measured (experiments/19, RTX 3080, f64, N = 4.2M): values 1.3-9.8x
-  vs jax's igamma depending on the shape, dP/da 2.1-13.7x, the cond
-  itself free (0.97-1.03x on values). Batched shapes fall back as above.
-- BetaInc: chebax.betainc_scalar for scalar (a, b) in [0.1, 100]^2, jax's
-  own betainc outside the box, through the same lax.cond as the gamma
-  pair and for the same reason. A custom_jvp adds the a/b derivatives
-  (the "Betainc gradient with respect to a and b not supported" gap)
-  from forward mode off the same tables, nan outside the box; the x
-  derivative is the exact Beta density and is right everywhere.
-  Measured (same run): values 108-131x vs jax's betainc, agreement
-  <= 3.8e-14, the cond free again (0.95-1.02x). The a-derivative runs
-  6-7x faster than jax.grad of chebax.betainc_scalar itself, because the
-  rule pushes one forward-mode tangent through the reconstruction
-  where reverse mode transposes the whole contraction.
-  Batched shapes keep the plain jax op (values fine, a/b gradients
-  raise as before).
-
-Both cond'd registrations answer in the dtype plain jax would have
-given, so a float32 model stays float32: the tables are f64 and the
-cond will not even trace with the two branches disagreeing. A float32
-graph therefore still evaluates in f64 and casts down, which is a real
-cost on a consumer part: betainc still wins 14.3x there, gammainc is a
-wash (1.00x) at a = 3, which is jax's most favourable shape.
+The cond'd registrations answer in the dtype plain jax would give, so a
+float32 graph stays float32 (the f64 tables cast down; experiments/19 has the
+cost).
 """
 
 import jax
@@ -94,17 +55,9 @@ def _as_scalar(p):
 
 
 def _out_dtype(*args):
-    """The dtype plain jax would have given this call.
-
-    The tables are f64, so gammainc_scalar and betainc_scalar answer in f64
-    whatever they are handed. Feeding that straight into a lax.cond
-    against jax's own branch does not trace at all on a float32 graph
-    (the two branches disagree), and widening to f64 to make it trace
-    would quietly change the dtype of a pm.sample the user set up as
-    float32. Registering chebax must not move a graph's dtypes, so both
-    branches land here. jax sends all-integer arguments to the default
-    float, so do the same.
-    """
+    """The dtype plain jax would give: both cond branches must agree, and
+    registering chebax must not move a float32 graph to f64. All-integer
+    arguments go to the default float, as in jax."""
     dt = jnp.result_type(*args)
     return dt if jnp.issubdtype(dt, jnp.inexact) else jnp.result_type(float)
 
@@ -176,21 +129,11 @@ def _jax_funcify_GammaIncC(op, **kwargs):
     )
 
 
-def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
-    """P(a, x) or Q(a, x): chebax's tables in box, jax's loop outside.
-
-    Unlike the inverse CDFs, these are plain forward functions a user may
-    call anywhere, so answering nan outside the table box is not
-    defensible here. The fallback is a lax.cond and NOT a select: cond
-    executes one branch, select would evaluate jax's while_loop on every
-    lane and give back exactly what this registration removes. It can be
-    a cond because the shape is already required to be scalar, so the
-    predicate is scalar too and no lane can disagree with another.
-
-    In box, the loop is gone: fixed-degree polynomial evaluation, which
-    is the whole point (measured 2.4-2.9x end to end on a truncated Gamma
-    with a sampled shape, six HLO whiles to zero; experiments/18).
-    """
+def _forward_gamma(op, tfp_name, cheb, plain):
+    """P(a, x) or Q(a, x): chebax's tables in box, jax's loop outside, through
+    a lax.cond (a select would run the while_loop on every lane; the scalar
+    shape makes the predicate scalar). A forward function answers everywhere,
+    so no nan out of box."""
 
     def forward(a, x):
         if not _is_uniform(a):
@@ -204,8 +147,8 @@ def _forward_gamma(op, tfp_name, cheb_fn, jax_fn):
         lo = jnp.maximum(a_s, _dom.GAMMAINC.lo)
         return jax.lax.cond(
             a_s >= _dom.GAMMAINC.lo,
-            lambda: cheb_fn(lo, xs).astype(dt),
-            lambda: jax_fn(jnp.broadcast_to(a_s, jnp.shape(xs)), xs).astype(dt),
+            lambda: cheb(lo, xs).astype(dt),
+            lambda: plain(jnp.broadcast_to(a_s, jnp.shape(xs)), xs).astype(dt),
         )
 
     return forward

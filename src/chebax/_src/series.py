@@ -190,6 +190,28 @@ def _chebval_jvp(domain, primals, tangents):
     return y, dy
 
 
+def chebval_either(use0, s0, x0, s1, x1):
+    """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
+    coefficients. Not for AD: reverse mode runs both coefficient cotangents at
+    full length (CPU a-grads 1.6-3x slower), so only undifferentiated solves."""
+
+    def unit(s, x):
+        a, b = s.domain
+        x = jnp.asarray(x, dtype=jnp.result_type(x, s.coef))
+        return _to_unit(x, 0.5 * a + 0.5 * b, 0.5 * b - 0.5 * a)
+
+    t = jnp.where(use0, unit(s0, x0), unit(s1, x1))
+    n = max(s0.coef.shape[0], s1.coef.shape[0])
+    c0 = jnp.pad(s0.coef, (0, n - s0.coef.shape[0]))
+    c1 = jnp.pad(s1.coef, (0, n - s1.coef.shape[0]))
+    b1 = jnp.zeros(jnp.shape(t), jnp.result_type(t, c0, c1))
+    b2 = b1
+    two_t = 2 * t
+    for k in range(n - 1, 0, -1):
+        b1, b2 = two_t * b1 - b2 + jnp.where(use0, c0[k], c1[k]), b1
+    return t * b1 - b2 + jnp.where(use0, c0[0], c1[0])
+
+
 @jax.tree_util.register_pytree_node_class
 class ChebSeries:
     """sum(c[k] T_k(t)), t the affine image of x taking [a, b] to [-1, 1].

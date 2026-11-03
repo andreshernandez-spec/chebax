@@ -17,7 +17,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes._common import edge_slope, param_coefs, traced_coefs
-from chebax._src.series import ChebSeries
+from chebax._src.series import ChebSeries, chebval_either
 
 
 def eval_logs(a, x, lser, ltail):
@@ -31,6 +31,20 @@ def eval_logs(a, x, lser, ltail):
     lq_tl = (
         (a - 1.0) * jnp.log(xo) - xo - jax.scipy.special.gammaln(a) + ltail(_gt.XS / xo)
     )
+    return lp_in, jnp.where(big, -jnp.inf, lq_tl)
+
+
+def eval_logs_one_series(a, x, lser, ltail):
+    """eval_logs with one series and one log per point: exact on the point's
+    side of XS, a finite dummy on the other. For the quantile solve only."""
+    inner = x <= _gt.XS
+    xd = jnp.where((x > 0.0) & inner, x, 1.0)
+    big = x == jnp.inf
+    xo = jnp.where((x > _gt.XS) & ~big, x, 2.0 * _gt.XS)
+    ls = chebval_either(inner, lser, xd, ltail, _gt.XS / xo)
+    u = jnp.log(jnp.where(inner, xd, xo))
+    lp_in = a * u - xd - jax.scipy.special.gammaln(a + 1.0) + ls
+    lq_tl = (a - 1.0) * u - xo - jax.scipy.special.gammaln(a) + ls
     return lp_in, jnp.where(big, -jnp.inf, lq_tl)
 
 

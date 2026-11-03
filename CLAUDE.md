@@ -33,16 +33,15 @@ from the latest review are in `docs/review-2026-10-26.md`.
   trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
   still the only number for a outside the box — say which when citing; gammaincinv
   solver rewire (`experiments/09`, same solver, residual swapped, RE-RUN
-  2026-11-02 with the solve in gammaincinv_kernel.py, in t = ln(x/a) with
-  the float-step acceptance; the 2026-10-28 figures, 10.3–37.7× / 5.9–14.6×,
-  were the v = ln x solve and no longer describe the code): 10.2–36.3× f64
-  for uniform p at a in {9.9, 3.5, 0.5} and 5.6–13.3× at a in {50, 500} on
-  the Temme path, 2.4–5.0× on pure deep-tail p (jax's series branch is
+  2026-11-02 after the scalar residual went to one series per point below
+  a = 10 and one erfcx per point in the Temme zone; the earlier 2026-11-02
+  figures, 10.2–36.3× / 5.6–13.3×, no longer describe the code): 13.1–47.7×
+  f64 for uniform p at a in {9.9, 3.5, 0.5} and 8.9–20.6× at a in {50, 500}
+  on the Temme path, 3.2–7.5× on pure deep-tail p (jax's series branch is
   cheap there), path agreement ≤ 1.8e-12, and the JVP's dP/da term
-  4.0–15.5× vs igamma_grad_a (agreement ≤ 1.7e-14); the recipe column is
-  4–5% slower than the v = ln x solve below a = 10 and 7–11% above (the
-  neighbour evaluations of the float-step check, and the near-mode x in
-  the Temme zone that float32 needs); betainc race
+  3.9–14.9× vs igamma_grad_a (agreement ≤ 1.7e-14); the recipe column
+  itself went 128 → 97 ms below a = 10 and 417–437 → 259–278 ms above
+  (1.33× / 1.57–1.61×); betainc race
   (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
   f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
   CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N

@@ -47,20 +47,16 @@ def w_eta(d):
 
 def temme_log_pq(y, aw, tval, rt):
     """(ln P, ln Q) in the Temme zone from y = eta sqrt(a/2), a w = y^2, T(v, eta)
-    and rt = sqrt(2 pi a), through erfcx since erfc underflows past a w ~ 745:
-    ln Q = -a w + ln(erfcx(y)/2 + T/rt). erfcx sees only its own sign (e^(y^2)
-    overflows) and untaken log1p lanes a dummy 1/2, so grads stay finite."""
-    yq = jnp.where(y > 0.0, y, 0.0)
-    yp = jnp.where(y < 0.0, -y, 0.0)
-    lq_t = -aw + jnp.log(0.5 * erfcx(yq) + tval / rt)
-    lp_t = -aw + jnp.log(0.5 * erfcx(yp) - tval / rt)
-    corr = jnp.exp(-aw) / rt * tval
-    p_in = jnp.where(y > 0.0, 0.5, 0.5 * jax.scipy.special.erfc(-y) - corr)
-    q_in = jnp.where(y < 0.0, 0.5, 0.5 * jax.scipy.special.erfc(y) + corr)
-    return (
-        jnp.where(y < 0.0, lp_t, jnp.log1p(-q_in)),
-        jnp.where(y > 0.0, lq_t, jnp.log1p(-p_in)),
+    and rt = sqrt(2 pi a), through erfcx since erfc underflows past a w ~ 745.
+    The side y points to is -a w + ln(erfcx(|y|)/2 +- T/rt), the other is
+    log1p(-exp(that)): one erfcx per point, never at the sign whose e^(y^2)
+    overflows. The own side is at most ~1/2, so log1p never reaches -1."""
+    upper = y >= 0.0
+    own = -aw + jnp.log(
+        0.5 * erfcx(jnp.where(upper, y, -y)) + jnp.where(upper, tval, -tval) / rt
     )
+    other = jnp.log1p(-jnp.exp(own))
+    return jnp.where(upper, other, own), jnp.where(upper, own, other)
 
 
 def eval_large(a, x, temme, dlow, dup, kind):

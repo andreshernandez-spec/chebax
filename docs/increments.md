@@ -1133,3 +1133,36 @@ more once some a passes 1e3, where the root is found again (GPU float64
 is 2.0e-11 in float64 and 1.1e-2 in float32 on the wide layout, against
 1.0e-14 and 8.4e-6 here. When a is one value the scalar path is faster
 (GPU float32 2.7 vs 13.3 ns), and the plain name runs it.
+
+## 38. One series per point in the scalar Gamma quantile (2026-11-02)
+
+The scalar path's residual evaluated both regions on every point and
+selected, in every one of its 40 Newton steps: the inner and tail series
+below a = 10, and erfcx and erfc at both y+ and y- in the Temme zone.
+
+- Below a = 10 the solve now runs `gammainc_small.eval_logs_one_series`:
+  `series.chebval_either` picks each point's coefficients per Clenshaw
+  step, so a point runs only the series of its side of x = 8, and one log.
+  The same operations as the select, so the quantiles are unchanged (bit
+  for bit on the GPU). It has no custom rule: under reverse mode the
+  coefficient cotangent runs at full length for both series, which made
+  the a-gradient of gammainc_scalar 1.6-2.4x slower on the CPU in a
+  prototype. So the forward functions keep both series and select.
+- `temme_log_pq` forms the side y points to through one erfcx(|y|) and the
+  other as log1p(-exp(own side)), as gammainc_array does. Quantiles move
+  by at most 3.8e-16, log Q's worst on a dense sweep against mpmath from
+  7.7e-15 to 7.8e-15.
+
+`experiments/09`, GPU float64, N = 2^20: the recipe column 128 -> 97 ms
+below a = 10 and 417-437 -> 259-278 ms above. On one CPU at N = 2^18,
+6-14% faster, and the value_and_grad compiles in 7.5-7.9 s instead of 9.3.
+
+Tried and dropped:
+
+- Dropping table coefficients whose sum is below 2e-16 over the whole
+  parameter box (26 of 32 inner, 22 of 26 tail): worst values unchanged,
+  but dP/dx multiplies coefficient k by k^2, and its error went from
+  6.5e-13 to 2.6e-11 where the density is small against P (bar 1.5e-12).
+  Keeping dP/dx at its floor leaves 29-30 of 32, a few percent of speed.
+- One erfc per point in the Temme zone's P and Q (not logs): no
+  measurable gain.

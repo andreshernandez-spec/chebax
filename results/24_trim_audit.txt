@@ -197,16 +197,9 @@ erf_table.DAWSN_G: shape (16,), n = 16, max |c| = 0.504
    1e-10 |       6       8
    1e-07 |       4       5
 
-erf_table.ERFCX_C: shape (40,), n = 40, max |c| = 0.349
+erf_table.ERFCX_P: shape (32, 9), n = 9, max |c| = 0.964
      tol |   value    d/dt
-   1e-15 |      32      38
-   1e-13 |      29      34
-   1e-10 |      24      29
-   1e-07 |      18      23
-
-erf_table.ERFCX_H: shape (16,), n = 16, max |c| = 0.56
-     tol |   value    d/dt
-   1e-15 |       9      11
-   1e-13 |       8       9
-   1e-10 |       6       7
+   1e-15 |       7       8
+   1e-13 |       7       7
+   1e-10 |       5       6
    1e-07 |       4       5

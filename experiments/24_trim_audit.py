@@ -18,7 +18,8 @@ ends included, and the table prints the smallest n at which it is under
 quantity is a log in most families, so an absolute bound on it is a relative
 bound on the function; where it is not (besselj, bessely, the betainc-shaped
 kernels are logs too), the bound is absolute on the tabulated quantity.
-1-D tables (erf) get the value and d/dt columns only.
+1-D tables (erf) get the value and d/dt columns only; erfcx's panel table
+is audited as its worst panel.
 
 WHAT IT MEANS
 -------------
@@ -66,8 +67,10 @@ TABLES = {
     "stdtr_table": ["TABLE_A_LO", "TABLE_A_HI", "TABLE_B_LO", "TABLE_B_HI"],
     "vonmises_table": ["TABLE"],
     "tweedie_table": ["TABLE_TAIL"],
-    "erf_table": ["DAWSN_E", "DAWSN_G", "ERFCX_C", "ERFCX_H"],
+    "erf_table": ["DAWSN_E", "DAWSN_G", "ERFCX_P"],
 }
+# arrays whose axis 0 indexes panels, each row its own 1-D series
+PANELS = {"ERFCX_P"}
 
 
 def unit_grid(m):
@@ -102,22 +105,27 @@ def first_under(tail, tol):
     return int(np.argmax(tail <= tol))
 
 
-def audit(name, table):
+def audit(name, table, panels=False):
     table = np.asarray(table, dtype=float)
+    shape = table.shape
+    if panels:
+        table = table.T  # worst panel, no collapse
     n = table.shape[0]
     k = np.arange(n, dtype=float)
-    if table.ndim == 1:
-        coefs = table.reshape(n, 1)
+    if table.ndim == 1 or panels:
+        coefs = table.reshape(n, -1)
         bounds = {"value": tails(coefs, np.ones(n)), "d/dt": tails(coefs, k * k)}
     else:
-        grids = [unit_grid(129 if table.ndim == 2 else 33) for _ in range(table.ndim - 1)]
+        grids = [
+            unit_grid(129 if table.ndim == 2 else 33) for _ in range(table.ndim - 1)
+        ]
         coefs = collapse(table, grids)
         bounds = {"value": tails(coefs, np.ones(n)), "d/dt": tails(coefs, k * k)}
         for ax in range(1, table.ndim):
             d = collapse(table, grids, der_axis=ax)
             bounds[f"d/dp{ax}"] = tails(d, np.ones(n))
     scale = float(np.max(np.abs(coefs)))
-    print(f"\n{name}: shape {table.shape}, n = {n}, max |c| = {scale:.3g}")
+    print(f"\n{name}: shape {shape}, n = {n}, max |c| = {scale:.3g}")
     print(f"  {'tol':>6s} | " + " ".join(f"{b:>7s}" for b in bounds))
     for tol in TOLS:
         print(
@@ -134,7 +142,7 @@ def main(which=None):
             continue
         m = importlib.import_module(f"chebax._src.recipes.{mod}")
         for arr in arrays:
-            audit(f"{mod}.{arr}", getattr(m, arr))
+            audit(f"{mod}.{arr}", getattr(m, arr), panels=arr in PANELS)
 
 
 if __name__ == "__main__":

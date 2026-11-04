@@ -195,11 +195,13 @@ def vonmises():
 def erf():
     dawsn = lambda x: mp.sqrt(mp.pi) / 2 * mp.exp(-x * x) * mp.erfi(x)
     erfcx = lambda x: mp.erfc(x) * mp.exp(x * x)
-    print("erf family (claims: dawsn E 37 / G 10, erfcx C 32 / H 9; seam 6)")
+    # erfcx's own claims (terms above 2^-56 min h, one series by K and per panel) are experiments/27
+    print("erf family (claims: dawsn E 37 / G 10, seam 6; erfcx 32 t-panels in t = 3/(3+x), 9 terms)")
     report("dawsn E z-dir", fit_axis(lambda z: dawsn(mp.sqrt(z)) / mp.sqrt(z), 44, 1e-10, 36), [38, 42])
     report("dawsn G t-dir", fit_axis(lambda t: (lambda x: x * dawsn(x))(6 / mp.sqrt(t)), 16, 1e-8, 1), [12, 14])
-    report("erfcx C x-dir", fit_axis(erfcx, 40, 0, 6), [33, 38])
-    report("erfcx H t-dir", fit_axis(lambda t: (lambda x: x * erfcx(x))(6 / mp.sqrt(t)), 16, 1e-8, 1), [10, 14])
+    h = lambda t: (lambda x: erfcx(x) * (3 + x) / 3)(3 * (1 - t) / t)
+    for j in (0, 15, 31):
+        report(f"erfcx panel {j} t-dir", fit_axis(h, 24, j / 32, (j + 1) / 32), [7, 8, 9])
 
 
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,

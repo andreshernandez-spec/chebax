@@ -1,29 +1,14 @@
 """Generator for the besselk log-tables. Build-time only; mpmath inside.
 
-K_v is positive and non-oscillatory but spans ~15 decades over the (v, x)
-rectangle, and the classical route to it (the connection formula through
-I_{+-v}) cancels catastrophically near integer v (risk S3, the bessel R6
-lesson). Both problems disappear by tabulating logarithms of K directly:
-
-- Inner, x in [XMIN, 8], u = ln x:
-      Ltil(v, u) = ln[ (x/2)^v K_v(x) ]
-  The (x/2)^v factor removes the v-dependent branch exponent at 0 (the same
-  move as besselj's g_v), and the log tames the dynamic range: Ltil spans
-  ~[-9, 12] instead of 15 decades, so f64 coefficient noise stays at the
-  eps*|Ltil| level. The Gamma(+-v)-pole cancellation compresses into a
-  feature of width ~1/|ln x| near v=0, so v is split into two panels,
-  [0, 1] and [1, 10]; panels are free at runtime (chosen at instantiation,
-  or one select in the traced path). Measured worst tails: degree 66 in u,
-  45 in v per panel (reproduce via experiments/03_degree_measurement.py).
-
-- Tail, x >= 8, t = 8/x:
-      Lt(v, t) = ln[ sqrt(2x/pi) e^x K_v(x) ]
-  Smooth and O(1); degree 19 in t and in v covers everything (K_{1/2} makes
-  Lt identically zero). The runtime multiplies exp(Lt) by sqrt(pi/(2x)) and
-  a separately computed exp(-x), which is correctly rounded at any x, so no
-  eps*x exponent-assembly error appears.
-
-Both fit stages stay in mpmath (the M1 floor rule). Regenerate with:
+K_v spans ~15 decades and its connection formula cancels near integer v, so
+the tables hold logarithms of K directly. Inner, x in [XMIN, 8], u = ln x:
+Ltil(v, u) = ln[(x/2)^v K_v(x)], the factor removing the branch exponent at
+0; the Gamma-pole feature of width ~1/|ln x| near v = 0 splits v into the
+panels [0, 1] and [1, 10] (degree 66 in u, 45 in v per panel). Tail,
+x >= 8, t = 8/x: Lt(v, t) = ln[sqrt(2x/pi) e^x K_v(x)], O(1), degree 19 in
+both; the runtime multiplies by sqrt(pi/(2x)) and a separately rounded
+exp(-x). Both stages stay in mpmath; degrees reproduce via experiments/03.
+Regenerate with:
 
     python -m chebax._src.recipes.besselk_gen
 """

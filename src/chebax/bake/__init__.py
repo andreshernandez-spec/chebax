@@ -1,49 +1,23 @@
 """Bake: emit self-contained artifacts from any Recipe instance.
 
-jax_module(inst, path)  writes a pure-jax module (no chebax import) whose
-function is derived from the instance's own traced computation, so the same
-formula, constants and branch structure run in both places and cannot drift
-apart as the recipe changes. Plain jax AD differentiates it.
+jax_module(inst, path) writes a pure-jax module (no chebax import) and
+xsf_header(inst, path) a standalone C++17 header (<cmath> and <limits>,
+XSF_HOST_DEVICE defined empty when absent), both from the instance's own
+traced computation, so formula, constants and branches cannot drift from the
+runtime. Emission is deterministic and generic: any Recipe with a closed-form
+evaluation bakes, solver-based callables raise NotImplementedError, nonfinite
+tables are rejected, and the source must be float64 (x64 on).
 
-xsf_header(inst, path)  writes a standalone C++17 header (only <cmath> and
-<limits>), double precision, from the same trace. XSF_HOST_DEVICE is
-defined empty when absent so the header drops into xsf or plain host code
-unchanged.
-
-Derived from the trace does not mean bit-identical to every run of the
-runtime. The trace is always taken at float64, so:
-
-- An artifact evaluated in float32 is the float64 computation carried out
-  in float32, not the float32 runtime. Measured for besselj(2.5) on
-  x in [0.05, 100]: 4.4e-8 worst sup-normalized difference against the
-  runtime under x64 off. Scalar subexpressions are folded at bake time
-  (see _jaxpr_emit), so an artifact's values do not depend on the x64
-  setting of the process that runs it.
-- A recipe that picks a branch from the dtype (canon_tag(), x.dtype) bakes
-  the float64 branch whatever the artifact's dtype. Only the float64
-  artifact is then faithful.
-- One-sided endpoint slopes do not survive. Where a recipe carries an
-  exact derivative AT a domain endpoint through a custom rule whose value
-  is zero (gammainc's density at x = 0), the artifact keeps the values and
-  loses that slope: jax.grad of the baked gammainc at exactly x = 0 gives
-  0, the runtime gives the density. Values agree everywhere, and so do
-  derivatives at every interior point.
-
-Both artifacts declare the dtype they were baked for rather than following
-their input: jax_module's function rejects any other input dtype (dtype=
-selects which one), xsf_header's C++ signature fixes it. Nonfinite
-coefficient tables are rejected at bake time.
-
-Both emissions are deterministic (same instance, same bytes) and generic
-over recipes: any Recipe subclass with a closed-form evaluation path bakes;
-solver-based callables raise NotImplementedError. Baking requires float64
-tables (enable jax_enable_x64 before constructing the instance): a float32
-source would silently produce a "double" artifact with float32 content.
-Known semantic edge of the C++ backend: std::fmax/fmin ignore NaN operands
-where jnp.maximum/minimum propagate them; recipes keep NaN out of interior
-min/max by construction, but a custom recipe relying on NaN propagation
-through min/max will differ. See _jaxpr_emit for the mechanism and its
-(dev-time-only) coupling to jaxpr structure.
+The trace is taken at float64, so an artifact is that computation in its
+declared dtype, not the float32 runtime (besselj(2.5) on [0.05, 100]: 4.4e-8
+sup-normalized from the x64-off runtime); a recipe that picks a branch from
+the dtype bakes the float64 branch; scalar subexpressions are folded at bake
+time (_jaxpr_emit), so values do not depend on the running process's x64
+setting. One-sided endpoint slopes carried by edge_slope are dropped: the
+baked gammainc has slope 0 at exactly x = 0 where the runtime gives the
+density. Each artifact rejects any input dtype but its own. C++ std::fmax and
+fmin ignore nan operands where jnp.maximum and minimum propagate them; the
+recipes keep nan out of interior min/max.
 """
 
 import keyword
@@ -201,17 +175,10 @@ def _slope_note(dropped):
 
 
 def jax_module(inst, path, name=None, truncate_tol=None, dtype="float64"):
-    """Write a self-contained pure-jax module defining <name>(x). Returns name.
-
-    dtype declares what the artifact runs in: "float64" (default) is the
-    trace itself, "float32" is that same computation carried out in
-    float32, which is not the float32 runtime (see the package docstring).
-    Either way the emitted function raises on any other input dtype instead
-    of running a computation that was never traced.
-
-    truncate_tol drops each series' converged tail before tracing (see
-    ChebSeries.truncate); pair it with dtype="float32", where the f64 fit
-    carries roughly twice the terms f32 needs."""
+    """Write a pure-jax module defining <name>(x); returns name. dtype is
+    "float64" (the trace) or "float32" (the same computation in float32, see
+    the package docstring); truncate_tol drops each series' converged tail
+    first (ChebSeries.truncate), which pairs with float32."""
     if dtype not in ("float64", "float32"):
         raise ValueError(f"dtype must be 'float64' or 'float32', got {dtype!r}")
     _check(inst)
@@ -280,16 +247,10 @@ def _cpp_array(name, vals, ctype="double"):
 
 
 def xsf_header(inst, path, name=None, dtype="double", truncate_tol=None):
-    """Write a standalone C++17 header. Returns the emitted function name.
-
-    dtype: "double" (default) or "float" - float emits f-suffixed
-    literals, float arrays and float locals throughout (a CUDA f32
-    kernel body). Tables are always sourced from the f64 instance and
-    rounded at emission, and the trace is float64 either way, so "float"
-    is that computation in float, not the float32 runtime. truncate_tol
-    drops each series' converged tail first; pair dtype="float" with
-    truncate_tol=1e-7 (the f64 fit carries roughly twice the terms f32
-    needs)."""
+    """Write a standalone C++17 header; returns the emitted function name.
+    dtype "double" or "float" (f-suffixed literals, float arrays and locals,
+    rounded from the f64 instance, the trace still float64); truncate_tol as
+    in jax_module, 1e-7 pairs with "float"."""
     if dtype not in ("double", "float"):
         raise ValueError(f"dtype must be 'double' or 'float', got {dtype!r}")
     _check(inst)

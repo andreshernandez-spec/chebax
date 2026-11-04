@@ -1,24 +1,14 @@
-"""The parameter box each public family serves, in one place.
+"""The parameter box each public family serves, read off the table module
+that governs the computation, so a widened box cannot be true in the recipe
+and stale elsewhere (chebax.numpyro once kept rejecting TruncatedBeta(20, 3)
+after the tables grew to [0.1, 100]).
 
     from chebax.domains import BETAINC
-    BETAINC.lo, BETAINC.hi          # 0.1, 100.0
-    BETAINC.contains(20.0)          # True
+    BETAINC.lo, BETAINC.hi, BETAINC.contains(20.0)
 
-Every one of these is read off the table module that actually governs the
-computation, so a widened box cannot be true in the recipe and false
-somewhere else. That is exactly what went wrong: chebax.numpyro imported
-the [0.1, 10] panel constant and kept rejecting TruncatedBeta(20, 3)
-after the tables grew to [0.1, 100], while its own docstring advertised
-the wide box (review, 2026-08-02). The recipes, the numpyro and pytensor
-integrations, and the constraint objects now all consume this module.
-
-`hi` is math.inf where a family has no upper end (gammainc's Temme-zone
-tables run to a = inf). `contains` is written for concrete floats: the
-runtime checks are elsewhere and stay traceable.
-
-Each one is built on first access (a module __getattr__, PEP 562) and
-imports its own table and no other, so a program that uses one family
-never loads the rest; betainc's alone are 15 MB of source.
+`hi` is math.inf where a family has no upper end; `contains` is for concrete
+floats, the traceable checks are in the recipes. Each box is built on first
+access (PEP 562) and imports its own table only.
 """
 
 import math

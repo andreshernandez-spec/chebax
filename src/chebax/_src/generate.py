@@ -1,24 +1,14 @@
-"""Build-time fitting: sample at Chebyshev points, DCT to coefficients.
-
-The float64 path uses numpy. Passing dps switches sampling and the DCT to
-mpmath at that precision; mpmath is imported inside that branch only (the
-runtime-imports rule in CLAUDE.md).
+"""Build-time fitting: sample at Chebyshev points, DCT to coefficients. numpy
+in float64, or mpmath at dps (imported in that branch only).
 
 Adaptive fitting doubles the node count until the coefficient tail sits at
-the fit's own noise floor, then truncates there. A converged-looking tail
-on one grid is never trusted by itself: on n first-kind points T_{2n-k}
-samples exactly as -T_k, so an aliased fit can look converged (T_34 on 17
-nodes reproduces -T_0 to the last bit). Every candidate the adaptive path
-returns, the all-zero fit included, is first validated against fresh
-samples on two finer grids (see _validated). A fixed deg= is not: there an
-unresolved f is a legitimate request, so under-resolution cannot be told
-from aliasing.
-
-The noise floor is estimated from the trailing sixteenth of the fit's own
-coefficients rather than assumed: float64 sampling noise scales with
-the function's derivative (measured: ~1e-16 relative for exp, ~2.5e-15 for
-sin(50x)), so a fixed tolerance either fails to converge on oscillatory
-functions or keeps hundreds of noise coefficients.
+the fit's own noise floor, then truncates there. A converged-looking tail on
+one grid is not trusted: on n first-kind points T_{2n-k} samples as -T_k, so
+every adaptive candidate is validated against fresh samples on finer grids
+(_validated). A fixed deg= is taken as an instruction and not validated. The
+noise floor is read off the trailing sixteenth of the coefficients, since
+float64 sampling noise scales with the function's derivative (~1e-16 relative
+for exp, 2.5e-15 for sin(50x)).
 """
 
 import numpy as np
@@ -33,31 +23,21 @@ _DEFAULT_TOL = 5e-16
 def fit(
     f, domain=(-1.0, 1.0), *, deg=None, tol=None, breaks=None, dps=None, max_deg=256
 ):
-    """Chebyshev interpolant of f, as a ChebSeries (or PiecewiseCheb if breaks given).
+    """Chebyshev interpolant of f: a ChebSeries, or a PiecewiseCheb with breaks.
 
-    f:       callable on the domain. Vectorized over numpy arrays if possible;
-             with dps set it must accept mpmath floats instead.
-    domain:  (a, b), finite with a < b. Ignored when breaks is given.
-    deg:     fixed degree, at most max_deg; otherwise the degree adapts until
-             tol is met. A fixed degree is taken as an instruction: the
-             interpolant is returned as asked, with no convergence check and
-             no aliasing check (fit(T_29, deg=5) returns T_5, which is what
-             interpolating T_29 at 6 points gives). Leave deg unset for a
-             validated fit.
-    tol:     target for the relative coefficient tail (default 5e-16), positive
-             and finite. The effective chop level is max(tol, the fit's
-             measured noise floor); float64 sampling noise can sit above tol
-             for functions with large derivatives. Build with dps to control
-             the floor.
-    breaks:  strictly increasing finite knots, at least two, endpoints
-             included; one series per segment, each fit independently, padded
-             to a common degree.
-    dps:     mpmath working precision for sampling and the DCT. Derivatives of
-             a float64-built fit sit at a ~deg^2 * eps floor (differentiation
-             amplifies sample noise); build with dps when that matters.
-    max_deg: hard cap on the returned degree. Reaching it without a validated
-             converged fit raises: f is not smooth enough on the interval
-             (split the domain) or genuinely needs a higher degree.
+    f:       callable on the domain, vectorized over numpy arrays; with dps
+             set it takes mpmath floats.
+    domain:  (a, b), finite, a < b; ignored with breaks.
+    deg:     fixed degree (at most max_deg), returned as asked with no
+             convergence or aliasing check; unset, the degree adapts to tol.
+    tol:     relative coefficient tail (default 5e-16); the chop level is
+             max(tol, the fit's measured noise floor).
+    breaks:  increasing finite knots, endpoints included; one series per
+             segment, padded to a common degree.
+    dps:     mpmath precision for sampling and the DCT. Derivatives of a
+             float64 fit sit at a ~deg^2 eps floor; build with dps when that
+             matters.
+    max_deg: cap on the degree; reaching it without a validated fit raises.
     """
     max_deg = _check_int("max_deg", max_deg, 1)
     if deg is not None:
@@ -122,26 +102,12 @@ _PHI = 0.6180339887498949  # (sqrt(5) - 1)/2, irrational: see _offgrid
 
 
 def _chop(c, tol):
-    """Truncate at the noise level; returns (candidate, absolute level,
-    measured plateau relative to the scale, inf when there is none).
-
-    The level is max(tol, noise floor), where the noise floor is read off
-    the last sixteenth of the coefficients: for a still-decaying tail those
-    sit below tol and the requested tol governs (measured: exp's last
-    coefficients decay through 1e-16); for a converged fit they are the
-    sampling-noise plateau (sin(50x): ~5e-16 relative at n=129, edge-
-    singular sampling can push higher) and doubling the largest of them
-    clears the plateau's own scatter.
-
-    That window only holds noise if the fit has room to spare, and it does
-    not when the top mode lands inside it: fitting T20 on 21 points puts
-    c[20] = 1 in the last sixteenth, which read as a noise floor of 2 and
-    chopped the exact fit down to one coefficient (with max_deg = 20 there
-    is no doubling left, so `fit(T20, max_deg=20)` then raised). A real
-    plateau sits at the sampling floor, decades under the function scale
-    (the settled test below wants 1e-10 relative before it will believe
-    one), so a window within _NOISE_CEIL of the scale is signal and the
-    requested tol governs instead."""
+    """Truncate at max(tol, noise floor); returns (candidate, absolute level,
+    plateau relative to the scale, inf if none). The floor is twice the
+    largest of the last sixteenth of the coefficients, which is noise only
+    when it sits under _NOISE_CEIL of the scale: fitting T20 on 21 points puts
+    c[20] = 1 there, and reading that as noise chopped the exact fit to one
+    coefficient."""
     scale = np.max(np.abs(c))
     win = float(np.max(np.abs(c[-max(2, c.size // 16) :])))
     measured = win <= _NOISE_CEIL * scale
@@ -156,43 +122,24 @@ def _chop(c, tol):
 
 
 def _offgrid(m):
-    """m points cos(pi (i + PHI) / m), PHI irrational.
-
-    NOT the nodes of any Chebyshev grid, which is the whole point. On m
-    first-kind points T_K samples as +-T_j with (j, sign) fixed by
-    K mod 4m, so any set of harmonically related grids has whole families
-    of modes it cannot see: n, 2n and 4n all read T_{16n} as +1, which is
-    how `fit(T272)` used to come back as the constant 1 with sup error 2
-    (found in review, 2026-08-02). Here an alias would need
-    cos(K theta_i) = +-cos(j theta_i) at every point, i.e.
-    (K -+ j)(i + PHI)/m in 2Z for every i; differencing over i forces
-    K -+ j = 2 m q, and then 2 q PHI in Z, which for irrational PHI needs
-    q = 0. So the only mode that can hide is the one already in the
-    candidate."""
+    """m points cos(pi (i + PHI) / m), PHI irrational: not the nodes of any
+    Chebyshev grid. On m first-kind points T_K samples as +-T_j with j fixed
+    by K mod 4m, so the grids n, 2n and 4n all read T_{16n} as +1 (fit(T272)
+    once came back as the constant 1). Here an alias needs (K -+ j)(i + PHI)/m
+    even for every i, which forces q PHI integral for some integer q, so only
+    the candidate's own mode can hide."""
     i = np.arange(m)
     return np.cos(np.pi * (i + _PHI) / m)
 
 
 def _validated(cand, level, sample_unit, n):
-    """Check the candidate against fresh samples away from the fit grid.
-
-    A finite point set can never prove a fit: any f agreeing with cand at
-    the test points passes, and there are always such f. This is a
-    gross-error detector, nothing more. What it must not have is a
-    STRUCTURAL blind spot, and harmonically related Chebyshev grids have
-    one (see _offgrid), so the off-grid sets carry the argument and the 2n
-    grid is kept only because it is cheap and catches the ordinary
-    mistakes. Sizes are fixed by the fitting resolution n rather than by
-    the candidate's own size, which could otherwise land back on the
-    fitting grid.
-
-    An aliased fit is off by O(scale) here, ~1e15x the chop level, where
-    an honest one is at ~1x; the 1000x margin is the gap between those,
-    not an accuracy contract. The second term is the Clenshaw evaluation
-    floor, which grows with the degree and not just with sum|c|: a
-    degree-544 candidate lands 6e-13 off its own exact samples, over the
-    1000x chop margin, so an honest high-degree fit was being rejected
-    (measured on T544 once the off-grid sets started catching it)."""
+    """Check the candidate against fresh samples off the fit grid: a
+    gross-error detector (an aliased fit is off by the scale, ~1e15x the chop
+    level; the margin is 1000x). The off-grid sets carry the argument and the
+    2n grid catches ordinary mistakes; sizes follow the fitting resolution n,
+    so they never land on the fitting grid. The second term is Clenshaw's own
+    evaluation floor, which grows with the degree (a degree-544 candidate is
+    6e-13 off its own samples)."""
     allow = max(
         1000.0 * level,
         100.0 * np.finfo(float).eps * cand.size * float(np.sum(np.abs(cand))),

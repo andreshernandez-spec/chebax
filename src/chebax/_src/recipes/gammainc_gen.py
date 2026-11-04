@@ -1,32 +1,13 @@
 """Generator for the gammainc log-tables. Build-time only; mpmath inside.
 
-The regularized incomplete gamma pair P(a, x) = gamma(a, x)/Gamma(a),
-Q = 1 - P, for a in [0.1, 10], x in [0, inf). Two regions, both tabulating
-a logarithm so the singular parts live in exactly-computed prefactors
-(the besselk move):
-
-- Inner, x in [0, XS]:
-      L(a, x) = ln 1F1(1; a+1; x)
-  DLMF 8.5.1: P = exp(a ln x - x - lnGamma(a+1) + L). 1F1(1; a+1; x) is
-  entire in x and >= 1 (all series terms positive), so L is analytic and
-  O(x); the x^a branch point and the full dynamic range of P sit in the
-  prefactor. Measured worst tails (experiments/03): degree 23 in x. The
-  a-direction is the hard axis, degree 53, worst at the x -> 0 edge where
-  L ~ x/(a+1): the pole at a = -1 sits 1.1 from the domain edge and sets
-  the Bernstein ellipse. No a-panels needed (nothing cancels; the betainc
-  a-axis is the same shape).
-
-- Tail, x >= XS, t = XS/x:
-      T(a, t) = ln[ Gamma(a, x) x^(1-a) e^x ]
-  Q = exp((a-1) ln x - x - lnGamma(a) + T). T -> 0 as t -> 0 (the
-  asymptotic series is divergent, so t = 0 is a C-infinity endpoint
-  singularity, same as besselk's tail; Chebyshev still converges past
-  1e-15 by degree 20). T(1, t) = 0 identically (Gamma(1, x) = e^-x), a
-  built-in sanity row. Measured worst tails: degree 20 in t, 20 in a.
-
-Q comes out at relative accuracy for x >= XS and P at relative accuracy
-below the transition; each is 1-minus-the-other on its far side, which is
-where it is ~1 anyway. Both fit stages stay in mpmath (the M1 floor rule).
+P(a, x) and Q = 1 - P for a in [0.1, 10], as logarithms with the singular
+parts in exact prefactors. Inner, x in [0, XS]: L(a, x) = ln 1F1(1; a+1; x),
+P = exp(a ln x - x - lnGamma(a+1) + L); degree 23 in x and 53 in a, the pole
+at a = -1 setting the a-axis (experiments/03). Tail, x >= XS, t = XS/x:
+T(a, t) = ln[Gamma(a, x) x^(1-a) e^x], Q = exp((a-1) ln x - x - lnGamma(a)
++ T); t = 0 is a C-infinity endpoint (the asymptotic series diverges),
+degree 20 in t and in a, and T(1, t) = 0 is a built-in check. Each side is
+1 minus the other beyond its own zone. Both stages stay in mpmath.
 Regenerate with:
 
     python -m chebax._src.recipes.gammainc_gen

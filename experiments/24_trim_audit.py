@@ -10,6 +10,7 @@ t the argument mapped to [-1, 1], at parameters p is bounded by
 
     value:         sum_{k >= n} |c_k(p)|
     d/dt:          sum_{k >= n} k^2 |c_k(p)|       (|T_k'| <= k^2 on [-1, 1])
+    d2/dt2:        sum_{k >= n} k^2 (k^2 - 1)/3 |c_k(p)|   (|T_k''| <= that)
     d/dp (unit):   sum_{k >= n} |dc_k/dp|,        p mapped to [-1, 1]
 
 Each bound is taken at its worst over a grid of parameters covering the box,
@@ -26,8 +27,10 @@ WHAT IT MEANS
 A trim that passes the value bound alone can wreck the x-derivative: cutting
 gammainc's inner table 32 -> 26 left values at their floor and took dP/dx from
 6.5e-13 to 2.6e-11 (found preparing PR #47, 2026-11-03). The d/dt column is
-the cut a trim may actually take, and d/dp applies where a test measures the
-parameter gradient (the _dnu functions, betainc's dI/da, stdtr's d/dnu). The
+the cut a trim may actually take; d/dp applies where a test measures the
+parameter gradient (the _dnu functions, betainc's dI/da, stdtr's d/dnu), and
+d2/dt2 where a runtime differentiates a table twice in its argument (besseli
+and besselk's integer-order _dnu). The
 earlier value-only trims (stdtr B 68 -> 20, besseli 72 -> 57, vonmises
 112 -> 93, besselk inner-lo 80 -> 61, measured 2026-10-31) are superseded by
 the d/dt and d/dp columns here.
@@ -112,15 +115,20 @@ def audit(name, table, panels=False):
         table = table.T  # worst panel, no collapse
     n = table.shape[0]
     k = np.arange(n, dtype=float)
+    w1, w2 = k * k, k * k * (k * k - 1.0) / 3.0
     if table.ndim == 1 or panels:
         coefs = table.reshape(n, -1)
-        bounds = {"value": tails(coefs, np.ones(n)), "d/dt": tails(coefs, k * k)}
     else:
         grids = [
             unit_grid(129 if table.ndim == 2 else 33) for _ in range(table.ndim - 1)
         ]
         coefs = collapse(table, grids)
-        bounds = {"value": tails(coefs, np.ones(n)), "d/dt": tails(coefs, k * k)}
+    bounds = {
+        "value": tails(coefs, np.ones(n)),
+        "d/dt": tails(coefs, w1),
+        "d2/dt2": tails(coefs, w2),
+    }
+    if table.ndim > 1 and not panels:
         for ax in range(1, table.ndim):
             d = collapse(table, grids, der_axis=ax)
             bounds[f"d/dp{ax}"] = tails(d, np.ones(n))

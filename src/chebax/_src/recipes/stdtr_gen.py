@@ -7,9 +7,9 @@ L(1/2, b, x) and B = L(b, 1/2, x), extend Student-t to b in [0.1, 100] at
 (experiments/11). Each has two raw-b panels split at 10 (worst tails,
 experiments/03: A x 18/53, b 21/35; B x 18/18, a 53/45). Every table is
 fitted on NX x-nodes; orientation B keeps NX_B x-coefficients, since its
-dropped tail is under 1e-15 in the value and the x-derivative over both
-panels (experiments/24: value 19, d/dt 22, d/db 18; orientation A's hi
-panel needs all 68). The runtime's panel select works elementwise, so the
+dropped tail is under 1e-15 in the value, the x-derivatives to second
+order and d/db over both panels (experiments/24: value 19, d/dt 22,
+d2/dt2 25, d/db 18; orientation A's hi panel needs all 68). The runtime's panel select works elementwise, so the
 two tables of an orientation share a length.
 Regenerate with:
 
@@ -29,7 +29,7 @@ from chebax._src.recipes._gen_common import (
 XSPLIT_T = 0.5
 BLO, BSPLIT, BHI = 0.1, 10.0, 100.0
 NX = 68  # x-nodes, shared (worst measured tail 53, orientation A hi)
-NX_B = 22  # x-coefficients kept for orientation B (measured tail 18)
+NX_B = 25  # x-coefficients kept for orientation B (measured tail 18)
 NB_A_LO = 28  # b-nodes per panel (worst measured: 21)
 NB_A_HI = 44  # (35)
 NB_B_LO = 66  # (53)

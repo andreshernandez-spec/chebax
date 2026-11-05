@@ -1224,3 +1224,43 @@ so the series work per element goes from 136 to 93 Clenshaw steps.
 experiments/06, GPU, N = 2^24: stdtr 87.4 -> 71.5 ms in float64 and
 88.6 -> 72.0 in float32 (1.22-1.23x), agreement with jax unchanged. The
 test bars hold at their measured worst cases.
+
+## 42. betainc gradients computed inside the panel switch (2026-11-05)
+
+Reverse mode through betainc's four-panel lax.switch cost 231 ms per
+differentiated parameter on the GPU whenever a, b <= 10, at any N (1024
+points or 2^20), and 1-9 ms on the other panels; betaincinv's rule paid
+it through betainc. It is the switch under transposition, not its
+content: two identical a, b <= 10 branches cost the same, the branch
+alone 8 ms at N = 2^20, jax.checkpoint on the branches changes nothing,
+reductions inside a conditional run at full speed. The transposed
+program is 6x the size of the branch's; the cause was traced no further.
+
+betainc_scalar and log_betainc_scalar are now custom_jvp functions whose
+rules compute I and dI/da, dI/db, dI/dx as values inside the switch
+(betainc_kernel.eval_betainc_parts, eval_log_betainc_parts: the explicit
+formulas with digamma and the derivative series, the coefficient
+derivatives from the panel tensors' Chebyshev derivatives, cached in
+numpy) and apply the tangents outside, so reverse mode never transposes
+a switch branch. symbolic_zeros traces only the derivatives whose
+tangents are live, and tests check that no compiled gradient holds a
+transposed conditional. The same pattern as the von Mises buckets
+(entry 41). The gradient at a nan input is now nan, not the select's 0,
+as betaincinv's and vonmises's already were.
+
+Per element the explicit form runs three series per orientation where
+the transposed one ran two, so on the panels with b > 10 at N = 2^20 it
+is up to 1.1x slower (13.2 vs 12.2 ms at (30, 70)); one series per
+point (the orientation an element needs) would recover that and is the
+next item.
+
+experiments/29, new over the old path, float64. GPU, N = 2^20:
+betainc_scalar grad a,b 40x and value_and_grad 33x on the a, b <= 10
+panel, 1.7x / 1.5x at (0.3, 50), 0.9x at (30, 70), grad x 1.0-1.1x;
+log_betainc_scalar 44x / 31x, 1.9x / 1.5x, 1.0x; betaincinv grad a,b
+1.6-1.8x on the a, b <= 10 panel (its solve dominates) and 1.0x
+elsewhere. One CPU thread, N = 2^16: betainc_scalar grad x 1.4-2.1x,
+grad a,b 1.7-1.9x, value_and_grad 1.6-1.8x; log_betainc_scalar
+1.0-1.8x / 1.8-2.0x / 1.5-1.7x; betaincinv 1.0x. Values 1.0x on both.
+New and old agree to rounding (1e-16 to 1e-13 relative; the only wider
+gaps are the reflected branch's documented ill-conditioned lanes).

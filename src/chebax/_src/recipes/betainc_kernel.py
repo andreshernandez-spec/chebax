@@ -25,6 +25,100 @@ def log_direct(a, b, x, lser):
     return a * jnp.log(x) + b * jnp.log1p(-x) - jnp.log(a) - ln_beta(a, b) + lser(x)
 
 
+def _log_direct_parts(a, b, x, lser, lser_1, lser_2, need):
+    """log_direct and its derivatives in the first parameter, the second and
+    x, as values (None where need says no); lser_1, lser_2 hold the
+    coefficients' derivatives in those parameters."""
+    psi = jax.scipy.special.digamma
+    n1, n2, nx = need
+    psi_ab = psi(a + b) if n1 or n2 else None
+    L = log_direct(a, b, x, lser)
+    L1 = jnp.log(x) - 1.0 / a - psi(a) + psi_ab + lser_1(x) if n1 else None
+    L2 = jnp.log1p(-x) - psi(b) + psi_ab + lser_2(x) if n2 else None
+    Lx = a / x - b / (1.0 - x) + lser.deriv()(x) if nx else None
+    return L, L1, L2, Lx
+
+
+def _split(x):
+    interior = (x > 0.0) & (x < 1.0)
+    xi = jnp.where(interior, x, 0.25)  # masked lanes get a safe dummy
+    lower = xi <= XSPLIT
+    xd = jnp.where(lower, xi, 0.25)
+    yd = jnp.where(lower, 0.25, 1.0 - xi)  # exact for x in [1/2, 1]
+    return lower, xd, yd
+
+
+def _finish(x, a, b, core, lo, hi):
+    out = jnp.where(x <= 0.0, lo, jnp.where(x >= 1.0, hi, core))
+    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
+
+
+def _both_parts(a, b, x, cab, cba, dcab, dcba, need):
+    """The direct and reflected log_direct parts at x's split, each as
+    (value, d/da, d/db, d/dx or d/dy)."""
+    na, nb, nx = need
+    lower, xd, yd = _split(x)
+    direct = _log_direct_parts(a, b, xd, cab, *dcab, (na, nb, nx))
+    R, Rb, Ra, Ry = _log_direct_parts(b, a, yd, cba, *dcba, (nb, na, nx))
+    return lower, direct, (R, Ra, Rb, Ry)
+
+
+def _combine(x, a, b, lower, lo, hi, pieces):
+    """where(lower, direct, reflected) per part, None where the direct piece
+    is None; the value gets the endpoints lo, hi, the derivatives 0."""
+    out = []
+    for i, (d, r) in enumerate(pieces):
+        if d is None:
+            out.append(None)
+            continue
+        v = jnp.where(lower, d, r)
+        out.append(
+            _finish(x, a, b, v, lo, hi) if i == 0 else _finish(x, a, b, v, 0.0, 0.0)
+        )
+    return tuple(out)
+
+
+def _times(u, v):
+    return None if u is None else u * v
+
+
+def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
+    """I_x(a, b) and dI/da, dI/db, dI/dx as values, None where need =
+    (need_a, need_b, need_x) says no. dcab = (d cab/da, d cab/db) and dcba =
+    (d cba/db, d cba/da): each orientation's coefficient derivatives in its
+    own first and second parameter."""
+    x = jnp.asarray(x)
+    lower, (L, La, Lb, Lx), (R, Ra, Rb, Ry) = _both_parts(
+        a, b, x, cab, cba, dcab, dcba, need
+    )
+    d, r = jnp.exp(L), jnp.exp(R)
+    pieces = (
+        (d, 1.0 - r),
+        (_times(La, d), _times(Ra, -r)),
+        (_times(Lb, d), _times(Rb, -r)),
+        (_times(Lx, d), _times(Ry, r)),  # dy/dx = -1
+    )
+    return _combine(x, a, b, lower, 0.0, 1.0, pieces)
+
+
+def eval_log_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
+    """ln I_x(a, b) (betainc._log_eval) and its derivatives as values, like
+    eval_betainc_parts."""
+    x = jnp.asarray(x)
+    lower, (L, La, Lb, Lx), (R, Ra, Rb, Ry) = _both_parts(
+        a, b, x, cab, cba, dcab, dcba, need
+    )
+    r = jnp.exp(R)
+    s = -r / (1.0 - r)  # d log1p(-r) / dR
+    pieces = (
+        (L, jnp.log1p(-r)),
+        (La, _times(Ra, s)),
+        (Lb, _times(Rb, s)),
+        (Lx, _times(Ry, -s)),
+    )
+    return _combine(x, a, b, lower, -jnp.inf, 0.0, pieces)
+
+
 def eval_betainc(a, b, x, cab, cba):
     x = jnp.asarray(x)
     interior = (x > 0.0) & (x < 1.0)

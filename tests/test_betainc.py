@@ -333,3 +333,21 @@ def test_endpoint_derivatives_are_the_density():
     for a, b in ((1.0, 3.0), (2.5, 0.5)):
         assert float(chebax.betainc_scalar(a, b, 0.0)) == 0.0
         assert float(chebax.betainc_scalar(a, b, 1.0)) == 1.0
+
+
+def test_reverse_mode_leaves_the_panel_switch_primal():
+    # reverse mode through the panel switch cost ~120 ms per parameter on the
+    # GPU (experiments/29); the rules compute the derivatives inside it, so the
+    # compiled gradient has no transposed conditional (betaincinv's second one
+    # is the solve's, primal)
+    a, b, x = jnp.asarray(2.5), jnp.asarray(3.5), jnp.linspace(0.1, 0.9, 8)
+    for f in (chebax.betainc_scalar, chebax.log_betainc_scalar, chebax.betaincinv):
+        g = jax.jit(jax.grad(lambda a, b, x: f(a, b, x).sum(), argnums=(0, 1, 2)))
+        conds = [
+            l
+            for l in g.lower(a, b, x).compile().as_text().splitlines()
+            if " conditional(" in l
+        ]
+        assert 1 <= len(conds) <= 2 and not any(
+            "transpose(" in l for l in conds
+        ), f.__name__

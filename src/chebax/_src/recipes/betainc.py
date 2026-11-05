@@ -8,8 +8,10 @@ L = ln 2F1(a+b, 1; a+1; x) from an (x, a, b) tensor; above 1/2 the reflection
 1 - I_{1-x}(b, a), with 1 - x exact. For the upper tail to relative accuracy use
 betainc(b, a, 1 - x). Four tensor panels split at 10 per axis, one lax.switch
 on the scalar parameters; panel edges agree to ~1e-14. Differentiable in a and
-b (jax lacks dI/da, jax#38610) and x. This module owns the tables; the kernel is
-in betainc_kernel.py, shared with betaincinv and stdtr.
+b (jax lacks dI/da, jax#38610) and x: the custom_jvp rules compute the
+derivatives as values inside the switch, since reverse mode through it costs
+~120 ms per parameter on the GPU (experiments/29). This module owns the
+tables; the kernel is in betainc_kernel.py, shared with betaincinv and stdtr.
 """
 
 import functools
@@ -30,8 +32,14 @@ from chebax._src.recipes._common import (
     deprecated_factory,
     edge_slope,
 )
-from chebax._src.recipes.betainc_kernel import eval_betainc, log_direct
+from chebax._src.recipes.betainc_kernel import (
+    eval_betainc,
+    eval_betainc_parts,
+    eval_log_betainc_parts,
+    log_direct,
+)
 from chebax._src.series import ChebSeries, _chebval
+from jax.custom_derivatives import SymbolicZero
 
 # (a-high?, b-high?) -> (tensor, a-box, b-box); the wide panels are reached
 # only through the runtime switch
@@ -90,10 +98,40 @@ def tensor_coefs_traced(a, b):
     )
 
 
+@functools.lru_cache(maxsize=None)
+def _deriv_tensors(panel):
+    """The panel tensor's Chebyshev derivatives along a and b, in the
+    parameters' own units. numpy, once per panel."""
+    tensor, abox, bbox = _PANELS[panel]
+    der = np.polynomial.chebyshev.chebder
+    return (
+        der(tensor, axis=1) * (2.0 / (abox[1] - abox[0])),
+        der(tensor, axis=2) * (2.0 / (bbox[1] - bbox[0])),
+    )
+
+
+def _coef_parts(panel, a, b, need):
+    """Coefficient vector at (a, b) and, where need says so, its a- and
+    b-derivatives (None otherwise): contractions of the panel's tensor and its
+    derivative tensors, independent of N."""
+    tensor, abox, bbox = _PANELS[panel]
+    contract = lambda t: _tensor_coefs_traced_from(t, abox, bbox, a, b)
+    derivs = _deriv_tensors(panel)
+    return (contract(tensor),) + tuple(
+        contract(d) if n else None for d, n in zip(derivs, need)
+    )
+
+
+def _panel_switch(a, b, branch):
+    idx = (a > _bw.ASPLIT).astype(jnp.int32) * 2 + (b > _bw.ASPLIT).astype(jnp.int32)
+    return jax.lax.switch(idx, [branch(0, 0), branch(0, 1), branch(1, 0), branch(1, 1)])
+
+
 def with_panel_series(a, b, make):
     """make(cab, cba) under one lax.switch on the (a, b) quadrant; each branch
     builds both orientations from their own panels, and make's output shape is
-    panel-independent."""
+    panel-independent. Reverse mode through the switch is slow (experiments/29):
+    differentiate through with_panel_parts instead."""
 
     def branch(pa, pb):
         def f():
@@ -109,8 +147,64 @@ def with_panel_series(a, b, make):
 
         return f
 
-    idx = (a > _bw.ASPLIT).astype(jnp.int32) * 2 + (b > _bw.ASPLIT).astype(jnp.int32)
-    return jax.lax.switch(idx, [branch(0, 0), branch(0, 1), branch(1, 0), branch(1, 1)])
+    return _panel_switch(a, b, branch)
+
+
+def with_panel_parts(a, b, need, make):
+    """make(cab, cba, dcab, dcba) under the panel switch: dcab = (d cab/da,
+    d cab/db) and dcba = (d cba/db, d cba/da) as series, None where need =
+    (need_a, need_b) is False. For custom_jvp rules that compute derivatives
+    as values inside the switch and apply the tangents outside: reverse mode
+    then never transposes the switch."""
+
+    def branch(pa, pb):
+        def f():
+            series = lambda c: None if c is None else ChebSeries(c, (0.0, _bt.XSPLIT))
+            c, c1, c2 = _coef_parts((pa, pb), a, b, need)
+            d, d1, d2 = _coef_parts((pb, pa), b, a, need[::-1])
+            return make(
+                series(c), series(d), (series(c1), series(c2)), (series(d1), series(d2))
+            )
+
+        return f
+
+    return _panel_switch(a, b, branch)
+
+
+def _parts_rule(parts_fn, primals, tangents):
+    """custom_jvp rule from parts_fn(a, b, x, ..., need) -> (value, dI/da,
+    dI/db, dI/dx), None for the derivatives whose tangents are symbolic zeros:
+    only the needed ones are traced."""
+    a, b, x = primals
+    need = tuple(type(t) is not SymbolicZero for t in tangents)
+    parts = with_panel_parts(
+        a, b, need[:2], lambda *s: parts_fn(a, b, x, *s, need=need)
+    )
+    out = jnp.zeros_like(parts[0])
+    for v, t in zip(parts[1:], tangents):
+        if v is not None:
+            out = out + v * t
+    return parts[0], out
+
+
+@jax.custom_jvp
+def _betainc_cj(a, b, x):
+    return with_panel_series(a, b, lambda cab, cba: eval_betainc(a, b, x, cab, cba))
+
+
+@functools.partial(_betainc_cj.defjvp, symbolic_zeros=True)
+def _betainc_jvp(primals, tangents):
+    return _parts_rule(eval_betainc_parts, primals, tangents)
+
+
+@jax.custom_jvp
+def _log_betainc_cj(a, b, x):
+    return with_panel_series(a, b, lambda cab, cba: _log_eval(a, b, x, cab, cba))
+
+
+@functools.partial(_log_betainc_cj.defjvp, symbolic_zeros=True)
+def _log_betainc_jvp(primals, tangents):
+    return _parts_rule(eval_log_betainc_parts, primals, tangents)
 
 
 def with_edge_slopes(a, b, x, out):
@@ -156,9 +250,7 @@ def betainc_scalar(a, b, x):
     differentiable in all three; two tensor contractions per call."""
     a = canon_param(a, "betainc_scalar", "a")
     b = canon_param(b, "betainc_scalar", "b")
-    x = jnp.asarray(x)
-    out = with_panel_series(a, b, lambda cab, cba: eval_betainc(a, b, x, cab, cba))
-    return with_edge_slopes(a, b, x, out)
+    return with_edge_slopes(a, b, x, _betainc_cj(a, b, jnp.asarray(x)))
 
 
 def log_betainc_scalar(a, b, x):
@@ -168,8 +260,7 @@ def log_betainc_scalar(a, b, x):
     x >= 1 gives 0."""
     a = canon_param(a, "log_betainc_scalar", "a")
     b = canon_param(b, "log_betainc_scalar", "b")
-    x = jnp.asarray(x)
-    return with_panel_series(a, b, lambda cab, cba: _log_eval(a, b, x, cab, cba))
+    return _log_betainc_cj(a, b, jnp.asarray(x))
 
 
 def _log_eval(a, b, x, cab, cba):

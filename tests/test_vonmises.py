@@ -15,7 +15,7 @@ from chebax._src.recipes import vonmises_table as vt
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-KAPPAS = [0.5, 5.0, 20.0, 50.0]
+KAPPAS = [0.5, 2.0, 5.0, 10.0, 20.0, 50.0]  # 2 and 10 are the bucket edges
 TH = np.linspace(-np.pi, np.pi, 15)
 
 
@@ -264,3 +264,44 @@ def test_icdf_x64_off():
         [sys.executable, "-c", code], capture_output=True, text=True, env=env
     )
     assert out.returncode == 0, out.stderr[-1500:]
+
+
+def test_buckets_match_the_full_table():
+    # the dropped tail of a bucket is bounded under 1e-15 in H, dH/dw and
+    # dH/dkappa (experiments/24 on the bucket's range); measured worst 2.2e-16
+    # in F and 3e-18 in dF/dkappa across the edges
+    from chebax._src.recipes import vonmises as vm
+
+    th = jnp.linspace(-np.pi, np.pi, 31)
+    for k in [0.5, 2.0, np.nextafter(2.0, 3.0), 10.0, np.nextafter(10.0, 11.0), 50.0]:
+        full = vm._cdf_cj(k, th, None)
+        assert np.max(np.abs(chebax.vonmises_cdf(k, th) - full)) <= 1e-15, k
+        assert np.max(np.abs(jax.jit(chebax.vonmises_cdf)(k, th) - full)) <= 1e-15, k
+        g = jax.grad(lambda kk: chebax.vonmises_cdf(kk, th).sum())(k)
+        gf = jax.grad(lambda kk: vm._cdf_cj(kk, th, None).sum())(k)
+        assert abs(float(g - gf)) <= 1e-15 * (1 + abs(float(gf))), k
+        q = chebax.vonmises_icdf(k, jnp.array([0.01, 0.3, 0.9]))
+        qf = vm._icdf_cj(k, jnp.array([0.01, 0.3, 0.9]), None)
+        assert np.max(np.abs(q - qf)) <= 1e-14, k
+
+
+def test_bucket_dispatch():
+    from chebax._src.recipes import vonmises as vm
+
+    assert [n for _, n in vm.BUCKETS] == [31, 53, vm._vt.TABLE.shape[0]]
+    # concrete values, and the primal of an eager forward-mode tracer, pick
+    # the bucket in Python; a jit tracer does not
+    assert vm._concrete(jnp.asarray(0.5)) == 0.5
+    seen = []
+    jax.jvp(
+        lambda k: (seen.append(vm._concrete(k)), k)[1],
+        (jnp.asarray(3.0),),
+        (jnp.asarray(1.0),),
+    )
+    jax.jit(lambda k: (seen.append(vm._concrete(k)), k)[1])(4.0)
+    assert seen == [3.0, None]
+    # under jit a constant kappa's switch folds away; a traced one stays
+    th = jnp.linspace(-1.0, 1.0, 5)
+    const = jax.jit(lambda t: chebax.vonmises_cdf(0.5, t)).lower(th).compile().as_text()
+    traced = jax.jit(chebax.vonmises_cdf).lower(0.5, th).compile().as_text()
+    assert const.count("conditional(") == 0 and traced.count("conditional(") == 1

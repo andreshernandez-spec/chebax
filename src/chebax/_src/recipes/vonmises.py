@@ -3,10 +3,15 @@
     F(theta; kappa) = 1/2 + theta/(2 pi) + theta H(theta^2; kappa),
 
 H tabulated in (theta^2, sqrt(kappa)), so oddness and the theta = 0 gradient
-are exact. kappa is a traced scalar (unchecked under trace). F is accurate
-absolutely, not relatively, so the quantile returns nan below
+are exact. kappa is a traced scalar (unchecked under trace); its bucket sets
+how many w-coefficients run (BUCKETS), picked in Python when kappa is
+concrete (eager calls and their gradients) and by lax.switch otherwise,
+which XLA folds for a constant under jit; a vmapped kappa runs every bucket.
+F is accurate absolutely, not relatively, so the quantile returns nan below
 min(p, 1-p) = 4096 eps. Wrap theta first; mu != 0 is F(theta - mu).
 """
+
+import functools
 
 import jax
 import jax.numpy as jnp
@@ -21,6 +26,11 @@ from chebax._src.series import ChebSeries
 # accepted CDF residual relative to min(p, 1-p)
 _RESID_RTOL = 1e-6
 
+# (kappa upper bound, w-coefficients kept): the cut at which the dropped tail
+# over the bucket is under 1e-15 in H, dH/dw (sum k^2 |c_k|) and dH/dkappa
+# (experiments/24's bounds on r in [0, sqrt(kappa)]); the last is the table
+BUCKETS = ((2.0, 31), (10.0, 53), (_vt.KMAX, _vt.TABLE.shape[0]))
+
 
 def _solver_consts():
     """Newton count, residual floor (4x the measured 2.8 eps f64, 8.5 eps f32)
@@ -29,42 +39,85 @@ def _solver_consts():
     return (32 if eps < 1e-10 else 20), 32.0 * eps, 4096.0 * eps
 
 
-def _h_series(kappa):
+def _h_series(kappa, n=None):
     r = jnp.sqrt(jnp.asarray(kappa))
-    return ChebSeries(traced_coefs(_vt.TABLE, 0.0, _vt.RMAX, r), (0.0, _vt.WMAX))
+    table = _vt.TABLE if n is None else _vt.TABLE[:n]
+    return ChebSeries(traced_coefs(table, 0.0, _vt.RMAX, r), (0.0, _vt.WMAX))
 
 
-def _cdf_impl(kappa, theta):
-    h = _h_series(kappa)
+def _concrete(x):
+    """x as a float if it is known at trace time, else None. A forward-mode
+    tracer's primal is concrete under an eager gradient (jax 0.11 has no
+    public query), so eager grad, jacfwd and hessian stay on the static path."""
+    while isinstance(x, jax.core.Tracer):
+        x = getattr(x, "primal", None)
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bucketed(core, kappa, *args):
+    """core(kappa, *args, n) on kappa's bucket: picked here for a concrete
+    kappa, by lax.switch for a traced one. Outside the custom_jvp rules, so
+    the bucket is one choice per call."""
+    branches = [functools.partial(core, n=n) for _, n in BUCKETS]
+    edges = [edge for edge, _ in BUCKETS[:-1]]
+    k = _concrete(kappa)
+    if k is not None:
+        return branches[sum(k > edge for edge in edges)](kappa, *args)
+    index = sum(jnp.where(kappa > edge, 1, 0) for edge in edges)
+    return jax.lax.switch(index, branches, kappa, *args)
+
+
+def _cdf_impl(kappa, theta, n):
+    h = _h_series(kappa, n)
     tc = jnp.clip(theta, -jnp.pi, jnp.pi)
     core = 0.5 + tc / (2 * jnp.pi) + tc * h(tc * tc)
     return jnp.where(theta <= -jnp.pi, 0.0, jnp.where(theta >= jnp.pi, 1.0, core))
 
 
-@jax.custom_jvp
+def _cdf_dkappa(kappa, theta, n):
+    """dF/dkappa as a value: the kappa-derivative of the coefficient vector
+    (N-independent) through one series. AD divides by 2 sqrt(kappa), so below
+    1e-8 use sin(theta)/(2 pi) + O(kappa)."""
+    ks = jnp.maximum(kappa, 1e-8)
+    _, dcoef = jax.jvp(lambda k: _h_series(k, n).coef, (ks,), (jnp.ones_like(ks),))
+    tc = jnp.clip(theta, -jnp.pi, jnp.pi)
+    interior = (theta > -jnp.pi) & (theta < jnp.pi)
+    lead = jnp.sin(tc) / (2 * jnp.pi)
+    ad = tc * ChebSeries(dcoef, (0.0, _vt.WMAX))(tc * tc)
+    return jnp.where(interior, jnp.where(kappa < 1e-8, lead, ad), 0.0)
+
+
+@functools.partial(jax.custom_jvp, nondiff_argnums=(2,))
+def _cdf_cj(kappa, theta, n):
+    return _cdf_impl(kappa, theta, n)
+
+
+@_cdf_cj.defjvp
+def _cdf_jvp(n, primals, tangents):
+    k, th = primals
+    dkappa, dtheta = tangents
+    # derivatives as values, tangents only in the two products: reverse mode
+    # then stores two vectors, and jvp-of-impl would run a series per tangent
+    h = _h_series(k, n)
+    tc = jnp.clip(th, -jnp.pi, jnp.pi)
+    w = tc * tc
+    hw = h(w)
+    interior = (th > -jnp.pi) & (th < jnp.pi)
+    core = 0.5 + tc / (2 * jnp.pi) + tc * hw
+    F = jnp.where(th <= -jnp.pi, 0.0, jnp.where(th >= jnp.pi, 1.0, core))
+    dF_dth = jnp.where(interior, 1 / (2 * jnp.pi) + hw + 2 * w * h.deriv()(w), 0.0)
+    dF = dF_dth * dtheta + _cdf_dkappa(k, th, n) * dkappa
+    # scale, not select, so nan survives reverse mode
+    return F, dF * jnp.where(jnp.isnan(F), jnp.nan, 1.0)
+
+
 def _vonmises_cdf_cj(kappa, theta):
     """CDF of vonMises(0, kappa) at theta in [-pi, pi], differentiable in
     both; d/dkappa at kappa = 0 is the exact sin(theta)/(2 pi)."""
-    return _cdf_impl(kappa, theta)
-
-
-@_vonmises_cdf_cj.defjvp
-def _vonmises_cdf_jvp(primals, tangents):
-    k, th = primals
-    dkappa, dtheta = tangents
-    F = _cdf_impl(k, th)
-    _, d_th = jax.jvp(lambda t: _cdf_impl(k, t), (th,), (dtheta,))
-    # AD divides by 2 sqrt(kappa), so below 1e-8 use sin(theta)/(2 pi) + O(kappa)
-    ks = jnp.maximum(k, 1e-8)
-    _, d_k_ad = jax.jvp(lambda kk: _cdf_impl(kk, th), (ks,), (dkappa,))
-    interior = (th > -jnp.pi) & (th < jnp.pi)
-    lead = (
-        jnp.where(interior, jnp.sin(jnp.clip(th, -jnp.pi, jnp.pi)) / (2 * jnp.pi), 0.0)
-        * dkappa
-    )
-    dF = d_th + jnp.where(k < 1e-8, lead, d_k_ad)
-    # scale, not select, so nan survives reverse mode
-    return F, dF * jnp.where(jnp.isnan(F), jnp.nan, 1.0)
+    return _bucketed(_cdf_cj, kappa, theta)
 
 
 def _log_pdf(kappa, theta):
@@ -72,17 +125,11 @@ def _log_pdf(kappa, theta):
     return jnp.asarray(kappa) * jnp.cos(theta) - jnp.log(2 * jnp.pi * i0)
 
 
-@jax.custom_jvp
-def _vonmises_icdf_cj(kappa, p):
-    """Quantile of vonMises(0, kappa). A solve whose CDF residual exceeds
-    max(1e-6 min(p, 1-p), 32 eps) returns nan, and so does min(p, 1-p) below
-    4096 eps (9.1e-13 f64, 4.9e-4 f32), where the error would reach 0.11 at
-    1e-15. Measured worst relative error 1.2e-5 at 1e-11 and 1.0e-4 just above
-    the floor, for kappa in {2, 10, 25, 50}. p = 0, 1 give -pi, pi exactly."""
+def _icdf_impl(kappa, p, n):
     iters, resid_atol, pmin_floor = _solver_consts()
     interior = (p > 0.0) & (p < 1.0)
     pc = jnp.where(interior, p, 0.5)
-    h = _h_series(kappa)
+    h = _h_series(kappa, n)
 
     def f_and_df(th):
         f = 0.5 + th / (2 * jnp.pi) + th * h(th * th) - pc
@@ -111,18 +158,31 @@ def _vonmises_icdf_cj(kappa, p):
     return jnp.where(oob, jnp.nan, th)
 
 
-@_vonmises_icdf_cj.defjvp
-def _vonmises_icdf_jvp(primals, tangents):
+@functools.partial(jax.custom_jvp, nondiff_argnums=(2,))
+def _icdf_cj(kappa, p, n):
+    return _icdf_impl(kappa, p, n)
+
+
+@_icdf_cj.defjvp
+def _icdf_jvp(n, primals, tangents):
     kappa, p = primals
     dkappa, dp = tangents
-    th = vonmises_icdf(kappa, p)
+    th = _icdf_impl(kappa, p, n)
     interior = (th > -jnp.pi) & (th < jnp.pi)
     ths = jnp.where(interior, th, 0.0)
     pdf = jnp.exp(_log_pdf(kappa, ths))
-    _, d_cdf = jax.jvp(lambda k: vonmises_cdf(k, ths), (kappa,), (dkappa,))
-    dth = (dp - d_cdf) / pdf
+    dth = (dp - _cdf_dkappa(kappa, ths, n) * dkappa) / pdf
     # scale, not select: zero at the endpoints, nan for a rejected solve
     return th, dth * jnp.where(interior, 1.0, jnp.where(jnp.isnan(th), jnp.nan, 0.0))
+
+
+def _vonmises_icdf_cj(kappa, p):
+    """Quantile of vonMises(0, kappa). A solve whose CDF residual exceeds
+    max(1e-6 min(p, 1-p), 32 eps) returns nan, and so does min(p, 1-p) below
+    4096 eps (9.1e-13 f64, 4.9e-4 f32), where the error would reach 0.11 at
+    1e-15. Measured worst relative error 1.2e-5 at 1e-11 and 1.0e-4 just above
+    the floor, for kappa in {2, 10, 25, 50}. p = 0, 1 give -pi, pi exactly."""
+    return _bucketed(_icdf_cj, kappa, p)
 
 
 # rules on the private names, so kappa is a float scalar before any tangent

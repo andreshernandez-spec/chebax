@@ -1224,3 +1224,33 @@ so the series work per element goes from 136 to 93 Clenshaw steps.
 experiments/06, GPU, N = 2^24: stdtr 87.4 -> 71.5 ms in float64 and
 88.6 -> 72.0 in float32 (1.22-1.23x), agreement with jax unchanged. The
 test bars hold at their measured worst cases.
+
+## 41. von Mises runs on kappa buckets of the table (2026-11-05)
+
+The von Mises table holds 112 w-coefficients because kappa = 50 needs
+them. At kappa <= 2 the dropped tail is under 1e-15 from 31 coefficients
+on, at kappa <= 10 from 53 (experiments/24's bounds on H, dH/dw and
+dH/dkappa over the bucket). The runtime now picks the bucket per call:
+in Python when kappa is concrete (eager calls and their gradients, where
+a forward-mode tracer's primal is read), by lax.switch otherwise, which
+XLA folds for a constant under jit. kappa > 10 runs the full table, and
+a vmapped kappa runs every bucket.
+
+The custom JVP rules compute dF/dtheta and dF/dkappa as values (the
+derivative series, and the kappa-derivative of the coefficient vector,
+which does not scale with N) and multiply by the tangents. Before, they
+ran jax.jvp over the implementation once per tangent, which under reverse
+mode left JAX residuals to join across the switch branches: on one CPU
+thread the switch cost a third of the kappa > 10 gradient. With the new
+rules the switch costs nothing on gradients, and the full-table gradient
+is faster on its own: cdf value_and_grad 34.9 -> 32.2 ms on the GPU
+(N = 2^22) and 48 -> 36 ms on one CPU thread (N = 2^18), by the same
+script before and after the rule change.
+
+experiments/28, bucketed over the full table, float64, kappa <= 2 / <= 10:
+GPU cdf 2.6x / 1.8x, cdf value_and_grad 3.1x / 2.0x, icdf 2.6x / 1.8x,
+icdf value_and_grad 2.6x / 1.8x; one CPU thread cdf 4.8-5.3x / 2.6x,
+cdf value_and_grad 4.2x / 2.3x, icdf 4.1-4.2x / 2.4x. Above 10 the
+switch costs up to 10% on CPU values and nothing elsewhere; a vmapped
+kappa over 8 groups pays 0.58x on the GPU and gains 1.78x on the CPU.
+Bucketed and full agree to 1e-15 (tests).

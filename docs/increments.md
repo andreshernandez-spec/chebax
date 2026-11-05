@@ -1204,3 +1204,23 @@ the two tables 5.7e-14 / 4.8e-16), derivative 5.9e-16 / 7.0e-16 (5.7e-14 /
 1.4e-14), the same on CPU and GPU and on jax 0.5.3. Against the two tables,
 values / gradient take 0.52x / 0.46x the time on one CPU thread and 0.42x /
 0.52x on the GPU (experiments/27).
+
+## 40. stdtr's orientation B tables keep 25 of 68 x-coefficients (2026-11-04)
+
+The four stdtr slice tables were all fitted and stored on 68 x-nodes,
+although experiments/03 measured orientation B's x-tail at 18: the
+runtime selects a panel elementwise on the coefficient vectors, so the
+two tables of an orientation share a length, and 68 was the simplest way
+to give all four one. Only the A pair needs it (its hi panel's tail is
+53). B now keeps 25 rows, the cut at which the dropped tail is under
+1e-15 in the value, the x-derivatives to second order (sums of k^2 |c_k|
+and k^2 (k^2 - 1)/3 |c_k|) and d/db over both panels (experiments/24:
+19, 22, 25 and 18). The fit still runs on 68 nodes, so the kept
+coefficients are unchanged.
+
+Every stdtr call evaluates both orientations' series per element (the
+central and tail branches are selected, and stdtrit's solve uses both),
+so the series work per element goes from 136 to 93 Clenshaw steps.
+experiments/06, GPU, N = 2^24: stdtr 87.4 -> 71.5 ms in float64 and
+88.6 -> 72.0 in float32 (1.22-1.23x), agreement with jax unchanged. The
+test bars hold at their measured worst cases.

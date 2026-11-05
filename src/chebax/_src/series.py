@@ -181,7 +181,9 @@ def _chebval_jvp(domain, primals, tangents):
 def chebval_either(use0, s0, x0, s1, x1):
     """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
     coefficients. Not for AD: reverse mode runs both coefficient cotangents at
-    full length (CPU a-grads 1.6-3x slower), so only undifferentiated solves."""
+    full length (CPU a-grads 1.6-3x slower), so callers keep it out of reverse
+    mode: undifferentiated solves, or custom_jvp rules that evaluate the
+    derivative series through it as values (betainc)."""
 
     def unit(s, x):
         a, b = s.domain

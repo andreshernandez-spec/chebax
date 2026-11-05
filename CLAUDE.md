@@ -42,10 +42,11 @@ from the latest review are in `docs/review-2026-10-26.md`.
   3.9–14.9× vs igamma_grad_a (agreement ≤ 1.7e-14); the recipe column
   itself went 128 → 97 ms below a = 10 and 417–437 → 259–278 ms above
   (1.33× / 1.57–1.61×); betainc race
-  (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
-  f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
-  CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
-  from 2^20 up; per-group crossover (`experiments/07`, f64, vmap over equal
+  (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14,
+  RE-RUN 2026-11-05 with one series per point): f64 152–257× vs jax's betainc
+  on GPU ((a,b)-dependent), f32 25–30×, the 500k CPU case 340×, stdtr 66× f64
+  vs the betainc-composed form (its kernel still runs both orientations),
+  ratio flat in N from 2^22 up; per-group crossover (`experiments/07`, f64, vmap over equal
   groups): reconstruction overhead ≤ 1.07× vs the uniform floor for
   n/group ≥ 16k (betainc, N = 2^24), besselk ≤ 1.08× down to n/group = 1024,
   and vs jax's betainc the per-group path wins every measured cell, worst 7.3×

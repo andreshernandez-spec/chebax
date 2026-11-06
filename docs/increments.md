@@ -1316,17 +1316,31 @@ element in eval_betainc_frozen: bake's emitter folds _chebval's custom_jvp
 into its loop and stages nothing else, and the per-point form would need
 a fold of its own.
 
+Under vmap chebval_either runs both series and selects (a custom_vmap
+rule): with the coefficients batched (pergroup's vmap over groups,
+notebooks/08) XLA's CPU backend never finishes a gradient program that
+selects a per-point coefficient inside the unrolled recurrence, in any
+form tried (select, mask times difference, arithmetic blend; stopped
+after 2 h, the notebook's CI job after 25 min): LLVM's loop vectoriser
+recurses without bound (vputils::onlyFirstLaneUsed, from a gdb stack)
+over the chain of selects. main's two-series form compiles it in 3 s.
+Selecting the whole vector once per point compiles but runs 4-25x slower
+on one CPU core (a materialised (N, n) array read by columns), and a
+per-step gather 4x slower in the gradient.
+The two-series rule compiles the same program in 8 s and leaves the
+unbatched path, and so every number below, as it was.
+
 experiments/30, two series over one, float64. GPU, N = 2^20:
-betainc_scalar values 1.7x on the a, b <= 10 panel (1.4-1.8x on the
+betainc_scalar values 1.8x on the a, b <= 10 panel (1.5-1.9x on the
 others), grad x 1.8x, grad a,b 1.8x, value_and_grad 1.8x; at (30, 70)
 grad a,b is 0.7x and value_and_grad 0.9x (three 76-row per-point
 recurrences in one fused kernel; barriers between them move the cost
-around rather than remove it); log_betainc_scalar 1.2-1.6x, with the same
-(30, 70) cell at 0.8x; betaincinv 1.5-1.7x on every row. One CPU thread,
+around rather than remove it); log_betainc_scalar 0.9-1.7x, with the
+same (30, 70) cell at 0.9x; betaincinv 1.3-1.7x. One CPU thread,
 N = 2^16: betainc_scalar 1.2-1.7x everywhere, log_betainc_scalar
-0.9-1.7x, betaincinv 1.4-1.9x. The 2026-10-31 prototype's "GPU-only
+0.9-1.6x, betaincinv 1.4-1.8x. The 2026-10-31 prototype's "GPU-only
 win" was plain AD through the per-point select; with the derivatives as
 values (entry 42) the CPU wins too. experiments/06 re-run: betainc
-41.6 -> 21.9 ms at N = 2^24 on the GPU in float64 (152-257x jax), 22.9 ->
-12.0 in float32, the 500k CPU row 6.3 -> 2.5 ms; agreement with jax
+41.6 -> 21.6 ms at N = 2^24 on the GPU in float64 (152-260x jax), 22.9 ->
+11.8 in float32, the 500k CPU row 6.3 -> 2.6 ms; agreement with jax
 unchanged; stdtr unchanged.

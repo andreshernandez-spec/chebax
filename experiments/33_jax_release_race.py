@@ -89,7 +89,8 @@ chebax against jax 0.12.0.1, speed:
 - hyp1f1's gradient in (a, b) on the GPU in float32 costs a fixed ~2.6 s
   per call (~5 s under jax 0.12) whatever N: 40 us per element at 2^16,
   2.5 us at 2^20, against 11 ns in float64. Values and the x-gradient are
-  fine. No scatter, while or sort in the program; not traced further.
+  fine. experiments/34 traces it to one fused kernel (the derivative of the
+  coefficient reconstruction) and times the fix.
 
 chebax accuracy:
 - Values: 2e-15 to 4e-13 where jax is 3e-16 to 3e-13. chebax is better
@@ -108,6 +109,12 @@ chebax accuracy:
 - hyp1f1's parameter gradients: ~1e-15 inside the box, up to 1.4e-10 in
   d ln M / db at the a, b = 0.1 corner (test_hyp1f1.py records 2.9e-15
   on its own points).
+- hyp1f1's float32 derivatives are inf at three (a, b, x) points, the nan
+  counts in the report. At (0.1, 2.5, 100) and (2.5, 0.1, 75) the
+  derivative is past float32's max or within 5% of it. At (10, 5, 75)
+  M = 1.0e38 and its derivatives (1.1-3.0e38) fit, but reverse mode
+  overflows in its terms: ln x times M is 4.4e38 before -psi(a) times M
+  brings the sum back. Forward mode and log_hyp1f1 are finite there.
 - gammaincc with one a is only absolutely accurate below x = 8: 3.5e-11
   relative at Q ~ 1e-5 (float32 8e-2); gammaincc_array keeps 7.6e-14.
 - besselj, bessely, spherical_jn and spherical_yn: a first call inside

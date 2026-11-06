@@ -12,11 +12,15 @@ chebax gammainc recipe (fixed-degree polynomials, reconstructed once per
 call), with jax's gammainc kept as the out-of-box fallback behind one
 lax.cond. Since 2026-08-01 a > 10 has a recipe residual too, the
 Temme-zone tables ("large" below), so the fallback only serves a < 0.1.
-This script times the paths through the same solver
-(_gammaincinv_solve with the static mode), same arrays, GPU,
-device-resident, interleaved reps, medians, f64, N = 2^20 (the betainc
-race's size sweep showed ratios flat in N from 2^20 up), and checks the
-two paths agree on the returned quantile.
+This script times the paths as _gammaincinv_solve runs them with the
+static mode, same arrays, GPU, device-resident, interleaved reps, medians,
+f64, N = 2^20 (the betainc race's size sweep showed ratios flat in N from
+2^20 up), and checks the two paths agree on the returned quantile. Since
+increment 45 the recipe modes start from the quantile table and take two
+Newton steps, while the jax mode keeps the 40-step solve (the table does
+not cover a < 0.1), so the columns are the two end-to-end paths, no longer
+one solver with two residuals; experiments/32 races the solves on one
+residual.
 
 WHAT IT DOES NOT MEASURE
 ------------------------
@@ -61,8 +65,8 @@ def main():
     from chebax._src.recipes.gammaincinv_scalar import _gammaincinv_solve
 
     dev = jax.devices()[0]
-    print(f"jax {jax.__version__} on {dev}, N = {N}, reps = {REPS} (medians), "
-          f"40 Newton iterations per solve")
+    print(f"jax {jax.__version__} on {dev}, N = {N}, reps = {REPS} (medians); "
+          f"jax residual: 40 Newton iterations, recipe: table start + 2")
     rng = np.random.default_rng(0)
 
     hdr = (f"{'case':26s} {'jax-resid':>10s} {'recipe':>9s} {'ratio':>6s}"
@@ -130,10 +134,11 @@ def main():
         print(f"a={a:5}, x~Gamma(a)         {t['jx'] * 1e3:11.2f}ms {t['cb'] * 1e3:7.2f}ms "
               f"{t['jx'] / t['cb']:5.1f}x  {agree:.1e}")
 
-    print("\nBoth columns run the SAME solver; only the residual CDF differs."
-          "\nchebax.gammaincinv_scalar end-to-end takes the recipe column for every"
-          "\na >= 0.1 (one lax.cond, small tables to 10 and the Temme zone"
-          "\nabove) and the jax column below that.")
+    print("\nThe jax column is the kernel's 40-step solve on jax's gammainc; the"
+          "\nrecipe column starts from the quantile table and takes two Newton"
+          "\nsteps on the chebax tables (increment 45). chebax.gammaincinv_scalar"
+          "\nend-to-end takes the recipe column for every a >= 0.1 (one lax.cond,"
+          "\nsmall tables to 10 and the Temme zone above) and the jax column below.")
 
 
 if __name__ == "__main__":

@@ -1412,3 +1412,38 @@ totals (the one-step column). test_gammaincinv_array's grid, gradients
 before; the table is regenerable bit for bit (test_table_regenerates_
 bit_for_bit, slow). The scalar path still runs the 40-step solve on the
 uniform tables; a start from this table there is the next step.
+
+## 45. The one-a Gamma quantile starts from the quantile table too (2026-11-06)
+
+gammaincinv_scalar and gammainccinv_scalar ran the kernel's full solve on
+the uniform tables' ln P and ln Q: the asymptotic start, 40 safeguarded
+Newton steps (24 in float32) and the three-point residual check, 44
+residual evaluations per call, each a full series of the a <= 10 tables
+or the Temme zone. Entry 44's table of the quantile takes one traceable a
+as well as one per element, so the start moved into its own module,
+gammaincinv_start (one patch, 1e-8 in x, a >= 0.1 to inf), shared by both
+paths, and the loop it feeds into the kernel as table_solve: the steps in
+t = ln(x/a), the last one's residual (the previous one's result) being the
+check inside the bar or a step below rounding in t, with solve's seam rule
+(judge on the side the tables compute directly) and its small flag (no
+near-mode handling below a = 10). The array path's _solve is a call to it.
+The scalar path uses it inside the tables, two steps in both dtypes; a <
+0.1 (jax's gammainc) keeps the full solve, and a > 1e10 (Temme's
+variable, 8 steps on an O(1) function) is unchanged, as are the
+derivatives (implicit function theorem; dP/da from the tables). The patch
+locate and Chebyshev basis helpers moved from gammainc_array to _common,
+so the start module loads only the quantile table.
+
+experiments/32, against the old solve rebuilt from the same residual.
+Round trip at 40 dps on 303 points, a in [0.1, 1e9], both tails: 9.5e-12
+shipped, 1.5e-11 old, both at a = 1e9 where one float step of x moves
+the tail by that much; medians 4e-15. ms per call, shipped / old,
+float64: one CPU core at N = 2^14 12.5-14.3 / 69-159 (5.5-11x), GPU at
+N = 2^20 14-24 / 94-278 (6.8-12x); float32 CPU 3.2-3.8 / 18-41 (5-12x),
+GPU 1.1-1.7 / 2.9-5.5 (2-3x); the a > 10 rows gain most, the Temme
+zone's series being the longer residual. experiments/09 re-run (its
+recipe column is this path now): 14 ms against jax's residual at
+1290-4640 (91-326x) below a = 10, 21-22 against 2030-5730 (94-259x)
+above, the dP/da rows unchanged. test_quantiles passes unchanged;
+test_matches_the_scalar_path's bar is 5e-13 from a measured 1.4e-13 at
+a = 0.3 below the small tables' seam, where the scalar side's Q is 1 - P.

@@ -5,6 +5,10 @@ there is 4 sqrt(eps e / (x + 1/e)). Gradients are the implicit identity,
 checked against mp.diff. Measured worst: 8.6e-16 (k=0), 6.4e-16 (k=-1),
 1.6e-16 for k=0 from 1e299 to max float."""
 
+import os
+import subprocess
+import sys
+
 import jax
 import numpy as np
 import pytest
@@ -69,6 +73,39 @@ def test_branch_m1():
         ]
     )
     _check(xs, -1)
+
+
+def test_branch_m1_near_zero():
+    # Halley on w e^w - x failed from -x ~ 1e-301 down: -706.9 for -711.2 at
+    # x = -1e-306 (review, 2026-11-06); there k = -1 iterates on
+    # w + ln(-w) - ln(-x). Subnormal x reads as 0 on XLA's CPU
+    xs = np.array([-1e-296, -1e-298, -1e-301, -1e-304, -1e-306, -1e-307, -2.3e-308])
+    _check(xs, -1)
+
+
+def test_float32_ends():
+    # 1e300 as a float32 is inf, so k = 0 never took the log residual there
+    # and was 93 ulps off at max float32; k = -1 near 0 as in float64
+    code = (
+        "import numpy as np, jax, jax.numpy as jnp, mpmath as mp, chebax\n"
+        "mp.mp.dps = 40\n"
+        "assert jnp.empty(()).dtype == jnp.float32\n"
+        "f32 = np.finfo(np.float32)\n"
+        "for x, k in [(f32.max, 0), (np.nextafter(f32.max, 0), 0), (1e35, 0),\n"
+        "             (1e31, 0), (1e29, 0), (-1e-28, -1), (-1e-32, -1), (-1e-36, -1),\n"
+        "             (-1.2e-38, -1)]:\n"
+        "    x = np.float32(x)\n"
+        "    got = float(jax.jit(lambda t: chebax.lambertw(t, k))(jnp.asarray(x)))\n"
+        "    ref = float(mp.lambertw(mp.mpf(float(x)), k).real)\n"
+        "    ulps = abs(got - ref) / float(np.spacing(np.float32(abs(ref))))\n"
+        "    assert ulps <= 4, (float(x), k, got, ref, ulps)\n"
+    )
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    env.pop("JAX_ENABLE_X64", None)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
 
 
 def test_gradients():

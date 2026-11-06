@@ -93,9 +93,11 @@ def test_round_trip(name):
 
 def test_matches_the_scalar_path():
     # the same root of two approximations of the same function: measured
-    # worst 2.9e-14 relative (a = 3, deep lower tail), bar 1.2e-13; from
-    # a = 1e8 up within one float step, and identical from 3e12, where both
-    # land on the float nearest the root
+    # worst 1.4e-13 relative (a = 0.3, y = 1.5e-3, where the scalar path's
+    # Q below the small tables' x = 8 seam is 1 - P and its root trip is
+    # 6.8e-13 against the array path's 3.7e-16), bar 5e-13; from a = 1e8
+    # up within one float step, and identical from 3e12, where both land
+    # on the float nearest the root
     rng = np.random.default_rng(3)
     p = np.concatenate([rng.random(64), 10 ** rng.uniform(-300, -1, 64)])
     shapes = (0.3, 3.0, 30.0, 3000.0, 1e8, 1e10, 3e12, 1e20, 1e30)
@@ -111,7 +113,7 @@ def test_matches_the_scalar_path():
             np.testing.assert_array_equal(row == 0.0, xs == 0.0)
             ok = xs > 0.0
             rel = np.abs(row[ok] - xs[ok]) / xs[ok]
-            assert rel.max() <= 1.2e-13, (name, a, rel.max())
+            assert rel.max() <= 5e-13, (name, a, rel.max())
 
 
 # the start for _root; jitted, so each a is not a fresh compile

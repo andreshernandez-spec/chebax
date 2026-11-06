@@ -25,7 +25,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_array_table as _t
-from chebax._src.recipes._common import edge_slope
+from chebax._src.recipes._common import cheb_basis, edge_slope, locate_patch
 from chebax._src.recipes.erf_family import erfcx
 
 _A0, _B0, _L1, _U1, _L2, _U2, _T = range(len(_t.NAMES))
@@ -43,21 +43,7 @@ def _tables(dtype):
     return np.ascontiguousarray(tab, dt), _t.PCUTS.astype(dt), _t.YCUTS.astype(dt)
 
 
-def _basis(s, n):
-    """T_0(s), ..., T_{n-1}(s) along a new last axis."""
-    b = [jnp.ones_like(s), s]
-    for _ in range(2, n):
-        b.append(2.0 * s * b[-1] - b[-2])
-    return jnp.stack(b[:n], axis=-1)
-
-
-def _locate(val, cuts, n):
-    """Interval index of val in each row of cuts (n intervals, last cut repeated
-    as padding) and val mapped onto [-1, 1] inside it."""
-    k = jnp.clip(jnp.sum(val[..., None] >= cuts[..., 1:], axis=-1), 0, n - 1)
-    lo = jnp.take_along_axis(cuts, k[..., None], axis=-1)[..., 0]
-    hi = jnp.take_along_axis(cuts, k[..., None] + 1, axis=-1)[..., 0]
-    return k, 2.0 * (val - lo) / (hi - lo) - 1.0
+_basis, _locate = cheb_basis, locate_patch
 
 
 def _log1p(x):

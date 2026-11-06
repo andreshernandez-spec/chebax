@@ -132,6 +132,23 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
+def cheb_basis(s, n):
+    """T_0(s), ..., T_{n-1}(s) along a new last axis."""
+    b = [jnp.ones_like(s), s]
+    for _ in range(2, n):
+        b.append(2.0 * s * b[-1] - b[-2])
+    return jnp.stack(b[:n], axis=-1)
+
+
+def locate_patch(val, cuts, n):
+    """Interval index of val in each row of cuts (n intervals, last cut repeated
+    as padding) and val mapped onto [-1, 1] inside it."""
+    k = jnp.clip(jnp.sum(val[..., None] >= cuts[..., 1:], axis=-1), 0, n - 1)
+    lo = jnp.take_along_axis(cuts, k[..., None], axis=-1)[..., 0]
+    hi = jnp.take_along_axis(cuts, k[..., None] + 1, axis=-1)[..., 0]
+    return k, 2.0 * (val - lo) / (hi - lo) - 1.0
+
+
 def newton_bisect(f_and_df, x0, lo0, hi0, iters, snap=None):
     """Fixed-count Newton for increasing f, bracketed in [lo, hi], falling back to
     the midpoint (doubling while hi is inf). The bounds test is inclusive: else a

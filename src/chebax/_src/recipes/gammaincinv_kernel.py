@@ -195,6 +195,64 @@ def solve(
     return x, accepted, below, above
 
 
+def table_solve(
+    a,
+    ltp,
+    ltq,
+    z,
+    upper,
+    log_pq,
+    t0,
+    steps,
+    *,
+    ceiling=False,
+    seam=None,
+    rtol=None,
+    small=False,
+):
+    """solve's contract from a start t0 within ~1e-8 (gammaincinv_start): steps
+    Newton steps in t, the last one's residual, the previous one's result,
+    being the check: inside the bar (rtol, judged as in solve), or the step
+    below rounding in t. With one step or none nothing is judged. Returns
+    (x, accepted, root below the normal floor, root above the ceiling)."""
+    lim = solver_limits(a.dtype.name)
+    eps = jnp.finfo(a.dtype).eps
+    ln_a = jnp.log(a)
+    lo0 = lim.lo - ln_a
+    hi0 = jnp.maximum(lim.v_hi - ln_a, 0.0)
+    bar = lim.rtol if rtol is None else rtol
+
+    def x_at(t):
+        if small:
+            return jnp.exp(t + ln_a)
+        return x_of(a, t)[0]
+
+    t = jnp.clip(t0, lo0, hi0)
+    accepted = jnp.ones(jnp.shape(t), bool)
+    above = jnp.zeros(jnp.shape(t), bool)
+    for k in range(steps):
+        if not small:
+            t = snap_t(a, t)
+        x = x_at(t)
+        lp, lq = log_pq(x)
+        f = jnp.where(upper, ltq - lq, lp - ltp)
+        dt = f / jnp.exp(log_xpdf(a, t, small) - jnp.where(upper, lq, lp))
+        if k > 0:
+            judged = f if seam is None else jnp.where(x > seam, ltq - lq, lp - ltp)
+            accepted = (jnp.abs(jnp.expm1(judged)) <= bar) | (
+                jnp.abs(dt) <= 2.0 * eps * jnp.maximum(1.0, jnp.abs(t))
+            )
+        t = t - dt
+        if ceiling:
+            above = above | (t > hi0)
+        t = jnp.clip(t, lo0, hi0)
+    x = x_at(t if small else snap_t(a, t))
+    # root below the smallest normal x, where P = x^a / Gamma(a + 1) to rounding
+    lp_floor = a * lim.lo - jax.scipy.special.gammaln(a + 1.0)
+    below = ~upper & (lp_floor > ltp)
+    return x, accepted, below, above
+
+
 def finish_inv(p, x, accepted, below, bad_a):
     """gammaincinv's endpoints, 0.0 for underflow and nan for failed solves."""
     x = jnp.where(below, 0.0, jnp.where(accepted, x, jnp.nan))

@@ -128,14 +128,16 @@ def test_names_load_only_their_tables(module):
 # the other path's
 _GAMMA_ARRAY = {"gammainc_array_table", "erf_table"}
 _GAMMA_ARRAY_INV = _GAMMA_ARRAY | {"gammaincinv_array_table"}
+# both quantile paths start from the quantile table (gammaincinv_start)
+_GAMMA_INV = _GAMMA | {"gammaincinv_array_table"}
 _GAMMA_PATHS = {
     "gammainc_scalar(2.5, 3.0)": _GAMMA,
     "gammainc_frozen(2.5)(3.0)": _GAMMA,
     "log_gammaincc(2.5, 3.0)": _GAMMA,
     "gammainc_array([2.5, 30.0], 3.0)": _GAMMA_ARRAY,
     "log_gammaincc([2.5, 30.0], 3.0)": _GAMMA_ARRAY,
-    "gammaincinv_scalar(2.5, 0.3)": _GAMMA,
-    "chi2inv(3.0, 0.3)": _GAMMA,
+    "gammaincinv_scalar(2.5, 0.3)": _GAMMA_INV,
+    "chi2inv(3.0, 0.3)": _GAMMA_INV,
     "gammaincinv_array([2.5, 30.0], 0.3)": _GAMMA_ARRAY_INV,
     "gammainccinv([2.5, 30.0], 0.3)": _GAMMA_ARRAY_INV,
 }
@@ -169,7 +171,7 @@ def test_numpyro_gamma_loads_only_gamma_tables():
         d = TruncatedGamma(3.0, low=1.0, high=6.0, validate_args=True)
         d.log_prob(2.0), d.cdf(2.3), d.icdf(0.3)
     """)
-    assert _tables(mods) == _GAMMA
+    assert _tables(mods) == _GAMMA_INV
 
 
 def test_type_checking_imports_match_the_lazy_map():

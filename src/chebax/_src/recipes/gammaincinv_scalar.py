@@ -21,6 +21,7 @@ import jax.numpy as jnp
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_table as _gt
 from chebax._src.recipes import gammaincinv_kernel as _k
+from chebax._src.recipes import gammaincinv_start as _start
 from chebax._src.recipes._common import (
     canon_tag,
     float_params,
@@ -109,6 +110,9 @@ def _gamma_log_density(a, x):
 
 # From here up the gamma inverses solve in Temme's variable (_huge_solve)
 _A_HUGE = 1e10
+# Newton steps from the quantile table's start inside the tables; the second
+# is the check (gammaincinv_kernel.table_solve)
+_STEPS = 2
 # (lambda - 1)/eta, reverting eta^2/2 = lambda - 1 - ln lambda to eta^5 (next term
 # below 1e-25 for |eta| < 4e-4)
 _LAM_SERIES = (1.0 / 3.0, 1.0 / 36.0, -1.0 / 270.0, 1.0 / 4320.0, 1.0 / 17010.0)
@@ -171,17 +175,11 @@ def _huge_dx(a, da, s, upper, dlog):
     return x_s * (dlog - l_a * da) / l_s + x_a * da
 
 
-def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
-    """gammaincinv_kernel.solve on this box's ln P and ln Q: use_recipe (a python
-    constant) "small" (a <= 10 tables), "large" (Temme zone), "huge"
-    (_huge_solve) or None (jax's gammainc). Returns (x, accepted, below floor,
-    above ceiling)."""
-    lim = solver_limits(canon_tag())
-    if use_recipe == "huge":
-        x, rel, _ = _huge_solve(a, ltp, ltq, z, upper)
-        none = jnp.zeros(x.shape, bool)
-        return x, rel <= lim.rtol, none, (x == jnp.inf) if ceiling else none
-    # the side each log_pq computes directly: P below the seam, Q above
+def _residual(a, use_recipe):
+    """(log_pq, seam, small) for this box: use_recipe (a python constant)
+    "small" (a <= 10 tables), "large" (Temme zone) or None (jax's gammainc).
+    seam is the x above which log_pq computes Q directly (P below); small
+    says the kernel can skip its near-mode handling."""
     if use_recipe == "small":
         lser, ltail = _gi_series(a)
         seam = _gt.XS
@@ -209,15 +207,44 @@ def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
             jnp.log(jax.scipy.special.gammaincc(a, x)),
         )
 
-    small = use_recipe != "large"
-    return _k.solve(
+    return log_pq, seam, use_recipe != "large"
+
+
+def _gammainv_core(a, ltp, ltq, z, upper, use_recipe, ceiling=False):
+    """The solve on this box's ln P and ln Q: use_recipe "huge" is
+    _huge_solve; the others (see _residual) start from the quantile table
+    and take _STEPS Newton steps, except jax's gammainc below a = 0.1, which
+    the table does not cover and gets the kernel's full solve. Returns
+    (x, accepted, below floor, above ceiling)."""
+    lim = solver_limits(canon_tag())
+    if use_recipe == "huge":
+        x, rel, _ = _huge_solve(a, ltp, ltq, z, upper)
+        none = jnp.zeros(x.shape, bool)
+        return x, rel <= lim.rtol, none, (x == jnp.inf) if ceiling else none
+    log_pq, seam, small = _residual(a, use_recipe)
+    if use_recipe is None:
+        return _k.solve(
+            a,
+            ltp,
+            ltq,
+            z,
+            upper,
+            log_pq,
+            lim.n_gamma,
+            ceiling=ceiling,
+            seam=seam,
+            small=small,
+        )
+    t0 = _start.start(a, ltp, ltq, z, upper)
+    return _k.table_solve(
         a,
         ltp,
         ltq,
         z,
         upper,
         log_pq,
-        lim.n_gamma,
+        t0,
+        _STEPS,
         ceiling=ceiling,
         seam=seam,
         small=small,

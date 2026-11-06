@@ -13,7 +13,6 @@ floor(v) sets the recurrence depth, so the order cannot be traced (use besselj,
 besselk or besseli for traced orders).
 """
 
-import functools
 import math
 
 import jax
@@ -26,6 +25,7 @@ from chebax._src.recipes._common import (
     canon_tag,
     check_range,
     deprecated_factory,
+    frozen_cache,
     param_coefs,
     param_coefs_der,
 )
@@ -157,13 +157,13 @@ def _base_series(v):
     )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _bessely_cached(v, _tag):
     v = check_range("bessely", "v", v, 0.0, _yt.VMAX)
     return BesselY(v, *_base_series(v))
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _bessely_dnu_cached(v, _tag):
     v = check_range("bessely", "v", v, 0.0, _yt.VMAX)
     n, mu = _split_order(v)

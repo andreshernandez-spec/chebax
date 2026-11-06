@@ -31,6 +31,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     digamma64,
+    frozen_cache,
     param_coefs,
     param_coefs_der,
     traced_coefs,
@@ -222,7 +223,7 @@ class BesselIdnu(Recipe):
         return out
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besseli_cached(v, scaled, _tag):
     v = check_range("besseli", "v", v, 0.0, _it.VMAX)
     return BesselI(
@@ -241,7 +242,7 @@ def _d2_series(v):
     )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besseli_dnu_cached(v, scaled, _tag):
     v = check_range("besseli", "v", v, 0.0, _it.VMAX)
     lh2a, lt2a = _d2_series(_G_LO * v)

@@ -30,6 +30,7 @@ from chebax._src.recipes._common import (
     frozen_cache,
     param_coefs,
     param_coefs_der,
+    positional_domain,
 )
 from chebax._src.series import ChebSeries
 
@@ -209,9 +210,11 @@ def _besselj_cached(v, domain, _tag):
 
 
 def besselj(v, x=None, domain=None):
-    """J_v(x) for a concrete v in [0, 10], not traceable. Without x it is the
+    """J_v(x) for a concrete v in [0, 10], not traceable. Without x, or with a
+    tuple (lo, hi) in its place (the 0.4 positional domain), it is the
     deprecated 0.4 factory."""
-    if x is None:
+    if x is None or positional_domain(x, domain):
+        domain = domain if x is None else x
         return deprecated_factory("besselj", besselj_frozen, v, domain=domain)
     return besselj_frozen(v, domain)(x)
 
@@ -242,9 +245,10 @@ def _besselj_dnu_cached(v, domain, _tag):
 
 
 def besselj_dnu(v, x=None, domain=None):
-    """dJ_v/dv at x for a concrete v. Without x it is the deprecated 0.4
-    factory."""
-    if x is None:
+    """dJ_v/dv at x for a concrete v. Without x, or with a tuple (lo, hi) in
+    its place (the 0.4 positional domain), it is the deprecated 0.4 factory."""
+    if x is None or positional_domain(x, domain):
+        domain = domain if x is None else x
         return deprecated_factory("besselj_dnu", besselj_dnu_frozen, v, domain=domain)
     return besselj_dnu_frozen(v, domain)(x)
 

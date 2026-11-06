@@ -161,6 +161,37 @@ def test_positional_scaled_is_the_old_factory():
     assert old is chebax.besseli_frozen(1.5, scaled=True)
 
 
+@pytest.mark.parametrize("name", ["besselk", "besseli"])
+def test_v_keyword_is_the_old_spelling_of_nu(name):
+    f = getattr(chebax, name)
+    with pytest.warns(DeprecationWarning, match="nu="):
+        old = f(v=1.5)
+    assert old is getattr(chebax, name + "_frozen")(1.5)
+    with pytest.warns(DeprecationWarning, match="nu="):
+        got = f(v=1.5, x=X)
+    np.testing.assert_array_equal(got, f(nu=1.5, x=X))
+    with pytest.raises(TypeError, match="twice"):
+        f(1.5, X, v=1.5)
+
+
+@pytest.mark.parametrize("name", ["besselj", "besselj_dnu"])
+def test_positional_domain_is_the_old_factory(name):
+    # besselj(v, (lo, hi)) had the domain second, before x existed
+    with pytest.warns(DeprecationWarning, match=f"{name}_frozen"):
+        old = getattr(chebax, name)(2.5, (0.0, 8.0))
+    assert old is getattr(chebax, name + "_frozen")(2.5, domain=(0.0, 8.0))
+
+
+@pytest.mark.parametrize(
+    "name", ["gammainc", "gammaincc", "gammaincinv", "gammainccinv", "log_gammainc"]
+)
+def test_empty_parameter_arrays_take_the_array_path(name):
+    empty = jnp.zeros((0,))
+    got = getattr(chebax, name)(empty, empty)
+    assert got.shape == (0,)
+    assert got.shape == getattr(chebax, name + "_array")(empty, empty).shape
+
+
 def test_new_names_do_not_warn():
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)

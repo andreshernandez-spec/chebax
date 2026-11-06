@@ -34,6 +34,7 @@ from chebax._src.recipes._common import (
     frozen_cache,
     param_coefs,
     param_coefs_der,
+    renamed_order,
     traced_coefs,
 )
 from chebax._src.recipes.besselk import besselk_frozen, besselk_scalar
@@ -331,10 +332,11 @@ def besseli_scalar(nu, x, scaled=False):
     )
 
 
-def besseli(nu, x=None, scaled=False):
+def besseli(nu=None, x=None, scaled=False, *, v=None):
     """I_nu(x) for one order nu in [0, 10] (besseli_scalar). Without x, or with
-    a bool for x, it is the deprecated 0.4 factory. chebax.pergroup gives one order
-    per group."""
+    a bool for x, it is the deprecated 0.4 factory, and v= the 0.4 spelling of
+    nu. chebax.pergroup gives one order per group."""
+    nu = renamed_order("besseli", nu, v)
     if x is None or isinstance(x, bool):
         scaled = scaled if x is None else x
         return deprecated_factory("besseli", besseli_frozen, nu, scaled=scaled)

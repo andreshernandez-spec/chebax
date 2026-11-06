@@ -28,6 +28,7 @@ from chebax._src.recipes._common import (
     panel_coefs,
     param_coefs,
     param_coefs_der,
+    renamed_order,
     traced_coefs,
 )
 from chebax._src.series import ChebSeries
@@ -159,9 +160,11 @@ def log_besselk_scalar(nu, x):
     return jnp.where(x <= _kt.XS, inner, tail)
 
 
-def besselk(nu, x=None, scaled=False):
+def besselk(nu=None, x=None, scaled=False, *, v=None):
     """K_nu(x) for one order nu in [0, 10] (besselk_scalar). Without x it is
-    the deprecated 0.4 factory. chebax.pergroup gives one order per group."""
+    the deprecated 0.4 factory, and v= the 0.4 spelling of nu. chebax.pergroup
+    gives one order per group."""
+    nu = renamed_order("besselk", nu, v)
     if x is None:
         return deprecated_factory("besselk", besselk_frozen, nu)
     return besselk_scalar(nu, x, scaled)

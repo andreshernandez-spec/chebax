@@ -1344,3 +1344,71 @@ values (entry 42) the CPU wins too. experiments/06 re-run: betainc
 41.6 -> 21.6 ms at N = 2^24 on the GPU in float64 (152-260x jax), 22.9 ->
 11.8 in float32, the 500k CPU row 6.3 -> 2.6 ms; agreement with jax
 unchanged; stdtr unchanged.
+
+## 44. The per-element Gamma quantile from a table of the quantile (2026-11-06)
+
+gammaincinv_array and gammainccinv_array ran gammaincinv_kernel's solve
+on gammainc_array's ln P and ln Q: an asymptotic start, 8 Halley steps
+(6 in float32), each one patch evaluation, then the residual on x and its
+two float neighbours, 11-12 patch evaluations per element. The quantile
+is analytic wherever the density is positive, so it is tabulable itself;
+what needed choosing was the coordinates (experiments/25) and whether a
+1e-8 table plus one Newton step reaches the solve's floor (experiments/26,
+the prototype: 5.9e-13 against 3.8e-13, 10.8x on the CPU and 6.5x on the
+GPU at one step). gammaincinv_array_gen now holds that table, and the
+runtime (gammaincinv_array.py) reads one patch and takes two Newton steps
+in float64, none in float32.
+
+Zones, each a correction to a closed form, with the parameter panel in
+u = ln(1 + a) below a = 10, v = 10/a above and w = 1/a for the centre,
+every box ending at a = inf:
+
+- lower, s = (p Gamma(a+1))^(1/a) / (a+1) <= S (0.4 below a = 1, 0.3
+  above): x = (a+1) s (1 + rho), rho(0, a) = 0 by P = x^a/Gamma(a+1)
+  (1 - a x/(a+1) + ...); for large a, s -> lambda e^-lambda, singular
+  only at lambda = 1 (s = 1/e), which S = 0.3 keeps clear of.
+- centre, a >= 1 and eta0 = ndtri(p)/sqrt(a) <= 2.6: Temme's eta = eta0
+  + w eps, the table holding eps = (eta - eta0)/w, O(1) down to w = 0;
+  then ln lambda(eta) as eta g(eta) from a 1-D series (18 terms at
+  1e-12), relatively accurate at eta -> 0. The prototype tabulated eps
+  itself and ln lambda directly, both absolute, which is why it stopped
+  at a = 1000: at a = 1e30 the quantile is a (1 + z/sqrt(a)) and an
+  absolute 1e-8 in t = ln(x/a) is seven orders above the whole deviation.
+- upper, the rest: x_W from x - (a-1) ln x = -ln q - lnGamma(a), the
+  Lambert-W-type leading part (four Newton steps on that elementary
+  equation at run time), tau = (a+1)/x_W to 1.5 / 1 / 0.5 per panel, and
+  x = x_W (1 + delta).
+
+gammainc_array_gen's refinement (now taking its block, tolerance, node
+count and parameter map as arguments; its table regenerated for the
+hash) splits each zone until the coefficients outside the leading 10 x
+10 block sum to under 1e-8: 17 patches, 1,700 coefficients, every
+a-panel one patch to a = inf (lower 1 x 3 each, centre 1 x 1 each, upper
+1 x 3 / 1 x 2 / 1 x 1), 2.5 minutes to generate.
+
+The runtime keeps the kernel's t = ln(x/a) with x = a + a expm1(t) near
+the mode (x_of and snap_t, now module-level in the kernel, so the scalar
+path's solve and this loop share them), the lower floor (P below the
+smallest normal x gives 0) and the ceiling. Acceptance: the second step
+sees the residual the first one left, inside the bar (256 eps |ln
+target|) or with a step below rounding in t; a start the first step does
+not bring inside gives nan, as a stalled solve did. The table start
+itself is not judged, so one step alone (test_one_newton_step_reaches_
+the_floor) and float32 (no step) return the unjudged value. The
+derivatives are unchanged: the implicit function theorem on the same ln
+P and ln Q (_implicit, _closed_root).
+
+experiments/31, against the previous solve rebuilt from the kernel.
+Round trip |F(x)/target - 1| at 40 dps on experiment 26's grid (264
+points, a in [0.1, 1000], both tails to 1e-300): table alone 1.3e-6
+(what float32 ships, under its rounding), one step 3.8e-13, two steps
+3.2e-13, the old solve 3.8e-13. ns per element, shipped / old: float64
+one CPU core at N = 2^14 1001 / 5333 and 1035 / 6080 (5.3-5.9x), GPU at
+N = 2^20 45 / 182 and 44 / 195 (4.0-4.4x); float32 CPU 122 / 2010 and
+120 / 2334 (16-20x), GPU 1.2 / 11.9 and 1.2 / 13.7 (10-12x). The check
+(the second step) costs 300 ns on the CPU and 13 ns on the GPU of those
+totals (the one-step column). test_gammaincinv_array's grid, gradients
+(unchanged floors), float32 child and the lazy-import rules pass as
+before; the table is regenerable bit for bit (test_table_regenerates_
+bit_for_bit, slow). The scalar path still runs the 40-step solve on the
+uniform tables; a start from this table there is the next step.

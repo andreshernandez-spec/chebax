@@ -34,6 +34,8 @@ import os
 import subprocess
 import sys
 
+import pathlib
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -41,6 +43,8 @@ import pytest
 
 import chebax
 from chebax._src.recipes import gammaincinv_array as gia
+from chebax._src.recipes import gammaincinv_array_gen
+from chebax._src.recipes import gammaincinv_array_table as giat
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
@@ -340,20 +344,20 @@ def test_masked_lanes_keep_clean_gradients():
                 assert abs(float(one) / rev[i] - 1) <= 1e-13, (argnum, i)
 
 
-def test_iterations_have_a_margin(monkeypatch):
-    # half the steps land on the same tail probability (_ITERS is twice
-    # the most any of 1e5 random lanes needed; this checks a fresh set).
-    # x itself can differ where it barely moves P: deep in the lower tail
-    # at small a, x ~ p^(1/a). In the probability, measured 8.9e-12 (two
-    # solves inside the acceptance bar, 1.6e-10 wide at |ln p| = 690),
-    # bar 4e-11
+def test_one_newton_step_reaches_the_floor(monkeypatch):
+    # the table start is within 1e-8 in x, so the first Newton step lands
+    # on the same tail probability as the shipped two (the second is the
+    # check). x itself can differ where it barely moves P: deep in the
+    # lower tail at small a, x ~ p^(1/a). In the probability, measured
+    # 8.9e-12 (two results inside the acceptance bar, 1.6e-10 wide at
+    # |ln p| = 690), bar 4e-11
     rng = np.random.default_rng(11)
     a = np.exp(rng.uniform(np.log(0.1), np.log(1e30), 4096))
     p = np.where(
         rng.random(4096) < 0.5, rng.random(4096), 10 ** rng.uniform(-300, 0, 4096)
     )
     full = {k: np.asarray(f(a, p)) for k, f in FUNCS.items()}
-    monkeypatch.setitem(gia._ITERS, "float64", gia._ITERS["float64"] // 2)
+    monkeypatch.setitem(gia._STEPS, "float64", 1)
     for k, f in FUNCS.items():
         # the count is read at trace time, so the cached trace must go
         jax.clear_caches()
@@ -480,3 +484,32 @@ def test_float32_in_a_child(tmp_path):
         worst[key] = float(rel[live].max()) if live.any() else 0.0
     for key, w in worst.items():
         assert w <= (1e-3 if key.endswith("_scalar") else 1.3e-4), worst
+
+
+def test_table_start_is_within_its_tolerance():
+    # the table alone (what float32 ships) against the two-step result:
+    # measured worst 1e-8 relative in x over the float64 grid ... bar ...
+    aa, tt = (v.ravel() for v in np.meshgrid(A, T, indexing="ij"))
+    for name, f in FUNCS.items():
+        full = np.asarray(f(aa, tt))
+        with pytest.MonkeyPatch.context() as m:
+            m.setitem(gia._STEPS, "float64", 0)
+            jax.clear_caches()
+            start = np.asarray(jax.jit(lambda a, t: f(a, t))(aa, tt))
+        jax.clear_caches()
+        live = np.isfinite(full) & (full > 0) & (aa <= 1e4)
+        rel = np.abs(start[live] / full[live] - 1)
+        assert rel.max() <= 1e-7, (
+            name,
+            rel.max(),
+            aa[live][rel.argmax()],
+            tt[live][rel.argmax()],
+        )
+
+
+@pytest.mark.slow
+def test_table_regenerates_bit_for_bit(tmp_path):
+    gammaincinv_array_gen.main(tmp_path)
+    assert (tmp_path / "gammaincinv_array_table.py").read_text() == pathlib.Path(
+        giat.__file__
+    ).read_text()

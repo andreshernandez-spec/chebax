@@ -178,7 +178,9 @@ def _stdtrit_cj(nu, p):
 def _stdtrit_jvp(primals, tangents):
     nu_c, p = primals
     dnu, dp = tangents
-    t = _stdtrit_impl(nu_c, p)
+    # the custom function, not the solve: a second derivative then takes this
+    # rule again instead of differentiating the Newton loop
+    t = _stdtrit_cj(nu_c, p)
     finite = jnp.isfinite(t)
     ts = jnp.where(finite, t, 0.0)
     pdf = jnp.exp(t_logpdf(nu_c, ts))

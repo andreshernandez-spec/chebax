@@ -373,3 +373,57 @@ def test_reverse_mode_leaves_the_panel_switch_primal():
         assert 1 <= len(conds) <= 2 and not any(
             "transpose(" in l for l in conds
         ), f.__name__
+
+
+def test_second_derivatives():
+    # The rules evaluate their derivative series through chebval_either,
+    # which had no AD rule of its own: grad of grad, hessian and jacfwd of
+    # betainc, log_betainc, betaincinv and stdtrit raised (0.4.1 had them).
+    # Closed forms where there are any: f'(x) of the Beta density, and
+    # d2x/dp2 = -f'(x)/f(x)^3 for the quantiles.
+    a, b, x = 2.0, 3.0, 0.2
+    pdf = (
+        x ** (a - 1)
+        * (1 - x) ** (b - 1)
+        / math.exp(math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b))
+    )
+    dpdf = pdf * ((a - 1) / x - (b - 1) / (1 - x))
+    I = float(chebax.betainc(a, b, x))
+    f = lambda x: chebax.betainc(a, b, x)
+    for d2 in (jax.grad(jax.grad(f)), jax.hessian(f), jax.jacfwd(jax.jacrev(f))):
+        assert abs(float(d2(x)) - dpdf) <= 1e-12 * abs(dpdf)
+    lf = jax.grad(jax.grad(lambda x: chebax.log_betainc(a, b, x)))(x)
+    ref = dpdf / I - (pdf / I) ** 2
+    assert abs(float(lf) - ref) <= 1e-12 * abs(ref)
+    got = jax.hessian(lambda p: chebax.betainc(*p, x))(jnp.asarray([a, b]))
+    for i, j, n in ((0, 0, (2, 0)), (0, 1, (1, 1)), (1, 1, (0, 2))):
+        h = float(
+            mp.diff(lambda u, v: mp.betainc(u, v, 0, x, regularized=True), (a, b), n)
+        )
+        assert abs(float(got[i, j]) - h) <= 1e-11 * abs(h), (i, j)
+    p = 0.3
+    xq = float(chebax.betaincinv(a, b, p))
+    fq = (
+        xq ** (a - 1)
+        * (1 - xq) ** (b - 1)
+        / math.exp(math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b))
+    )
+    dfq = fq * ((a - 1) / xq - (b - 1) / (1 - xq))
+    got = float(jax.grad(jax.grad(lambda p: chebax.betaincinv(a, b, p)))(p))
+    assert abs(got + dfq / fq**3) <= 1e-11 * abs(dfq / fq**3)
+    nu = 4.0
+    t = float(chebax.stdtrit(nu, p))
+    ft = math.exp(
+        math.lgamma((nu + 1) / 2)
+        - math.lgamma(nu / 2)
+        - 0.5 * math.log(nu * math.pi)
+        - (nu + 1) / 2 * math.log1p(t * t / nu)
+    )
+    dft = -ft * (nu + 1) * t / (nu + t * t)
+    got = float(jax.grad(jax.grad(lambda p: chebax.stdtrit(nu, p)))(p))
+    assert abs(got + dft / ft**3) <= 1e-11 * abs(dft / ft**3)
+    # vmapped, as pergroup runs it: the coefficients are batched
+    d2 = jax.grad(jax.grad(lambda a, x: chebax.betainc(a, b, x), 1), 1)
+    hv = jax.vmap(d2, (0, None))
+    hv = hv(jnp.asarray([a, a]), x)
+    assert np.all(np.abs(np.asarray(hv) - dpdf) <= 1e-12 * abs(dpdf))

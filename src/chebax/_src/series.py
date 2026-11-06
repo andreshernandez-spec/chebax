@@ -179,15 +179,7 @@ def _chebval_jvp(domain, primals, tangents):
     return y, dy
 
 
-@jax.custom_batching.custom_vmap
-def chebval_either(use0, s0, x0, s1, x1):
-    """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
-    coefficients. Not for AD: reverse mode runs both coefficient cotangents at
-    full length (CPU a-grads 1.6-3x slower), so callers keep it out of reverse
-    mode: undifferentiated solves, or custom_jvp rules that evaluate the
-    derivative series through it as values (betainc). Under vmap it runs both
-    series and selects (see _chebval_either_batched)."""
-
+def _either(use0, s0, x0, s1, x1):
     def unit(s, x):
         a, b = s.domain
         x = jnp.asarray(x, dtype=jnp.result_type(x, s.coef))
@@ -205,7 +197,10 @@ def chebval_either(use0, s0, x0, s1, x1):
     return t * b1 - b2 + jnp.where(use0, c0[0], c1[0])
 
 
-@chebval_either.def_vmap
+_either_vmap = jax.custom_batching.custom_vmap(_either)
+
+
+@_either_vmap.def_vmap
 def _chebval_either_batched(axis_size, in_batched, use0, s0, x0, s1, x1):
     # With the coefficients batched (pergroup's vmap over groups), XLA's CPU
     # compiler never finishes a gradient program that selects a per-point
@@ -214,8 +209,40 @@ def _chebval_either_batched(axis_size, in_batched, use0, s0, x0, s1, x1):
     def both(use0, s0, x0, s1, x1):
         return jnp.where(use0, s0(x0), s1(x1))
 
+    if not any(jax.tree_util.tree_leaves(in_batched)):
+        return _either(use0, s0, x0, s1, x1), False
     in_axes = jax.tree_util.tree_map(lambda b: 0 if b else None, in_batched)
     return jax.vmap(both, in_axes=tuple(in_axes))(use0, s0, x0, s1, x1), True
+
+
+@jax.custom_jvp
+def chebval_either(use0, s0, x0, s1, x1):
+    """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
+    coefficients. Its own reverse mode would run both coefficient cotangents
+    at full length (CPU a-grads 1.6-3x slower), so first-order callers keep it
+    out of reverse mode: undifferentiated solves, or custom_jvp rules that
+    evaluate the derivative series through it as values (betainc). Under vmap
+    it runs both series and selects (see _chebval_either_batched)."""
+    return _either_vmap(use0, s0, x0, s1, x1)
+
+
+@chebval_either.defjvp
+def _chebval_either_jvp(primals, tangents):
+    # Reached only when differentiating those rules again (grad of grad,
+    # hessian). The x part is the derivative series through chebval_either,
+    # the coefficient part plain Clenshaw (linear, so reverse mode can
+    # transpose it; custom_vmap cannot be transposed).
+    use0, s0, x0, s1, x1 = primals
+    _, ds0, dx0, ds1, dx1 = tangents
+    y = chebval_either(use0, s0, x0, s1, x1)
+    dy = chebval_either(use0, s0.deriv(), x0, s1.deriv(), x1) * jnp.where(
+        use0, dx0, dx1
+    ) + jnp.where(
+        use0,
+        _chebval_impl(x0, ds0.coef, s0.domain),
+        _chebval_impl(x1, ds1.coef, s1.domain),
+    )
+    return y, dy
 
 
 @jax.tree_util.register_pytree_node_class

@@ -27,6 +27,7 @@ import jax.numpy as jnp
 from chebax._src.recipes import gammainc_array_table as _t
 from chebax._src.recipes._common import cheb_basis, edge_slope, locate_patch
 from chebax._src.recipes.erf_family import erfcx
+from chebax._src.recipes.gammaincinv_kernel import log_xpdf
 
 _A0, _B0, _L1, _U1, _L2, _U2, _T = range(len(_t.NAMES))
 _LN2PI = math.log(2.0 * math.pi)
@@ -74,9 +75,9 @@ def _phi_eta(d):
 @jax.custom_jvp
 def _log_ratio(x, a):
     """ln(x/a) for x, a > 0; ln x - ln a where x/a is not normal (x = 1e-36,
-    a = 1000 in float32)."""
+    a = 1000 in float32) or overflows (x = 1.7e308, a = 0.1)."""
     r = x / a
-    normal = r >= np.finfo(r.dtype).tiny
+    normal = (r >= np.finfo(r.dtype).tiny) & (r < jnp.inf)
     return jnp.where(
         normal, jnp.log(jnp.where(normal, r, 1.0)), jnp.log(x) - jnp.log(a)
     )
@@ -119,6 +120,27 @@ def _exp0_jvp(primals, tangents):
     (v,), (t,) = primals, tangents
     e = jnp.exp(v)
     return e, jnp.where(e == 0.0, 0.0, e * t)
+
+
+@jax.custom_jvp
+def _exp_cdf(lv, a, x, sign):
+    """exp(lv), lv = ln P (sign 1) or ln Q (sign -1) of Gamma(a) at x."""
+    return jnp.exp(lv)
+
+
+@_exp_cdf.defjvp
+def _exp_cdf_jvp(primals, tangents):
+    # Below the smallest normal, exp(lv) times d lv/dx loses the density
+    # (0 for 1e-25 at a = 2, x = 1e-25 in float32), so it is taken from its
+    # logs there; the a-part, exp(lv) times a moderate d lv/da, rounds away
+    lv, a, x, sign = primals
+    dlv, _, dx, _ = tangents
+    e = jnp.exp(lv)
+    deep = (e < jnp.finfo(e.dtype).tiny) & (x > 0.0) & (x < jnp.inf)
+    xs, as_ = jnp.where(deep, x, 1.0), jnp.where(deep, a, 1.0)
+    lpdf = log_xpdf(as_, _log_ratio(xs, as_)) - jnp.log(xs)
+    pdf = jnp.where(deep, jnp.exp(lpdf), 0.0)
+    return e, jnp.where(deep, sign * pdf * dx, jnp.where(e == 0.0, 0.0, e * dlv))
 
 
 def _log_pq(a, x, d=None):
@@ -216,7 +238,11 @@ def _log_pq(a, x, d=None):
         temme,
     )
     is_p = in_a0 | is_low | (in_t & (y < 0.0))
-    other = _log1p(-_exp0(direct))
+    if d is None:
+        other = _log1p(-_exp_cdf(direct, a, xx, jnp.where(is_p, 1.0, -1.0)))
+    else:
+        # the quantile's derivative: its x tangent is not the whole one
+        other = _log1p(-_exp0(direct))
     lp = jnp.where(is_p, direct, other)
     lq = jnp.where(is_p, other, direct)
 
@@ -234,12 +260,16 @@ def _density0(a):
 
 def p(a, x):
     lp, _ = _log_pq(a, x)
-    return _exp0(lp) + edge_slope(jnp.where(x == 0.0, _density0(a), 0.0), x)
+    return _exp_cdf(lp, a, x, 1.0) + edge_slope(
+        jnp.where(x == 0.0, _density0(a), 0.0), x
+    )
 
 
 def q(a, x):
     _, lq = _log_pq(a, x)
-    return _exp0(lq) + edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
+    return _exp_cdf(lq, a, x, -1.0) + edge_slope(
+        jnp.where(x == 0.0, -_density0(a), 0.0), x
+    )
 
 
 def log_p(a, x):

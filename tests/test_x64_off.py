@@ -186,6 +186,19 @@ def test_parameter_gradients_across_both_panels_under_x64_off():
     )
 
 
+def test_gamma_cdf_density_below_the_normal_floor_under_x64_off():
+    # P = x^2/2 underflows at a = 2, x = 1e-25, its density x e^-x does not
+    _run(
+        "a = jnp.float32(2.0)\n"
+        "for x in (1e-25, 1e-30, 1e-20):\n"
+        "    for f, s in ((chebax.gammainc_array, 1.0), (chebax.gammaincc_array, -1.0),\n"
+        "                 (chebax.log_gammaincc_array, -1.0)):\n"
+        "        g = float(jax.grad(lambda t: f(a, t))(jnp.float32(x)))\n"
+        "        ref = s * x * np.exp(-x)\n"
+        "        assert abs(g / ref - 1.0) <= 1e-5, (f.__name__, x, g)\n"
+    )
+
+
 def test_widest_float32_domain_under_jit():
     # float32's version of the reciprocal flush: half-width 1e38 is past
     # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a

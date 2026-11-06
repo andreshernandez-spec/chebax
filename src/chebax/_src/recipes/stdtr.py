@@ -68,8 +68,11 @@ def _log_stdtr_impl(nu, t):
     central, l_mid, l_tail = _stdtr_parts(nu, t)
     up = t >= 0.0
     # logs of series values, never of a difference near 1/2; log1p and expm1
-    # keep the complements exact
-    mid = jnp.where(up, jax.nn.softplus(l_mid), jnp.log(-jnp.expm1(l_mid))) - _LN2
+    # keep the complements exact. ln(1 - I) sees l_mid only in its own lanes:
+    # in the others I can round to 1 at large nu (the tail's dummy w = 1/4
+    # too), and reverse mode turns log(0)'s inf times a zero cotangent into nan
+    lm = jnp.where(central & ~up, l_mid, -1.0)
+    mid = jnp.where(up, jax.nn.softplus(l_mid), jnp.log(-jnp.expm1(lm))) - _LN2
     tail = jnp.where(up, jnp.log1p(-0.5 * jnp.exp(l_tail)), l_tail - _LN2)
     L = jnp.where(central, mid, tail)
     return jnp.where(jnp.isnan(t) | jnp.isnan(nu), jnp.nan, L)

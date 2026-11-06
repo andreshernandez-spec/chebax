@@ -674,7 +674,17 @@ def test_log_stdtr():
     assert float(log_stdtr(4.0, -np.inf)) == -np.inf
     assert float(log_stdtr(4.0, np.inf)) == 0.0
     assert np.isnan(float(log_stdtr(4.0, np.nan)))
-    for nu, t in [(4.0, -30.0), (2.0, -6.0), (0.5, -1.5), (15.0, -3.0), (4.0, 2.0)]:
+    # nu = 199 gave nan d/dnu before ln(1 - I) was masked outside its lanes
+    for nu, t in [
+        (4.0, -30.0),
+        (2.0, -6.0),
+        (0.5, -1.5),
+        (15.0, -3.0),
+        (4.0, 2.0),
+        (199.0, -30.0),
+        (199.0, -1e10),
+        (199.0, 16.0),
+    ]:
         gn = float(jax.grad(log_stdtr, argnums=0)(nu, t))
         gt = float(jax.grad(log_stdtr, argnums=1)(nu, t))
         rn = float(mp.diff(lambda n: mp.log(_t_cdf_mp(n, t)), mp.mpf(nu)))

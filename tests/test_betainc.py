@@ -91,6 +91,28 @@ def test_dx_against_beta_density():
         assert np.max(np.abs(g - pdf) / np.max(pdf)) <= 1e-13, (a, b)
 
 
+def test_dx_is_the_density_pointwise():
+    # dI/dx was e * d ln I/dt: above x = 1/2 at a >> b it carried I's absolute
+    # error (3.3 relative at (100, 0.1, 0.7287), experiments/33), and in
+    # float32 it was 0 * inf where I underflows (test_x64_off). It is the
+    # density from its logs now. Measured worst 4.8e-13 at (100, 3, 0.6),
+    # bar 2e-12.
+    worst = 0.0
+    for a, b, xs in [
+        (100.0, 0.1, [0.5, 0.7287, 0.9, 0.99]),
+        (100.0, 3.0, [1e-3, 0.3, 0.6]),
+        (0.1, 100.0, [1e-6, 0.01, 0.4, 0.6]),
+        (2.5, 7.0, [1e-8, 0.2, 0.55, 0.999]),
+    ]:
+        g = jax.grad(lambda x: chebax.betainc_scalar(a, b, x))
+        for x in xs:
+            ref = mp.exp(
+                (a - 1) * mp.log(x) + (b - 1) * mp.log1p(-x) - mp.log(mp.beta(a, b))
+            )
+            worst = max(worst, abs(float(g(x)) / float(ref) - 1.0))
+    assert worst <= 2e-12, worst
+
+
 def test_da_db_traced():
     for a, b, x in [(0.5, 0.5, 0.3), (2.0, 3.0, 0.6), (7.7, 1.3, 0.2), (1.0, 1.0, 0.7)]:
         da_ref = float(

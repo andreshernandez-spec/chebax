@@ -142,6 +142,9 @@ def test_gradients_are_finite_under_x64_off():
         "for g in gs:\n"
         "    assert np.isfinite(float(g)), g\n"
         "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n"
+        # I underflows at a = 100, x = 1e-37; the density, rounded, is 0
+        "g = jax.grad(lambda x: chebax.betainc(100.0, 3.0, x))(jnp.float32(1e-37))\n"
+        "assert float(g) == 0.0, g\n"
     )
 
 
@@ -196,6 +199,18 @@ def test_gamma_cdf_density_below_the_normal_floor_under_x64_off():
         "        g = float(jax.grad(lambda t: f(a, t))(jnp.float32(x)))\n"
         "        ref = s * x * np.exp(-x)\n"
         "        assert abs(g / ref - 1.0) <= 1e-5, (f.__name__, x, g)\n"
+    )
+
+
+def test_matern_close_points_under_x64_off():
+    # z^nu underflowed and K_nu overflowed apart at small z: matern(6, 1e-8)
+    # was 0 * inf = nan. The reference at the clamp z = 1e-6 rounds to 1
+    _run(
+        "for nu in (0.5, 2.5, 6.0, 9.9):\n"
+        "    for r in (1e-18, 1e-8, 1e-6):\n"
+        "        got = float(jax.jit(chebax.matern)(nu, jnp.float32(r)))\n"
+        "        assert abs(got - 1.0) <= 2e-5 or nu == 0.5, (nu, r, got)\n"
+        "        assert np.isfinite(got), (nu, r, got)\n"
     )
 
 

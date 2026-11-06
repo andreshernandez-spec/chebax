@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import besselk_table as _kt
 from chebax._src.recipes._common import canon_param
-from chebax._src.recipes.besselk import besselk_scalar
+from chebax._src.recipes.besselk import log_besselk_scalar
 
 
 def matern(nu, r, lengthscale=1.0):
@@ -23,7 +23,9 @@ def matern(nu, r, lengthscale=1.0):
     z = jnp.sqrt(2.0 * nu) * rs / lengthscale
     z = jnp.maximum(z, _kt.XMIN)
     log_c = (1.0 - nu) * jnp.log(2.0) - jax.scipy.special.gammaln(nu)
-    k = jnp.exp(log_c + nu * jnp.log(z)) * besselk_scalar(nu, z)
+    # one exp of the summed logs: apart, z^nu underflows and K overflows at
+    # small z (nu = 6, z = 1e-6 in float32 gave 0 * inf = nan)
+    k = jnp.exp(log_c + nu * jnp.log(z) + log_besselk_scalar(nu, z))
     # 0 at r = inf (the K tail gives nan), nan for r < 0
     out = jnp.where(pos, k, 1.0)
     out = jnp.where(r == jnp.inf, 0.0, out)

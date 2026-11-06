@@ -12,8 +12,6 @@ e^x M(b-a, b, -x) when b - a is in the box). jax's hyp1f1 truncates at 1e-8
 and is unstable (jax#21503).
 """
 
-import functools
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -27,6 +25,7 @@ from chebax._src.recipes._common import (
     canon_tag,
     check_range,
     deprecated_factory,
+    frozen_cache,
 )
 from chebax._src.series import ChebSeries, _chebval
 
@@ -110,7 +109,7 @@ def _series_at(a, b):
     )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _hyp1f1_cached(a, b, _tag):
     a = check_range("hyp1f1", "a", a, *_dom.HYP1F1[:2])
     b = check_range("hyp1f1", "b", b, *_dom.HYP1F1[:2])

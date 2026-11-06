@@ -3,8 +3,14 @@
 The medium-priority findings of that round, collected where the next
 review can find them: infinities and negative arguments where a limit
 exists, front-door validation that used to fail late or silently, and
-the immutability of cached instances.
+the immutability of cached instances, and _frozen factories built first
+under jit (2026-11-06).
 """
+
+import os
+import subprocess
+import sys
+import textwrap
 
 import numpy as np
 import pytest
@@ -47,6 +53,50 @@ def test_cached_instances_cannot_be_mutated_or_emptied():
         del p.coef
     # and the shared instance is intact afterwards
     assert float(chebax.besselj_frozen(2.5)(1.0)) != 0.0
+
+
+def test_frozen_factories_built_first_under_jit():
+    # a factory first called under jit cached tracers (jnp.asarray stages
+    # even numpy coefficients) and every later call failed; hyp1f1_frozen
+    # could not be built under jit at all. A fresh interpreter, so every
+    # cache starts empty.
+    code = textwrap.dedent("""
+        import jax, jax.numpy as jnp, numpy as np
+        jax.config.update("jax_enable_x64", True)
+        import chebax as c
+        x = jnp.linspace(0.5, 5.0, 4)
+        calls = [
+            lambda x: c.besselj(1, x),
+            lambda x: c.besselj_dnu_frozen(2.5)(x),
+            lambda x: c.bessely(1.5, x),
+            lambda x: c.bessely_dnu_frozen(1.5)(x),
+            lambda x: c.besseli_frozen(1.5, scaled=True)(x),
+            lambda x: c.besseli_dnu_frozen(1.5)(x),
+            lambda x: c.besselk_frozen(1.5)(x),
+            lambda x: c.besselk_dnu_frozen(1.5)(x),
+            lambda x: c.betainc_frozen(2.0, 3.0)(x / 6),
+            lambda x: c.gammainc_frozen(2.5)(x),
+            lambda x: c.gammaincc_frozen(25.0)(x),
+            lambda x: c.hyp1f1_frozen(2.0, 3.0)(x),
+            lambda x: c.spherical_jn(2, x),
+            lambda x: c.spherical_yn(2, x),
+        ]
+        for i, f in enumerate(calls):
+            first = jax.jit(f)(x)
+            again = jax.jit(lambda x: 2 * f(x))(x)
+            eager = f(x)
+            assert np.all(np.isfinite(eager)), i
+            np.testing.assert_allclose(first, eager, rtol=1e-13, err_msg=str(i))
+            np.testing.assert_allclose(again, 2 * eager, rtol=1e-13, err_msg=str(i))
+        print("ok")
+    """)
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "JAX_PLATFORMS": "cpu"},
+    )
+    assert out.returncode == 0, out.stderr[-3000:]
 
 
 def test_truncate_validates_its_tolerance():

@@ -31,6 +31,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     edge_slope,
+    frozen_cache,
 )
 from chebax._src.recipes.betainc_kernel import (
     eval_betainc,
@@ -244,7 +245,7 @@ class BetaInc(Recipe):
         )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _betainc_cached(a, b, _tag):
     a = check_range("betainc", "a", a, *_dom.BETAINC[:2])
     b = check_range("betainc", "b", b, *_dom.BETAINC[:2])

@@ -14,7 +14,6 @@ Validated against mpmath to x = 1e4. dJ/dv is log-singular at x = 0 (nan at
 v = 0, x = 0).
 """
 
-import functools
 import math
 
 import jax
@@ -28,6 +27,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     digamma64,
+    frozen_cache,
     param_coefs,
     param_coefs_der,
 )
@@ -202,7 +202,7 @@ def _canon_domain(name, domain):
     return (lo, hi)
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besselj_cached(v, domain, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJ(v, domain, *_series_at(v))
@@ -224,7 +224,7 @@ def besselj_frozen(v, domain=None):
     return _besselj_cached(float(v), _canon_domain("besselj", domain), canon_tag())
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besselj_dnu_cached(v, domain, _tag):
     v = check_range("besselj", "v", v, 0.0, _tab.VMAX)
     return BesselJdnu(

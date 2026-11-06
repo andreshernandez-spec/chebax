@@ -97,9 +97,19 @@ def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
     (d cba/db, d cba/da): each orientation's coefficient derivatives in its
     own first and second parameter."""
     x = jnp.asarray(x)
-    lower, L, La, Lb, Lt = _lane_parts(a, b, x, cab, cba, dcab, dcba, need)
+    na, nb, nx = need
+    lower, L, La, Lb, _ = _lane_parts(a, b, x, cab, cba, dcab, dcba, (na, nb, 0))
     e = jnp.exp(L)
     sgn = jnp.where(lower, e, -e)  # I = e below, 1 - e above; dy/dx = -1
+    # dI/dx is the density, from its logs: e * d ln I/dt is 0 * inf where I
+    # underflows (float32, a = 100 at x = 1e-37), and above XSPLIT e carries
+    # I's absolute error into the derivative
+    dens = None
+    if nx:
+        _, xd, yd = _split(x)
+        lx = jnp.where(lower, jnp.log(xd), jnp.log1p(-yd))
+        l1x = jnp.where(lower, jnp.log1p(-xd), jnp.log(yd))
+        dens = jnp.exp((a - 1.0) * lx + (b - 1.0) * l1x - ln_beta(a, b))
     return _pack(
         x,
         a,
@@ -107,7 +117,7 @@ def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
         0.0,
         1.0,
         jnp.where(lower, e, 1.0 - e),
-        (_times(La, sgn), _times(Lb, sgn), _times(Lt, e)),
+        (_times(La, sgn), _times(Lb, sgn), dens),
     )
 
 

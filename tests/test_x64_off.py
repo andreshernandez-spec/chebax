@@ -142,6 +142,9 @@ def test_gradients_are_finite_under_x64_off():
         "for g in gs:\n"
         "    assert np.isfinite(float(g)), g\n"
         "assert abs(float(gs[5]) - 0.5) <= 1e-5, gs[5]\n"
+        # I underflows at a = 100, x = 1e-37; the density, rounded, is 0
+        "g = jax.grad(lambda x: chebax.betainc(100.0, 3.0, x))(jnp.float32(1e-37))\n"
+        "assert float(g) == 0.0, g\n"
     )
 
 

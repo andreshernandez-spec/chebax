@@ -175,7 +175,9 @@ def _log_pq(a, x, d=None):
     par = jnp.select([uses_u, in_t], [_log1p(a), 1.0 / a], _t.ASPLIT / a)
     arg = jnp.select(
         [in_a0, in_b0, is_low, is_up],
-        [x_a0 / (a + 1.0), (a + 1.0) / x_b0, lam_lo, lam_up],
+        # _over: plain division's AD poisons the second a-derivative at
+        # a = 1e20 in float32 through the lanes not taken
+        [_over(x_a0, a + 1.0), _over(a + 1.0, x_b0), lam_lo, lam_up],
         eta,
     )
     i, sp = _locate(par, pcuts[zone], npar[zone])

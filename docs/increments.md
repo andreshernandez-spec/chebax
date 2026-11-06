@@ -496,8 +496,10 @@ runs behind CHEBAX_FULL_REGEN=1 (the increment-23 policy). Measured
 log form 3.7e-13 worst, log form at deep x 1.7e-16 relative (M
 itself leaves f64 past x ~ 700; log_hyp1f1_fn is the likelihood
 form), dM/dx 9.5e-14 vs the exact (a/b) M(a+1, b+1, x) shift oracle,
-d/da and d/db 2.9e-15 vs mp.diff. x < 0 is out of scope in v1 (the
-Kummer transform e^x M(b-a, b, -x) leaves the box when b - a does).
+d/da and d/db 2.9e-15 vs mp.diff (on that sweep's points; 1.4e-10
+near a = 0.1, x ~ 11, found 2026-11-06, test_hyp1f1.py). x < 0 is out
+of scope in v1 (the Kummer transform e^x M(b-a, b, -x) leaves the box
+when b - a does).
 No performance claim: no race was run (B3 rule); the pitch is
 stability and shape gradients, not speed, until measured.
 

@@ -69,8 +69,31 @@ def canon_param(p, who, name, array=None):
 
 
 def per_element(*params):
-    """True when any parameter holds more than one value; static, so free."""
-    return any(jnp.size(p) > 1 for p in params)
+    """True unless every parameter holds exactly one value (an empty array goes
+    per element, where it gives an empty result); static, so free."""
+    return any(jnp.size(p) != 1 for p in params)
+
+
+def renamed_order(who, nu, v):
+    """The order passed as nu, or by its 0.4 keyword v= with a warning."""
+    if v is None:
+        if nu is None:
+            raise TypeError(f"{who}() missing the order nu")
+        return nu
+    if nu is not None:
+        raise TypeError(f"{who}() got the order twice, as nu and as v")
+    warnings.warn(
+        f"{who}(v=...) is deprecated: the order is {who}(nu=...) now",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return v
+
+
+def positional_domain(x, domain):
+    """True for the 0.4 call besselj(v, (lo, hi)), whose second argument was
+    the domain: a two-element tuple in x's place, with no domain= given."""
+    return domain is None and isinstance(x, tuple) and len(x) == 2
 
 
 def deprecated_factory(name, frozen, *params, **kw):

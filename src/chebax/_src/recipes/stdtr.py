@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import stdtr_table as _st
-from chebax._src.recipes._common import float_params, traced_coefs
+from chebax._src.recipes._common import float_params, panel_coefs
 from chebax._src.recipes.betainc_kernel import (
     betaincinv_core,
     ln_beta,
@@ -29,17 +29,8 @@ _LN2 = math.log(2.0)
 def _half_series(hb):
     """x-series of the betainc kernel at (1/2, hb) and (hb, 1/2), hb = nu/2 in
     [0.1, 100], panels selected at hb = 10 on the coefficient vectors."""
-    lo = hb <= _st.BSPLIT
-    ca = jnp.where(
-        lo,
-        traced_coefs(_st.TABLE_A_LO, _st.BLO, _st.BSPLIT, hb),
-        traced_coefs(_st.TABLE_A_HI, _st.BSPLIT, _st.BHI, hb),
-    )
-    cb = jnp.where(
-        lo,
-        traced_coefs(_st.TABLE_B_LO, _st.BLO, _st.BSPLIT, hb),
-        traced_coefs(_st.TABLE_B_HI, _st.BSPLIT, _st.BHI, hb),
-    )
+    ca = panel_coefs(_st.TABLE_A_LO, _st.TABLE_A_HI, _st.BLO, _st.BSPLIT, _st.BHI, hb)
+    cb = panel_coefs(_st.TABLE_B_LO, _st.TABLE_B_HI, _st.BLO, _st.BSPLIT, _st.BHI, hb)
     return (ChebSeries(ca, (0.0, _st.XSPLIT)), ChebSeries(cb, (0.0, _st.XSPLIT)))
 
 

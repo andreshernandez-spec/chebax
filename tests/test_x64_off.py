@@ -145,6 +145,30 @@ def test_gradients_are_finite_under_x64_off():
     )
 
 
+def test_parameter_gradients_across_both_panels_under_x64_off():
+    # the panel not taken was evaluated past its range, where its series
+    # overflows float32, and reverse mode turned inf * 0 into nan: d/dnu was
+    # nan for nu > 3.3 (besselk, matern) and nu > 47 (stdtr). Forward mode
+    # never was, so it is the reference: measured |rev - fwd| 1.7e-5 relative
+    # (besselk) and 7e-7 absolute (matern, stdtr, log_stdtr; their nu-slopes
+    # are small, so float32 leaves them only absolutely accurate).
+    _run(
+        "cases = [\n"
+        "    (lambda n: chebax.besselk_scalar(n, 2.0), np.linspace(0.05, 10.0, 41)),\n"
+        "    (lambda n: chebax.log_besselk_scalar(n, 2.0), np.linspace(0.05, 10.0, 41)),\n"
+        "    (lambda n: chebax.matern(n, 0.7, 1.0), np.linspace(0.05, 10.0, 41)),\n"
+        "    (lambda n: chebax.stdtr(n, 1.5), np.geomspace(0.2, 200.0, 41)),\n"
+        "    (lambda n: chebax.log_stdtr(n, -1.5), np.geomspace(0.2, 200.0, 41)),\n"
+        "]\n"
+        "for i, (f, ps) in enumerate(cases):\n"
+        "    ps = jnp.asarray(ps, jnp.float32)\n"
+        "    rev = np.asarray(jax.vmap(jax.grad(f))(ps))\n"
+        "    fwd = np.asarray(jax.vmap(lambda p: jax.jvp(f, (p,), (1.0,))[1])(ps))\n"
+        "    assert np.all(np.isfinite(rev)), (i, ps[~np.isfinite(rev)])\n"
+        "    np.testing.assert_allclose(rev, fwd, rtol=1e-4, atol=4e-6, err_msg=str(i))\n"
+    )
+
+
 def test_widest_float32_domain_under_jit():
     # float32's version of the reciprocal flush: half-width 1e38 is past
     # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a

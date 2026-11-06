@@ -25,6 +25,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     frozen_cache,
+    panel_coefs,
     param_coefs,
     param_coefs_der,
     traced_coefs,
@@ -131,9 +132,7 @@ def _besselk_dnu_cached(v, _tag):
 
 
 def _traced_series(nu):
-    c_lo = traced_coefs(_kt.TABLE_IN_LO, 0.0, _kt.VSPLIT, nu)
-    c_hi = traced_coefs(_kt.TABLE_IN_HI, _kt.VSPLIT, _kt.VMAX, nu)
-    c_in = jnp.where(nu <= _kt.VSPLIT, c_lo, c_hi)
+    c_in = panel_coefs(_kt.TABLE_IN_LO, _kt.TABLE_IN_HI, 0.0, _kt.VSPLIT, _kt.VMAX, nu)
     c_tl = traced_coefs(_kt.TABLE_TAIL, 0.0, _kt.VMAX, nu)
     return (ChebSeries(c_in, (_kt.U0, _kt.U1)), ChebSeries(c_tl, (0.0, 1.0)))
 

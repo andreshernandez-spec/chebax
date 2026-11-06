@@ -140,6 +140,17 @@ def traced_coefs(table, lo, hi, p):
     return jax.vmap(lambda row: _chebval(t, row, (-1.0, 1.0)))(jnp.asarray(table))
 
 
+def panel_coefs(table_lo, table_hi, lo, split, hi, p):
+    """traced_coefs on two parameter panels [lo, split] and [split, hi]. Each
+    panel sees p clamped into its own range: evaluated past it, the panel not
+    taken overflows float32 (T_k grows like 7.9^k at twice the range), and
+    reverse mode turns that inf times a zero cotangent into nan."""
+    below = p <= split
+    c_lo = traced_coefs(table_lo, lo, split, jnp.where(below, p, split))
+    c_hi = traced_coefs(table_hi, split, hi, jnp.where(below, split, p))
+    return jnp.where(below, c_lo, c_hi)
+
+
 def check_range(owner, name, v, lo, hi):
     v = float(v)
     if not lo <= v <= hi:

@@ -9,6 +9,7 @@ coefficients to a common dtype; full float64 accuracy needs x64.
 """
 
 import jax
+import jax.custom_batching
 import jax.numpy as jnp
 import numpy as np
 
@@ -178,10 +179,14 @@ def _chebval_jvp(domain, primals, tangents):
     return y, dy
 
 
+@jax.custom_batching.custom_vmap
 def chebval_either(use0, s0, x0, s1, x1):
     """s0(x0) where use0, else s1(x1), one Clenshaw per point on per-point
     coefficients. Not for AD: reverse mode runs both coefficient cotangents at
-    full length (CPU a-grads 1.6-3x slower), so only undifferentiated solves."""
+    full length (CPU a-grads 1.6-3x slower), so callers keep it out of reverse
+    mode: undifferentiated solves, or custom_jvp rules that evaluate the
+    derivative series through it as values (betainc). Under vmap it runs both
+    series and selects (see _chebval_either_batched)."""
 
     def unit(s, x):
         a, b = s.domain
@@ -198,6 +203,19 @@ def chebval_either(use0, s0, x0, s1, x1):
     for k in range(n - 1, 0, -1):
         b1, b2 = two_t * b1 - b2 + jnp.where(use0, c0[k], c1[k]), b1
     return t * b1 - b2 + jnp.where(use0, c0[0], c1[0])
+
+
+@chebval_either.def_vmap
+def _chebval_either_batched(axis_size, in_batched, use0, s0, x0, s1, x1):
+    # With the coefficients batched (pergroup's vmap over groups), XLA's CPU
+    # compiler never finishes a gradient program that selects a per-point
+    # coefficient inside the unrolled recurrence (notebooks/08, stopped
+    # after 2 h). Both series and one select compile in seconds there.
+    def both(use0, s0, x0, s1, x1):
+        return jnp.where(use0, s0(x0), s1(x1))
+
+    in_axes = jax.tree_util.tree_map(lambda b: 0 if b else None, in_batched)
+    return jax.vmap(both, in_axes=tuple(in_axes))(use0, s0, x0, s1, x1), True
 
 
 @jax.tree_util.register_pytree_node_class

@@ -15,61 +15,12 @@ from the latest review are in `docs/review-2026-10-26.md`.
 
 ## Project-specific rules
 
-- **Performance claims cite B3 (measured 2026-07-31) or nothing.** The citable
-  numbers: besselj f64 4.5–6.0× vs cephes::jv (0.4× on pure-outer), f32 35× the f64,
-  on an RTX 3080 Laptop (`../bessel/experiments/07`); besselj DIRECT vs jax's own
-  `bessel_jn` (`experiments/08`, integer order only, agreement ≤ 1.7e-15): f64
-  7.4–7.5× at v=2 and 6.0× at v=9 on n_iter=50's valid window, 14.4–14.5× where
-  the x-range forces n_iter=100 (those rows at N=2^22: bessel_jn's memory scales
-  with n_iter·N, a 13 GiB attempt OOMs at 2^24), f32 3.6–7.1×; bessel_jn is
-  integer-order only and valid on an n_iter-dependent x-window that narrows from
-  both sides (nans below ~1e-4 at n_iter=50, below ~0.1 at n_iter=100) — cite
-  the window when citing the ratio; narrow-domain 2.5–3.0× for the
-  private single-region kernel and 2.5× f64 / 2.6× f32 for the SHIPPED
-  `besselj(v, domain=(0, 8))` (now `besselj_frozen`), whose nan guard is the ~9% f64 difference
-  (`experiments/04`, re-run 2026-08-02); igamma REAL race (`experiments/05`, re-run 2026-07-31 with
-  the gammainc recipe, agreement ≤ 3.7e-15): f64 10–27× vs jax's gammainc on GPU
-  for a in the [0.1, 10] box (a-dependent; jax's loop count grows with worst-lane
-  trips), f32 3.0–5.8×; the 18–54× f64 figures are the MOCK's op-profile ceiling,
-  still the only number for a outside the box — say which when citing; gammaincinv
-  solver rewire (`experiments/09`, same solver, residual swapped, RE-RUN
-  2026-11-02 after the scalar residual went to one series per point below
-  a = 10 and one erfcx per point in the Temme zone; the earlier 2026-11-02
-  figures, 10.2–36.3× / 5.6–13.3×, no longer describe the code): 13.1–47.7×
-  f64 for uniform p at a in {9.9, 3.5, 0.5} and 8.9–20.6× at a in {50, 500}
-  on the Temme path, 3.2–7.5× on pure deep-tail p (jax's series branch is
-  cheap there), path agreement ≤ 1.8e-12, and the JVP's dP/da term
-  3.9–14.9× vs igamma_grad_a (agreement ≤ 1.7e-14); the recipe column
-  itself went 128 → 97 ms below a = 10 and 417–437 → 259–278 ms above
-  (1.33× / 1.57–1.61×); betainc race
-  (`experiments/06`, both sides real implementations, f64 agreement ≤ 4e-14):
-  f64 79–133× vs jax's betainc on GPU ((a,b)-dependent), f32 13–16×, the 500k
-  CPU case 202×, stdtr 59–60× f64 vs the betainc-composed form, ratio flat in N
-  from 2^20 up; per-group crossover (`experiments/07`, f64, vmap over equal
-  groups): reconstruction overhead ≤ 1.07× vs the uniform floor for
-  n/group ≥ 16k (betainc, N = 2^24), besselk ≤ 1.08× down to n/group = 1024,
-  and vs jax's betainc the per-group path wins every measured cell, worst 7.3×
-  (16384 groups of 64), 44–98× at MCMC scale (4 groups); f32 truncation race (`experiments/12`):
-  truncate(1e-7) speeds f32 GPU evaluation 1.4–2.2× (besselj 2.0×, besselk
-  2.2×, betainc 1.4×) at each family's f32 floor — the "extra terms are free"
-  roofline guess was wrong on this part. Tweedie (`experiments/21`, 2^20 draws
-  from the law, f64): values 89-130x scipy's `log_wright_bessel` on one CPU
-  core, 254-331x on the GPU, value_and_grad 131 ms on the GPU; scipy itself
-  is off by up to 4.7e-6 at p = 1.2 in a band around Z ~ 15-30. Per-element
-  gammainc (`experiments/22`, a per element, x ~ Gamma(a), 2026-11-01):
-  gammainc_array vs jax's gammainc, GPU f64 2.3-18x values and 2.8-23x
-  value_and_grad, f32 4.5-66x / 6.6-95x, one CPU core f64 1.1-9.5x / 1.8-15x
-  (all growing with the spread of a, since jax's loops follow the worst lane);
-  CPU f32 values are 1.8x SLOWER than jax's at a = 2.5 each. Against vmap of
-  gammainc_scalar, f64 value_and_grad 73-77x CPU, 54x GPU. Per-element
-  gammaincinv (`experiments/23`, p uniform, 2026-11-02): gammaincinv_array
-  vs TFP's igammainv (tfp-nightly), a = 2.5 each / spread / wide, GPU f64
-  0.93x / 2.3x / 7.3x values and 0.91x / 2.3x / 4.8x value_and_grad, f32
-  2.6x / 7.0x / 34x; one CPU core f64 0.61x / 1.6x / 5.2x, f32
-  0.19x / 0.50x / 2.8x (TFP is faster where a barely varies); TFP's round
-  trip 2.0e-11 f64 and 1.1e-2 f32 on "wide". Consumer-GPU fp64 is
-  compute-bound (1:64): never claim "memory-bound" there; datacenter fp64 stays
-  analytical until measured on such a part.
+- **Performance claims cite a measured experiment or nothing.** The number
+  comes from a script in `experiments/` and its captured output in
+  `results/`, named where the claim is made (docstring, increments entry, PR
+  text); read those files for the figures instead of repeating them here.
+  Consumer-GPU fp64 is compute-bound (1:64): never claim "memory-bound" there;
+  datacenter fp64 stays analytical until measured on such a part.
 - **The accuracy metric is chosen per family** and stated in each test file's
   docstring: sup-normalized for oscillatory J (relative accuracy at zeros is a known
   impossibility, `../bessel/PROJECT.md` §4 q4), modulus-relative (err/√(J²+Y²)) for Y,

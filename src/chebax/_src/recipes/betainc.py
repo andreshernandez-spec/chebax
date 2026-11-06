@@ -34,12 +34,15 @@ from chebax._src.recipes._common import (
 )
 from chebax._src.recipes.betainc_kernel import (
     eval_betainc,
+    eval_betainc_frozen,
     eval_betainc_parts,
+    eval_log_betainc,
     eval_log_betainc_parts,
-    log_direct,
 )
 from chebax._src.series import ChebSeries, _chebval
 from jax.custom_derivatives import SymbolicZero
+
+_log_eval = eval_log_betainc  # the name experiments/29 rebuilds the old path from
 
 # (a-high?, b-high?) -> (tensor, a-box, b-box); the wide panels are reached
 # only through the runtime switch
@@ -234,7 +237,10 @@ class BetaInc(Recipe):
 
     def __call__(self, x):
         return with_edge_slopes(
-            self.a, self.b, x, eval_betainc(self.a, self.b, x, self.cab, self.cba)
+            self.a,
+            self.b,
+            x,
+            eval_betainc_frozen(self.a, self.b, x, self.cab, self.cba),
         )
 
 
@@ -261,18 +267,6 @@ def log_betainc_scalar(a, b, x):
     a = canon_param(a, "log_betainc_scalar", "a")
     b = canon_param(b, "log_betainc_scalar", "b")
     return _log_betainc_cj(a, b, jnp.asarray(x))
-
-
-def _log_eval(a, b, x, cab, cba):
-    interior = (x > 0.0) & (x < 1.0)
-    xi = jnp.where(interior, x, 0.25)
-    xd = jnp.where(xi <= _bt.XSPLIT, xi, 0.25)
-    yd = jnp.where(xi <= _bt.XSPLIT, 0.25, 1.0 - xi)
-    direct = log_direct(a, b, xd, cab)
-    refl = jnp.log1p(-jnp.exp(log_direct(b, a, yd, cba)))
-    core = jnp.where(xi <= _bt.XSPLIT, direct, refl)
-    out = jnp.where(x <= 0.0, -jnp.inf, jnp.where(x >= 1.0, 0.0, core))
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
 def betainc(a, b, x=None):

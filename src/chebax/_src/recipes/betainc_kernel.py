@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes._common import canon_tag, newton_bisect, solver_limits
+from chebax._src.series import chebval_either
 
 # every table is fitted on (0, XSPLIT]; 1 - x is exact from 1/2
 XSPLIT = 0.5
@@ -25,20 +26,6 @@ def log_direct(a, b, x, lser):
     return a * jnp.log(x) + b * jnp.log1p(-x) - jnp.log(a) - ln_beta(a, b) + lser(x)
 
 
-def _log_direct_parts(a, b, x, lser, lser_1, lser_2, need):
-    """log_direct and its derivatives in the first parameter, the second and
-    x, as values (None where need says no); lser_1, lser_2 hold the
-    coefficients' derivatives in those parameters."""
-    psi = jax.scipy.special.digamma
-    n1, n2, nx = need
-    psi_ab = psi(a + b) if n1 or n2 else None
-    L = log_direct(a, b, x, lser)
-    L1 = jnp.log(x) - 1.0 / a - psi(a) + psi_ab + lser_1(x) if n1 else None
-    L2 = jnp.log1p(-x) - psi(b) + psi_ab + lser_2(x) if n2 else None
-    Lx = a / x - b / (1.0 - x) + lser.deriv()(x) if nx else None
-    return L, L1, L2, Lx
-
-
 def _split(x):
     interior = (x > 0.0) & (x < 1.0)
     xi = jnp.where(interior, x, 0.25)  # masked lanes get a safe dummy
@@ -53,33 +40,55 @@ def _finish(x, a, b, core, lo, hi):
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
 
 
-def _both_parts(a, b, x, cab, cba, dcab, dcba, need):
-    """The direct and reflected log_direct parts at x's split, each as
-    (value, d/da, d/db, d/dx or d/dy)."""
+def _lane_parts(a, b, x, cab, cba, dcab, dcba, need):
+    """Per lane, the orientation it needs: ln I_t(p, q) with (p, q, t) =
+    (a, b, x) below XSPLIT and (b, a, 1 - x) above, and its derivatives in a,
+    b and t as values (None where need = (need_a, need_b, need_x) says no).
+    One series per point (chebval_either), so the kernel runs one Clenshaw
+    per value and per derivative instead of one per orientation. dcab =
+    (d cab/da, d cab/db), dcba = (d cba/db, d cba/da). Values match the
+    two-series form bit for bit (the padded zeros leave the recurrence
+    untouched). Returns lower, L, La, Lb, Lt."""
     na, nb, nx = need
     lower, xd, yd = _split(x)
-    direct = _log_direct_parts(a, b, xd, cab, *dcab, (na, nb, nx))
-    R, Rb, Ra, Ry = _log_direct_parts(b, a, yd, cba, *dcba, (nb, na, nx))
-    return lower, direct, (R, Ra, Rb, Ry)
-
-
-def _combine(x, a, b, lower, lo, hi, pieces):
-    """where(lower, direct, reflected) per part, None where the direct piece
-    is None; the value gets the endpoints lo, hi, the derivatives 0."""
-    out = []
-    for i, (d, r) in enumerate(pieces):
-        if d is None:
-            out.append(None)
-            continue
-        v = jnp.where(lower, d, r)
-        out.append(
-            _finish(x, a, b, v, lo, hi) if i == 0 else _finish(x, a, b, v, 0.0, 0.0)
-        )
-    return tuple(out)
+    t = jnp.where(lower, xd, yd)
+    p, q = jnp.where(lower, a, b), jnp.where(lower, b, a)
+    lt, l1t = jnp.log(t), jnp.log1p(-t)
+    ls = chebval_either(lower, cab, xd, cba, yd)
+    L = p * lt + q * l1t - jnp.where(lower, jnp.log(a), jnp.log(b)) - ln_beta(a, b) + ls
+    psi = jax.scipy.special.digamma
+    if na or nb:
+        psi_ab = psi(a + b)
+        # d/d(first) and d/d(second) of ln I_t(p, q), scalar parts selected
+        d1 = lt - jnp.where(lower, 1.0 / a + psi(a), 1.0 / b + psi(b)) + psi_ab
+        d2 = l1t - jnp.where(lower, psi(b), psi(a)) + psi_ab
+    La = (
+        jnp.where(lower, d1, d2) + chebval_either(lower, dcab[0], xd, dcba[1], yd)
+        if na
+        else None
+    )
+    Lb = (
+        jnp.where(lower, d2, d1) + chebval_either(lower, dcab[1], xd, dcba[0], yd)
+        if nb
+        else None
+    )
+    Lt = (
+        p / t - q / (1.0 - t) + chebval_either(lower, cab.deriv(), xd, cba.deriv(), yd)
+        if nx
+        else None
+    )
+    return lower, L, La, Lb, Lt
 
 
 def _times(u, v):
     return None if u is None else u * v
+
+
+def _pack(x, a, b, lo, hi, value, derivs):
+    out = [_finish(x, a, b, value, lo, hi)]
+    for d in derivs:
+        out.append(None if d is None else _finish(x, a, b, d, 0.0, 0.0))
+    return tuple(out)
 
 
 def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
@@ -88,48 +97,61 @@ def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
     (d cba/db, d cba/da): each orientation's coefficient derivatives in its
     own first and second parameter."""
     x = jnp.asarray(x)
-    lower, (L, La, Lb, Lx), (R, Ra, Rb, Ry) = _both_parts(
-        a, b, x, cab, cba, dcab, dcba, need
+    lower, L, La, Lb, Lt = _lane_parts(a, b, x, cab, cba, dcab, dcba, need)
+    e = jnp.exp(L)
+    sgn = jnp.where(lower, e, -e)  # I = e below, 1 - e above; dy/dx = -1
+    return _pack(
+        x,
+        a,
+        b,
+        0.0,
+        1.0,
+        jnp.where(lower, e, 1.0 - e),
+        (_times(La, sgn), _times(Lb, sgn), _times(Lt, e)),
     )
-    d, r = jnp.exp(L), jnp.exp(R)
-    pieces = (
-        (d, 1.0 - r),
-        (_times(La, d), _times(Ra, -r)),
-        (_times(Lb, d), _times(Rb, -r)),
-        (_times(Lx, d), _times(Ry, r)),  # dy/dx = -1
-    )
-    return _combine(x, a, b, lower, 0.0, 1.0, pieces)
 
 
 def eval_log_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
-    """ln I_x(a, b) (betainc._log_eval) and its derivatives as values, like
-    eval_betainc_parts."""
+    """ln I_x(a, b) and its derivatives as values, like eval_betainc_parts."""
     x = jnp.asarray(x)
-    lower, (L, La, Lb, Lx), (R, Ra, Rb, Ry) = _both_parts(
-        a, b, x, cab, cba, dcab, dcba, need
+    lower, L, La, Lb, Lt = _lane_parts(a, b, x, cab, cba, dcab, dcba, need)
+    e = jnp.exp(L)
+    s = -e / (1.0 - e)  # d log1p(-e) / dL above XSPLIT
+    f = jnp.where(lower, 1.0, s)
+    return _pack(
+        x,
+        a,
+        b,
+        -jnp.inf,
+        0.0,
+        jnp.where(lower, L, jnp.log1p(-e)),
+        (_times(La, f), _times(Lb, f), _times(Lt, jnp.where(lower, 1.0, -s))),
     )
-    r = jnp.exp(R)
-    s = -r / (1.0 - r)  # d log1p(-r) / dR
-    pieces = (
-        (L, jnp.log1p(-r)),
-        (La, _times(Ra, s)),
-        (Lb, _times(Rb, s)),
-        (Lx, _times(Ry, -s)),
-    )
-    return _combine(x, a, b, lower, -jnp.inf, 0.0, pieces)
 
 
 def eval_betainc(a, b, x, cab, cba):
+    """I_x(a, b) from the two orientations' series, one per point."""
+    return eval_betainc_parts(a, b, x, cab, cba, (None, None), (None, None), (0, 0, 0))[
+        0
+    ]
+
+
+def eval_betainc_frozen(a, b, x, cab, cba):
+    """I_x(a, b) with both orientations' series per element, for the frozen
+    recipe: bake folds _chebval's custom_jvp into its loop and nothing else."""
     x = jnp.asarray(x)
-    interior = (x > 0.0) & (x < 1.0)
-    xi = jnp.where(interior, x, 0.25)  # masked lanes get a safe dummy
-    xd = jnp.where(xi <= XSPLIT, xi, 0.25)
-    yd = jnp.where(xi <= XSPLIT, 0.25, 1.0 - xi)  # exact for x in [1/2, 1]
+    lower, xd, yd = _split(x)
     direct = jnp.exp(log_direct(a, b, xd, cab))
     reflected = 1.0 - jnp.exp(log_direct(b, a, yd, cba))
-    core = jnp.where(xi <= XSPLIT, direct, reflected)
-    out = jnp.where(x <= 0.0, 0.0, jnp.where(x >= 1.0, 1.0, core))
-    return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, out)
+    return _finish(x, a, b, jnp.where(lower, direct, reflected), 0.0, 1.0)
+
+
+def eval_log_betainc(a, b, x, cab, cba):
+    """ln I_x(a, b), no underflow floor below XSPLIT; log1p of the reflection
+    above errs ~eps/I."""
+    return eval_log_betainc_parts(
+        a, b, x, cab, cba, (None, None), (None, None), (0, 0, 0)
+    )[0]
 
 
 def betaincinv_core(a, b, p, cab, cba):

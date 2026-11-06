@@ -172,6 +172,18 @@ def test_parameter_gradients_across_both_panels_under_x64_off():
     )
 
 
+def test_matern_close_points_under_x64_off():
+    # z^nu underflowed and K_nu overflowed apart at small z: matern(6, 1e-8)
+    # was 0 * inf = nan. The reference at the clamp z = 1e-6 rounds to 1
+    _run(
+        "for nu in (0.5, 2.5, 6.0, 9.9):\n"
+        "    for r in (1e-18, 1e-8, 1e-6):\n"
+        "        got = float(jax.jit(chebax.matern)(nu, jnp.float32(r)))\n"
+        "        assert abs(got - 1.0) <= 2e-5 or nu == 0.5, (nu, r, got)\n"
+        "        assert np.isfinite(got), (nu, r, got)\n"
+    )
+
+
 def test_widest_float32_domain_under_jit():
     # float32's version of the reciprocal flush: half-width 1e38 is past
     # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Experiment 26: the Gamma quantile from a table plus one Newton step.
 
+(The prototype. The shipped table is gammaincinv_array_gen, increment 44,
+with the centre zone scaled to reach a = inf; experiments/31 measures it.)
+
 WHAT IS MEASURED
 ----------------
 A prototype of experiment 25's design for a per element in [0.1, 1000]:

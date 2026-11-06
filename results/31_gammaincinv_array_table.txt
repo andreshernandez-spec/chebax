@@ -1,0 +1,23 @@
+jax 0.11.0, mpmath 1.3.0, devices [CudaDevice(id=0)]
+round trip |F(x)/target - 1| on 264 points, a in [0.1, 1000], both tails, float64
+  method                             worst    median  worst at
+  table alone                     1.26e-06  2.16e-10  a=0.1, q=1e-100
+  table + 1 Newton step(s)        3.76e-13  1.14e-15  a=10, q=1e-300
+  table + 2 Newton step(s) (shipped)  3.17e-13  1.14e-15  a=0.1, q=1e-300
+  old solve (8 Halley + check)    3.76e-13  1.13e-15  a=10, q=1e-300
+
+cpu, N = 16384, float64, ns per element (median of 7); shipped (2 steps) / old solve, ratio
+  gammaincinv_array      1001.4 /   5333.3   5.3x   (one step, unjudged:  702.2)
+  gammainccinv_array     1035.2 /   6080.4   5.9x   (one step, unjudged:  694.8)
+
+gpu, N = 1048576, float64, ns per element (median of 7); shipped (2 steps) / old solve, ratio
+  gammaincinv_array        45.0 /    182.0   4.0x   (one step, unjudged:   32.1)
+  gammainccinv_array       44.4 /    194.6   4.4x   (one step, unjudged:   30.8)
+
+cpu, N = 16384, float32, ns per element (median of 7); shipped (0 steps) / old solve, ratio
+  gammaincinv_array       122.4 /   2010.4  16.4x   (one step, unjudged:  309.9)
+  gammainccinv_array      119.8 /   2334.2  19.5x   (one step, unjudged:  320.0)
+
+gpu, N = 1048576, float32, ns per element (median of 7); shipped (0 steps) / old solve, ratio
+  gammaincinv_array         1.2 /     11.9  10.1x   (one step, unjudged:    2.7)
+  gammainccinv_array        1.2 /     13.7  11.8x   (one step, unjudged:    2.7)

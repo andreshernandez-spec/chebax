@@ -22,7 +22,8 @@ exception: `gammainc_array` (increment 35) takes gammainc's a per element, from
 small 2-D patches (144 coefficients per element in float64, 49 in float32),
 because a Gamma likelihood with a shape per observation is common and the
 uniform tables would pay ~4,300 coefficients per element there. Its
-inverses run on the same patches (`gammaincinv_array`, increment 37).
+inverses start from a table of the quantile itself and take two Newton
+steps on the same patches (`gammaincinv_array`, increments 37 and 44).
 
 **Name:** `chebax` — confirmed 2026-07-29. PyPI and GitHub free (nearest neighbors
 chebpy, pychebfun, ChebTools). The spec-* alternatives were rejected: "spec" reads as

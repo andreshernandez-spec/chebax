@@ -70,6 +70,22 @@ def log_xpdf(a, t, small=False):
     return jnp.where(stir, lead - _a_phi(ab, t), direct)
 
 
+def x_of(a, t):
+    """(x = a e^t, near-mode lanes): a + a expm1(t) for |t| < _NEAR above
+    a = 2, which reaches every float near the mode; below a = 2, a e^t can be
+    subnormal where x is not, so exp(t + ln a)."""
+    big = a > 2.0
+    near = big & (jnp.abs(t) < _NEAR)
+    far = jnp.where(big, a * jnp.exp(t), jnp.exp(t + jnp.log(a)))
+    return jnp.where(near, a + a * jnp.expm1(jnp.where(near, t, 0.0)), far), near
+
+
+def snap_t(a, t):
+    """t restarted from the t its rounded x stands for, near the mode."""
+    x, near = x_of(a, t)
+    return jnp.where(near, jnp.log1p((x - a) / a), t)
+
+
 def _start(a, ltp, ltq, z, upper, ln_a):
     """The first t: the larger of Wilson-Hilferty and each tail's asymptotic.
     Below, P <= x^a / Gamma(a + 1) never starts above the root (WH misses a = 20,
@@ -127,19 +143,14 @@ def solve(
     the Stirling density, 8-28% of GPU time (experiments/09)."""
     lim = solver_limits(canon_tag())
     ln_a = jnp.log(a)
-    big = a > 2.0
 
     def x_at(t):
         if small:
             return jnp.exp(t + ln_a), None
-        # below a = 2, a e^t can be subnormal where x is not
-        near = big & (jnp.abs(t) < _NEAR)
-        far = jnp.where(big, a * jnp.exp(t), jnp.exp(t + ln_a))
-        return jnp.where(near, a + a * jnp.expm1(jnp.where(near, t, 0.0)), far), near
+        return x_of(a, t)
 
     def snap(t):
-        x, near = x_at(t)
-        return jnp.where(near, jnp.log1p((x - a) / a), t)
+        return snap_t(a, t)
 
     def residual(x):
         lp, lq = log_pq(x)

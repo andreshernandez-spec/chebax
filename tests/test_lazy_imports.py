@@ -127,6 +127,7 @@ def test_names_load_only_their_tables(module):
 # calling one gammainc or gammaincinv path loads its own tables and not
 # the other path's
 _GAMMA_ARRAY = {"gammainc_array_table", "erf_table"}
+_GAMMA_ARRAY_INV = _GAMMA_ARRAY | {"gammaincinv_array_table"}
 _GAMMA_PATHS = {
     "gammainc_scalar(2.5, 3.0)": _GAMMA,
     "gammainc_frozen(2.5)(3.0)": _GAMMA,
@@ -135,8 +136,8 @@ _GAMMA_PATHS = {
     "log_gammaincc([2.5, 30.0], 3.0)": _GAMMA_ARRAY,
     "gammaincinv_scalar(2.5, 0.3)": _GAMMA,
     "chi2inv(3.0, 0.3)": _GAMMA,
-    "gammaincinv_array([2.5, 30.0], 0.3)": _GAMMA_ARRAY,
-    "gammainccinv([2.5, 30.0], 0.3)": _GAMMA_ARRAY,
+    "gammaincinv_array([2.5, 30.0], 0.3)": _GAMMA_ARRAY_INV,
+    "gammainccinv([2.5, 30.0], 0.3)": _GAMMA_ARRAY_INV,
 }
 
 

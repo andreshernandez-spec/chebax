@@ -21,6 +21,7 @@ its lanes so neither poisons the other's gradient. p is traceable, uniform per
 call, in [1.05, 1.95]; outside it, and for mu <= 0, phi <= 0 or y < 0, nan.
 """
 
+import functools
 import math
 
 import jax
@@ -33,35 +34,38 @@ from chebax._src.series import ChebSeries
 _HALF_LOG_2PI = 0.5 * math.log(2 * math.pi)
 
 
-def _log_series_parts(rho, u):
-    """ln sum_{n=1..N} exp(n u - lgamma(n+1) - lgamma(rho n)) and its u and rho
-    derivatives in one pass. Reverse mode through the sum took 2.7 s against
-    20 ms for the value (N = 2^20, CPU)."""
+def _log_series_parts(rho, u, lead=1):
+    """ln sum_{n=1..N} exp((n - lead) u - lgamma(n+1) - lgamma(rho n)) and its u
+    and rho derivatives in one pass, lead = 1 being ln W - u. Reverse mode
+    through the sum took 2.7 s against 20 ms for the value (N = 2^20, CPU)."""
     n = jnp.arange(1, _tt.N_TERMS + 1, dtype=u.dtype)
     c = jax.lax.lgamma(n + 1.0) + jax.lax.lgamma(rho * n)
     g = n * jax.lax.digamma(rho * n)  # -d/drho of term n's exponent
-    m = u - c[0]
+    m = (1 - lead) * u - c[0]
     for k in range(1, _tt.N_TERMS):
-        m = jnp.maximum(m, (k + 1) * u - c[k])
+        m = jnp.maximum(m, (k + 1 - lead) * u - c[k])
     s = su = sr = jnp.zeros_like(u)
     for k in range(_tt.N_TERMS):
-        e = jnp.exp((k + 1) * u - c[k] - m)
+        e = jnp.exp((k + 1 - lead) * u - c[k] - m)
         s = s + e
-        su = su + (k + 1) * e
+        su = su + (k + 1 - lead) * e
         sr = sr + g[k] * e
     return m + jnp.log(s), su / s, -sr / s
 
 
-@jax.custom_jvp
-def _log_series(rho, u):
-    return _log_series_parts(rho, u)[0]
+@functools.partial(jax.custom_jvp, nondiff_argnums=(2,))
+def _log_series(rho, u, lead=0):
+    """ln W(rho, e^u) - lead u. lead = 1 for the density, whose -ln y cancels
+    the leading term's u: apart, their 1/y slopes cancel and lose d/dy (0 for
+    1 at p = 1.5, y = 1e-7 in float32)."""
+    return _log_series_parts(rho, u, lead)[0]
 
 
 @_log_series.defjvp
-def _log_series_jvp(primals, tangents):
+def _log_series_jvp(lead, primals, tangents):
     rho, u = primals
     drho, du = tangents
-    val, d_u, d_rho = _log_series_parts(rho, u)
+    val, d_u, d_rho = _log_series_parts(rho, u, lead)
     return val, d_u * du + d_rho * drho
 
 
@@ -164,15 +168,17 @@ def _half_deviance_jvp(primals, tangents):
     a, mu, y = primals
     da, dmu, dy = tangents
     h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
+    h_mu = -jnp.power(mu, a - 1.0) * ((y - mu) / mu)
+    return h, h_a + h_mu * dmu + _half_deviance_dy(a, mu, y) * dy
+
+
+def _half_deviance_dy(a, mu, y):
     near, mid = _deviance_lanes(mu, y)
-    delta = (y - mu) / mu
     m1 = jnp.power(mu, a - 1.0)
-    h_mu = -m1 * delta
     lr = _log_ratio(near, mid, mu, y)
-    h_y = jnp.where(
+    return jnp.where(
         near | mid, m1 * jnp.expm1((a - 1.0) * lr), jnp.power(y, a - 1.0) - m1
     ) / (a - 1.0)
-    return h, h_a + h_mu * dmu + h_y * dy
 
 
 @jax.custom_jvp
@@ -187,6 +193,38 @@ def _over_jvp(primals, tangents):
     (h, phi), (dh, dphi) = primals, tangents
     q = h / phi
     return q, (dh - q * dphi) / phi
+
+
+_barrier = jax.lax.optimization_barrier
+
+
+@jax.custom_jvp
+def _deviance_over(a, mu, y, phi):
+    """d(y, mu) / (2 phi)."""
+    return _half_deviance(a, mu, y) / phi
+
+
+@_deviance_over.defjvp
+def _deviance_over_jvp(primals, tangents):
+    # The mean partial over phi, -mu^(a-1) delta / phi = -(y - mu) / (phi mu^p).
+    # Where mu^(a-1) delta leaves the float range before phi brings it back
+    # (1e320 for 1e120 at mu = 1e-200, phi = 1e200, y = 1e20) it is formed as
+    # -(y - mu) h^2, h = mu^(-p/2) / sqrt(phi), in range when the result is
+    a, mu, y, phi = primals
+    da, dmu, dy, dphi = tangents
+    h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
+    q = h / phi
+    t = jnp.power(mu, a - 1.0) * ((y - mu) / mu)
+    far = ~jnp.isfinite(t) | ((jnp.abs(t) < jnp.finfo(t.dtype).tiny) & (y != mu))
+    # the barriers stop XLA regrouping these into mu phi or h^2 (out of range)
+    md, yd = jnp.where(far, 1.0, mu), jnp.where(far, 1.0, y)
+    near_q = -_barrier(jnp.power(md, a - 1.0) * ((yd - md) / md)) / phi
+    mf, yf, ff = (jnp.where(far, v, 1.0) for v in (mu, y, phi))
+    hf = jnp.power(mf, -0.5 * (2.0 - a)) / jnp.sqrt(ff)
+    q_mu = jnp.where(far, -_barrier((yf - mf) * hf) * hf, near_q)
+    # as _over: (dh - q dphi) / phi, since XLA turns (h/phi)/phi into h/phi^2
+    dh = h_a + _half_deviance_dy(a, mu, y) * dy
+    return q, (dh - q * dphi) / phi + q_mu * dmu
 
 
 def tweedie_logpdf(p, mu, phi, y):
@@ -222,18 +260,21 @@ def tweedie_logpdf(p, mu, phi, y):
     # mu, so the mean gradient is exactly (y - mu) / (phi mu^p); as separate
     # terms it cancels to rounding, ~1e286 at mu = 1e-300
     mi, fi, yi = own(inner, mu_s, phi_s, y_s)
-    u = r * (jnp.log(yi) - jnp.log(pp - 1.0)) - (1.0 + r) * jnp.log(fi) - jnp.log(a)
+    u0 = -r * jnp.log(pp - 1.0) - (1.0 + r) * jnp.log(fi) - jnp.log(a)
+    u = r * jnp.log(yi) + u0
+    # -ln y + u as (r - 1) ln y + u0, with the series' own u taken out
     f_in = (
-        -_over(_half_deviance(a, mi, yi), fi)
+        -_deviance_over(a, mi, yi, fi)
         + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
-        - jnp.log(yi)
-        + _log_series(r, u)
+        + (r - 1.0) * jnp.log(yi)
+        + u0
+        + _log_series(r, u, 1)
     )
     # outer: 1/Z from phi directly, not a reciprocal of Z ~ 1/phi
     mt, ft, yt = own(outer, mu_s, phi_s, y_s)
     w = jnp.where(outer, ft * a * (pp - 1.0) / jnp.power(yt, a), 1.0 / z1)
     f_tail = (
-        -_over(_half_deviance(a, mt, yt), ft)
+        -_deviance_over(a, mt, yt, ft)
         - 0.5 * (jnp.log(ft) + pp * jnp.log(yt))
         - _HALF_LOG_2PI
         + tail(z1 * w) * w

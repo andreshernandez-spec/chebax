@@ -122,15 +122,15 @@ def _zones(mp):
     return lam_lo, s_hi, [(n, *s) for n, s in zip(NAMES, specs)]
 
 
-def _patch(mp, f, kind, pbox, ybox):
+def _patch(mp, f, kind, pbox, ybox, n_nodes=None, a_of=_a_of):
     """C[k][j], the j-th parameter coefficient of the k-th argument
     coefficient of f on pbox x ybox; both fit stages in mp."""
     p0, p1 = (mp.mpf(v) for v in pbox)
     y0, y1 = (mp.mpf(v) for v in ybox)
-    t = nodes(mp, NODES)
+    t = nodes(mp, NODES if n_nodes is None else n_nodes)
     rows = []
     for tp in t:
-        a = _a_of(mp, kind, p0 + (tp + 1) / 2 * (p1 - p0))
+        a = a_of(mp, kind, p0 + (tp + 1) / 2 * (p1 - p0))
         rows.append(dct(mp, [f(mp, a, y0 + (ty + 1) / 2 * (y1 - y0)) for ty in t]))
     return param_fit(mp, rows)
 
@@ -144,29 +144,35 @@ def _outside(mp, c, ky, kp):
     )
 
 
-def _refine(mp, f, kind, pbox, ybox):
+def _refine(mp, f, kind, pbox, ybox, *, block=None, tol=None, n_nodes=None, a_of=_a_of):
+    """Split pbox x ybox until every patch's coefficients outside its leading
+    block (KY x KP by default) sum to at most tol (TOL); returns the
+    parameter cuts, the argument cuts and the patches. The quantile generator
+    passes its own block, tolerance, node count and parameter map."""
+    ky, kp = (KY, KP) if block is None else block
+    tol = TOL if tol is None else tol
     pc, yc, memo = list(pbox), list(ybox), {}
 
     def coefs(i, j):
         key = (pc[i], pc[i + 1], yc[j], yc[j + 1])
         if key not in memo:
-            memo[key] = _patch(mp, f, kind, key[:2], key[2:])
+            memo[key] = _patch(mp, f, kind, key[:2], key[2:], n_nodes, a_of)
         return memo[key]
 
     while True:
         worst = None
         for i in range(len(pc) - 1):
             for j in range(len(yc) - 1):
-                drop = _outside(mp, coefs(i, j), KY, KP)
-                if drop > TOL and (worst is None or drop > worst[0]):
+                drop = _outside(mp, coefs(i, j), ky, kp)
+                if drop > tol and (worst is None or drop > worst[0]):
                     worst = (drop, i, j)
         if worst is None:
             break
         _, i, j = worst
         c = coefs(i, j)
         n = len(c)
-        arg_tail = mp.fsum(abs(c[k][q]) for k in range(KY, n) for q in range(n))
-        par_tail = mp.fsum(abs(c[k][q]) for k in range(n) for q in range(KP, n))
+        arg_tail = mp.fsum(abs(c[k][q]) for k in range(ky, n) for q in range(n))
+        par_tail = mp.fsum(abs(c[k][q]) for k in range(n) for q in range(kp, n))
         if arg_tail >= par_tail:
             yc.insert(j + 1, (yc[j] + yc[j + 1]) / 2)
         else:

@@ -148,10 +148,11 @@ def test_gradients_are_finite_under_x64_off():
 def test_parameter_gradients_across_both_panels_under_x64_off():
     # the panel not taken was evaluated past its range, where its series
     # overflows float32, and reverse mode turned inf * 0 into nan: d/dnu was
-    # nan for nu > 3.3 (besselk, matern) and nu > 47 (stdtr). Forward mode
-    # never was, so it is the reference: measured |rev - fwd| 1.7e-5 relative
-    # (besselk) and 7e-7 absolute (matern, stdtr, log_stdtr; their nu-slopes
-    # are small, so float32 leaves them only absolutely accurate).
+    # nan for nu > 3.3 (besselk, matern) and nu > 47 (stdtr). log_stdtr's
+    # ln(1 - I) did the same outside its lanes at large nu (t = +-30). Forward
+    # mode never was, so it is the reference: measured |rev - fwd| 1.7e-5
+    # relative (besselk) and 7e-7 absolute (matern, stdtr, log_stdtr; their
+    # nu-slopes are small, so float32 leaves them only absolutely accurate).
     _run(
         "cases = [\n"
         "    (lambda n: chebax.besselk_scalar(n, 2.0), np.linspace(0.05, 10.0, 41)),\n"
@@ -159,6 +160,8 @@ def test_parameter_gradients_across_both_panels_under_x64_off():
         "    (lambda n: chebax.matern(n, 0.7, 1.0), np.linspace(0.05, 10.0, 41)),\n"
         "    (lambda n: chebax.stdtr(n, 1.5), np.geomspace(0.2, 200.0, 41)),\n"
         "    (lambda n: chebax.log_stdtr(n, -1.5), np.geomspace(0.2, 200.0, 41)),\n"
+        "    (lambda n: chebax.log_stdtr(n, -30.0), np.geomspace(0.2, 200.0, 41)),\n"
+        "    (lambda n: chebax.log_stdtr(n, 30.0), np.geomspace(0.2, 200.0, 41)),\n"
         "]\n"
         "for i, (f, ps) in enumerate(cases):\n"
         "    ps = jnp.asarray(ps, jnp.float32)\n"

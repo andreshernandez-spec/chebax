@@ -55,7 +55,10 @@ def _coefs_traced(tensor, sa, sb):
     va = jax.vmap(jax.vmap(lambda row: _chebval(sa, row, (-1.0, 1.0))))(
         jnp.swapaxes(t, 1, 2)
     )  # (NX, NB)
-    return jax.vmap(lambda row: _chebval(sb, row, (-1.0, 1.0)))(va)
+    c = jax.vmap(lambda row: _chebval(sb, row, (-1.0, 1.0)))(va)
+    # without the barrier, XLA fused this into the float32 GPU gradient in
+    # (a, b) as one kernel that took 2.7 s per call whatever N (experiments/34)
+    return jax.lax.optimization_barrier(c)
 
 
 def _eval_logs(a, b, x, lnr, ltail):

@@ -3,8 +3,6 @@ once in numpy and cached per a and x64 mode. Recipe pytrees: they jit,
 differentiate in x and bake. gammainc_small for a <= 10, gammainc_large above.
 """
 
-import functools
-
 import jax
 
 from chebax import domains as _dom
@@ -12,7 +10,10 @@ from chebax._src.pytree import Recipe
 from chebax._src.recipes import gammainc_large as _gl
 from chebax._src.recipes import gammainc_small as _gs
 from chebax._src.recipes import gammainc_table as _gt
-from chebax._src.recipes._common import check_range
+from chebax._src.recipes._common import (
+    check_range,
+    frozen_cache,
+)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -71,7 +72,7 @@ class GammaIncLargeQ(Recipe):
         return _gl.eval_large(self.a, x, self.temme, self.dlow, self.dup, "q")
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def p_at(a, _tag):
     a = check_range("gammainc_frozen", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:
@@ -79,7 +80,7 @@ def p_at(a, _tag):
     return GammaIncP(a, *_gs.series_eager(a))
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def q_at(a, _tag):
     a = check_range("gammaincc_frozen", "a", a, *_dom.GAMMAINC[:2])
     if a > _gt.AHI:

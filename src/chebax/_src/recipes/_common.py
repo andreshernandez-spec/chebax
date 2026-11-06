@@ -27,6 +27,21 @@ def canon_tag():
     return str(jnp.empty(()).dtype)
 
 
+def frozen_cache(build):
+    """The bounded cache of a _frozen factory. The build runs outside any
+    active trace: called first under jit, it would otherwise store tracers
+    (jnp.asarray stages even numpy input), and every later call would fail
+    with UnexpectedTracerError."""
+
+    @functools.lru_cache(maxsize=128)
+    @functools.wraps(build)
+    def cached(*key):
+        with jax.ensure_compile_time_eval():
+            return build(*key)
+
+    return cached
+
+
 def canon_float(x):
     """Promote to the canonical float dtype (float64 under x64): a float32 input
     under x64 would mismatch the solvers' fori_loop carry."""

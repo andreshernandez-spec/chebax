@@ -11,7 +11,6 @@ x ~ 600 (K < 1e-260), backends that flush subnormals (XLA CPU) lose small
 gradient terms such as the 1/(2x) in dK/dx.
 """
 
-import functools
 import math
 
 import jax
@@ -20,11 +19,12 @@ import jax.numpy as jnp
 from chebax._src.pytree import Recipe
 from chebax._src.recipes import besselk_table as _kt
 from chebax._src.recipes._common import (
-    canon_param,
     canon_float,
+    canon_param,
     canon_tag,
     check_range,
     deprecated_factory,
+    frozen_cache,
     panel_coefs,
     param_coefs,
     param_coefs_der,
@@ -107,7 +107,7 @@ class BesselKdnu(Recipe):
         )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besselk_cached(v, _tag):
     v = check_range("besselk", "v", v, 0.0, _kt.VMAX)
     table, lo, hi = _panel(v)
@@ -118,7 +118,7 @@ def _besselk_cached(v, _tag):
     )
 
 
-@functools.lru_cache(maxsize=128)
+@frozen_cache
 def _besselk_dnu_cached(v, _tag):
     v = check_range("besselk", "v", v, 0.0, _kt.VMAX)
     table, lo, hi = _panel(v)

@@ -36,7 +36,8 @@ def gammainc(a, x=None):
 
 
 def gammaincc(a, x=None):
-    """Q(a, x), dispatched like gammainc, relatively accurate in the upper tail."""
+    """Q(a, x), dispatched like gammainc. Relatively accurate where Q is small,
+    except gammaincc_scalar below x = 8 (see there)."""
     if x is None:
         return deprecated_factory("gammaincc", gammaincc_frozen, a)
     return gammaincc_array(a, x) if per_element(a) else gammaincc_scalar(a, x)
@@ -68,7 +69,9 @@ def gammainc_scalar(a, x):
 
 
 def gammaincc_scalar(a, x):
-    """Q(a, x) as gammainc_scalar, computed directly, not as 1 - P."""
+    """Q(a, x) as gammainc_scalar. For a <= 10 the tables hold Q for x > 8;
+    below, Q = 1 - P is only absolutely accurate, ~eps/Q relative (worst near
+    x = 8 at small a, where Q ~ 1e-6). gammaincc_array is relative there."""
     from chebax._src.recipes import gammainc_scalar as _scalar
 
     return _scalar.q(_scalar_a(a, "gammaincc_scalar"), jnp.asarray(x))

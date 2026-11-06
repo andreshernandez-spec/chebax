@@ -8,8 +8,11 @@ eps |ln M| ~ eps x (the besselk/gammainc log-table contract). Measured
 worst over a denser sweep than the grids below (9x9 pairs x 13 x):
 values and log form 3.7e-13 (at a=0.1, b=8, x=15; the 3-D contraction
 floor), log form at deep x 1.7e-16 relative, dM/dx 9.5e-14 vs the
-exact (a/b) M(a+1, b+1, x) oracle, d/da and d/db 2.9e-15 vs mp.diff;
-bars ~4x.
+exact (a/b) M(a+1, b+1, x) oracle. d/da and d/db vs mp.diff (as errors
+in d ln M, scaled by max(1, |d ln M/da|, |d ln M/db|)) depend on a: ~3e-15
+from a = 1, 1.3e-12 at a = 0.18, 1.4e-10 at a = b = 0.1 and x = 11,
+largest for x in [8, 18] (2026-11-06, a 9x9 geometric grid with the box
+edges x 13 points); bars ~4x.
 """
 
 import numpy as np
@@ -113,6 +116,20 @@ def test_dx_against_contiguous_oracle():
         assert np.max(np.abs(g - ref) / (np.abs(ref) * lnm)) <= 4e-13, (a, b)
 
 
+def _da_db_err(a, b, x):
+    da_ref = float(
+        mp.diff(lambda t: mp.log(mp.hyp1f1(t, mp.mpf(b), mp.mpf(x))), mp.mpf(a))
+    )
+    db_ref = float(
+        mp.diff(lambda t: mp.log(mp.hyp1f1(mp.mpf(a), t, mp.mpf(x))), mp.mpf(b))
+    )
+    da, db = jax.grad(chebax.log_hyp1f1_scalar, argnums=(0, 1))(
+        jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
+    )
+    scale = max(abs(da_ref), abs(db_ref), 1.0)
+    return max(abs(float(da) - da_ref), abs(float(db) - db_ref)) / scale
+
+
 def test_da_db_traced():
     for a, b, x in [
         (0.5, 0.5, 2.0),
@@ -120,18 +137,14 @@ def test_da_db_traced():
         (7.7, 1.3, 0.5),
         (0.15, 9.9, 40.0),
     ]:
-        da_ref = float(
-            mp.diff(lambda t: mp.log(mp.hyp1f1(t, mp.mpf(b), mp.mpf(x))), mp.mpf(a))
-        )
-        db_ref = float(
-            mp.diff(lambda t: mp.log(mp.hyp1f1(mp.mpf(a), t, mp.mpf(x))), mp.mpf(b))
-        )
-        da, db = jax.grad(chebax.log_hyp1f1_scalar, argnums=(0, 1))(
-            jnp.asarray(a), jnp.asarray(b), jnp.asarray(x)
-        )
-        scale = max(abs(da_ref), abs(db_ref), 1.0)
-        assert abs(float(da) - da_ref) / scale <= 1e-13, (a, b, x)
-        assert abs(float(db) - db_ref) / scale <= 1e-13, (a, b, x)
+        assert _da_db_err(a, b, x) <= 1e-13, (a, b, x)
+
+
+def test_da_db_at_small_a():
+    # the parameter derivatives are weakest near a = 0.1 for mid-range x
+    # (module docstring); the points are the measured worst ones
+    for a, b, x in [(0.1, 0.1, 11.14), (0.1, 0.1, 13.0), (0.1, 10.0, 10.0)]:
+        assert _da_db_err(a, b, x) <= 6e-10, (a, b, x)
 
 
 def test_seam_is_ordinary_point():

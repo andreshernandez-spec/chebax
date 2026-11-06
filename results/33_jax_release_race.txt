@@ -1,0 +1,707 @@
+chebax against jax's special functions, jax 0.11.0 and 0.12.0.1
+  run 0.11.0_f32: 2026-11-06 08:52, {'cpu': 'cpu', 'gpu': 'NVIDIA GeForce RTX 3080 Laptop GPU'}, chebax 77ccbd5 2026-11-06, load 2.8 -> 1.1
+  run 0.11.0_f64: 2026-11-06 08:30, {'cpu': 'cpu', 'gpu': 'NVIDIA GeForce RTX 3080 Laptop GPU'}, chebax 77ccbd5 2026-11-06, load 3.0 -> 2.9
+  run 0.12.0.1_f32: 2026-11-06 09:35, {'cpu': 'cpu', 'gpu': 'NVIDIA GeForce RTX 3080 Laptop GPU'}, chebax 77ccbd5 2026-11-06, load 1.7 -> 1.4
+  run 0.12.0.1_f64: 2026-11-06 09:16, {'cpu': 'cpu', 'gpu': 'NVIDIA GeForce RTX 3080 Laptop GPU'}, chebax 77ccbd5 2026-11-06, load 1.1 -> 1.6
+
+=== ACCURACY f64 (worst over CPU and GPU; '(k nan)' = k points nan/inf where the reference is finite)
+family     quantity     metric   jax 0.11.0        jax 0.12.0.1      chebax 0.12.0.1  chebax 0.11.0  chebax array 0.12.0.1
+erfcx      v            rel      9.5e-16           2.7e-16           6.1e-16          6.1e-16        -                    
+erfcx      d_x          rel      2.6e-06           3.8e-16           6.3e-16          6.3e-16        -                    
+dawsn      v            rel      3.6e-16           3.6e-16           2.0e-15          2.0e-15        -                    
+dawsn      d_x          rel      2.8e-08           2.8e-08           1.2e-13          1.2e-13        -                    
+i0         v            rel      6.7e-16           6.7e-16           2.0e-15          2.9e-15        -                    
+i0         d_x          rel      2.7e-10           7.4e-16           1.8e-15          2.8e-15        -                    
+i1         v            rel      7.4e-16           7.4e-16           2.1e-15          2.1e-15        -                    
+i1         d_x          rel      1.6e-15           1.6e-15           2.0e-15          2.0e-15        -                    
+i0e        v            rel      5.9e-16           5.9e-16           2.0e-15          2.9e-15        -                    
+i0e        d_x          rel      3.2e-12           3.2e-12           1.0e-14          1.1e-14        -                    
+i1e        v            rel      7.7e-16           7.7e-16           2.0e-15          2.0e-15        -                    
+i1e        d_x          rel      4.9e-12           4.9e-12           1.4e-14          1.4e-14        -                    
+j0         v [x<=50]    sup      2.6e-02 (28 nan)  2.6e-02 (28 nan)  1.0e-15          1.0e-15        -                    
+j0         v [x>50]     sup      1.7e+02           1.7e+02           2.5e-16          2.5e-16        -                    
+j0         d_x [x<=50]  sup      4.2e+06 (28 nan)  4.2e+06 (28 nan)  1.1e-15          1.1e-15        -                    
+j0         d_x [x>50]   sup      2.9e+00           2.9e+00           3.8e-16          3.8e-16        -                    
+j1         v [x<=50]    sup      8.8e-02 (28 nan)  8.8e-02 (28 nan)  5.7e-16          5.7e-16        -                    
+j1         v [x>50]     sup      7.9e+01           7.9e+01           3.8e-16          3.8e-16        -                    
+j1         d_x [x<=50]  sup      5.1e+01 (28 nan)  5.1e+01 (28 nan)  3.4e-15          3.4e-15        -                    
+j1         d_x [x>50]   sup      3.1e+00           3.1e+00           3.7e-16          3.7e-16        -                    
+j2         v [x<=50]    sup      5.3e-02 (28 nan)  5.3e-02 (28 nan)  2.1e-15          2.1e-15        -                    
+j2         v [x>50]     sup      1.7e+02           1.7e+02           3.7e-16          3.7e-16        -                    
+j2         d_x [x<=50]  sup      2.7e-01 (28 nan)  2.7e-01 (28 nan)  3.5e-15          3.5e-15        -                    
+j2         d_x [x>50]   sup      2.9e+00           2.9e+00           3.8e-16          3.8e-16        -                    
+j5         v [x<=50]    sup      1.4e-01 (28 nan)  1.4e-01 (28 nan)  9.6e-16          9.6e-16        -                    
+j5         v [x>50]     sup      7.8e+01           7.8e+01           1.4e-15          1.4e-15        -                    
+j5         d_x [x<=50]  sup      1.2e-01 (28 nan)  1.2e-01 (28 nan)  2.4e-15          2.4e-15        -                    
+j5         d_x [x>50]   sup      3.1e+00           3.1e+00           1.3e-15          1.3e-15        -                    
+j10        v [x<=50]    sup      1.3e-01 (28 nan)  1.3e-01 (28 nan)  5.4e-16          5.4e-16        -                    
+j10        v [x>50]     sup      1.6e+02           1.6e+02           4.9e-16          4.9e-16        -                    
+j10        d_x [x<=50]  sup      2.5e-01 (28 nan)  2.5e-01 (28 nan)  2.0e-15          2.0e-15        -                    
+j10        d_x [x>50]   sup      2.9e+00           2.9e+00           6.3e-16          6.3e-16        -                    
+betainc    v            abs      1.1e-13           1.0e-13           1.4e-13          1.4e-13        -                    
+betainc    v            rel      2.7e-12           2.3e-12           8.3e+02          8.3e+02        -                    
+betainc    d_x          split    2.8e-13           2.8e-13           3.3e+00          3.3e+00        -                    
+betainc    d_a          abs      -                 -                 2.8e-13          2.8e-13        -                    
+betainc    d_b          abs      -                 -                 2.8e-13          2.8e-13        -                    
+gammainc   v            abs      3.1e-13           3.1e-13           3.3e-15          3.3e-15        5.6e-16              
+gammainc   v            rel      1.1e-12           1.1e-12           7.6e-13          1.1e-12        1.6e-13              
+gammainc   d_x          split    1.0e-12           1.0e-12           2.0e-12          2.0e-12        2.8e-08              
+gammainc   d_a          abs      8.3e-15           8.3e-15           4.4e-15          4.4e-15        1.5e-13              
+gammaincc  v            abs      3.1e-13           3.1e-13           3.2e-15          3.2e-15        5.2e-16              
+gammaincc  v            rel      1.1e-12           1.1e-12           3.5e-11          3.5e-11        7.6e-14              
+gammaincc  d_x          split    1.2e-12           1.2e-12           6.5e-12          6.5e-12        7.6e-14              
+gammaincc  d_a          abs      8.3e-15           8.3e-15           4.4e-15          4.4e-15        1.5e-13              
+hyp1f1     v            rel_lnM  6.4e-16           6.4e-16           3.6e-13          3.6e-13        -                    
+hyp1f1     d_x          dlog     5.8e-15           5.8e-15           1.1e-12          1.1e-12        -                    
+hyp1f1     d_a          dlog     1.0e+00           1.0e+00           7.7e-12          7.7e-12        -                    
+hyp1f1     d_b          dlog     1.0e+00           1.0e+00           1.4e-10          1.4e-10        -                    
+stdtr      v            abs      3.7e-12           3.7e-12           3.6e-15          9.2e-14        -                    
+stdtr      v            rel      7.4e-12           7.4e-12           3.3e+09          3.3e+09        -                    
+stdtr      d_t          split    7.3e-09 (14 nan)  7.3e-09 (14 nan)  5.9e-14          5.9e-14        -                    
+stdtr      d_nu         abs      -                 -                 3.9e-16          3.0e-15        -                    
+
+  worst points (device, params, x), f64:
+  erfcx v rel jax 0.12.0.1: 2.7e-16 at ('cpu', [], -0.38999998569488525)
+  erfcx v rel chebax 0.12.0.1: 6.1e-16 at ('gpu', [], -0.07000000029802322)
+  erfcx v rel chebax 0.11.0: 6.1e-16 at ('gpu', [], -0.07000000029802322)
+  erfcx d_x rel jax 0.12.0.1: 3.8e-16 at ('cpu', [], 91180.03125)
+  erfcx d_x rel chebax 0.12.0.1: 6.3e-16 at ('cpu', [], 0.034983210265636444)
+  erfcx d_x rel chebax 0.11.0: 6.3e-16 at ('cpu', [], 0.034983210265636444)
+  dawsn v rel jax 0.12.0.1: 3.6e-16 at ('cpu', [], -0.00030311354203149676)
+  dawsn v rel chebax 0.12.0.1: 2.0e-15 at ('gpu', [], -0.06856782734394073)
+  dawsn v rel chebax 0.11.0: 2.0e-15 at ('gpu', [], -0.06856782734394073)
+  dawsn d_x rel jax 0.12.0.1: 2.8e-08 at ('cpu', [], -8840.7333984375)
+  dawsn d_x rel chebax 0.12.0.1: 1.2e-13 at ('gpu', [], -5.442343711853027)
+  dawsn d_x rel chebax 0.11.0: 1.2e-13 at ('gpu', [], -5.442343711853027)
+  i0 v rel jax 0.12.0.1: 6.7e-16 at ('gpu', [], 1.1484715969345416e-06)
+  i0 v rel chebax 0.12.0.1: 2.0e-15 at ('gpu', [], 4.58482372778235e-06)
+  i0 v rel chebax 0.11.0: 2.9e-15 at ('gpu', [], 4.58482372778235e-06)
+  i0 d_x rel jax 0.12.0.1: 7.4e-16 at ('cpu', [], 5.936727046966553)
+  i0 d_x rel chebax 0.12.0.1: 1.8e-15 at ('gpu', [], 4.58482372778235e-06)
+  i0 d_x rel chebax 0.11.0: 2.8e-15 at ('gpu', [], 4.58482372778235e-06)
+  i1 v rel jax 0.12.0.1: 7.4e-16 at ('cpu', [], 5.936727046966553)
+  i1 v rel chebax 0.12.0.1: 2.1e-15 at ('gpu', [], 0.046702343970537186)
+  i1 v rel chebax 0.11.0: 2.1e-15 at ('gpu', [], 0.046702343970537186)
+  i1 d_x rel jax 0.12.0.1: 1.6e-15 at ('gpu', [], 1.1484715969345416e-06)
+  i1 d_x rel chebax 0.12.0.1: 2.0e-15 at ('gpu', [], 9.999999974752427e-07)
+  i1 d_x rel chebax 0.11.0: 2.0e-15 at ('gpu', [], 9.999999974752427e-07)
+  i0e v rel jax 0.12.0.1: 5.9e-16 at ('gpu', [], 0.30972906947135925)
+  i0e v rel chebax 0.12.0.1: 2.0e-15 at ('gpu', [], 0.001847281469963491)
+  i0e v rel chebax 0.11.0: 2.9e-15 at ('gpu', [], 0.001847281469963491)
+  i0e d_x rel jax 0.12.0.1: 3.2e-12 at ('cpu', [], 10000.0)
+  i0e d_x rel chebax 0.12.0.1: 1.0e-14 at ('cpu', [], 6.510693550109863)
+  i0e d_x rel chebax 0.11.0: 1.1e-14 at ('cpu', [], 7.140151500701904)
+  i1e v rel jax 0.12.0.1: 7.7e-16 at ('gpu', [], 6.818162441253662)
+  i1e v rel chebax 0.12.0.1: 2.0e-15 at ('gpu', [], 0.046702343970537186)
+  i1e v rel chebax 0.11.0: 2.0e-15 at ('gpu', [], 0.046702343970537186)
+  i1e d_x rel jax 0.12.0.1: 4.9e-12 at ('gpu', [], 9549.044921875)
+  i1e d_x rel chebax 0.12.0.1: 1.4e-14 at ('cpu', [], 1.487115502357483)
+  i1e d_x rel chebax 0.11.0: 1.4e-14 at ('cpu', [], 1.487115502357483)
+  j0 v [x<=50] sup jax 0.12.0.1: 2.6e-02 (28 nan) at ('cpu', [], 48.900001525878906)
+  j0 v [x<=50] sup chebax 0.12.0.1: 1.0e-15 at ('gpu', [], 9.999999974752427e-07)
+  j0 v [x<=50] sup chebax 0.11.0: 1.0e-15 at ('gpu', [], 9.999999974752427e-07)
+  j0 v [x>50] sup jax 0.12.0.1: 1.7e+02 at ('cpu', [], 1000.0)
+  j0 v [x>50] sup chebax 0.12.0.1: 2.5e-16 at ('cpu', [], 51.0)
+  j0 v [x>50] sup chebax 0.11.0: 2.5e-16 at ('cpu', [], 51.0)
+  j0 d_x [x<=50] sup jax 0.12.0.1: 4.2e+06 (28 nan) at ('cpu', [], 2.099103767250199e-05)
+  j0 d_x [x<=50] sup chebax 0.12.0.1: 1.1e-15 at ('cpu', [], 8.0)
+  j0 d_x [x<=50] sup chebax 0.11.0: 1.1e-15 at ('cpu', [], 8.0)
+  j0 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('cpu', [], 58.900001525878906)
+  j0 d_x [x>50] sup chebax 0.12.0.1: 3.8e-16 at ('cpu', [], 80.4000015258789)
+  j0 d_x [x>50] sup chebax 0.11.0: 3.8e-16 at ('cpu', [], 80.4000015258789)
+  j1 v [x<=50] sup jax 0.12.0.1: 8.8e-02 (28 nan) at ('cpu', [], 50.0)
+  j1 v [x<=50] sup chebax 0.12.0.1: 5.7e-16 at ('gpu', [], 1.5)
+  j1 v [x<=50] sup chebax 0.11.0: 5.7e-16 at ('gpu', [], 1.5)
+  j1 v [x>50] sup jax 0.12.0.1: 7.9e+01 at ('cpu', [], 490.0)
+  j1 v [x>50] sup chebax 0.12.0.1: 3.8e-16 at ('cpu', [], 50.099998474121094)
+  j1 v [x>50] sup chebax 0.11.0: 3.8e-16 at ('cpu', [], 50.099998474121094)
+  j1 d_x [x<=50] sup jax 0.12.0.1: 5.1e+01 (28 nan) at ('cpu', [], 2.099103767250199e-05)
+  j1 d_x [x<=50] sup chebax 0.12.0.1: 3.4e-15 at ('cpu', [], 8.0)
+  j1 d_x [x<=50] sup chebax 0.11.0: 3.4e-15 at ('cpu', [], 8.0)
+  j1 d_x [x>50] sup jax 0.12.0.1: 3.1e+00 at ('cpu', [], 70.0)
+  j1 d_x [x>50] sup chebax 0.12.0.1: 3.7e-16 at ('cpu', [], 73.5)
+  j1 d_x [x>50] sup chebax 0.11.0: 3.7e-16 at ('cpu', [], 73.5)
+  j2 v [x<=50] sup jax 0.12.0.1: 5.3e-02 (28 nan) at ('cpu', [], 48.900001525878906)
+  j2 v [x<=50] sup chebax 0.12.0.1: 2.1e-15 at ('cpu', [], 7.900000095367432)
+  j2 v [x<=50] sup chebax 0.11.0: 2.1e-15 at ('cpu', [], 7.900000095367432)
+  j2 v [x>50] sup jax 0.12.0.1: 1.7e+02 at ('cpu', [], 1000.0)
+  j2 v [x>50] sup chebax 0.12.0.1: 3.7e-16 at ('cpu', [], 50.79999923706055)
+  j2 v [x>50] sup chebax 0.11.0: 3.7e-16 at ('cpu', [], 50.79999923706055)
+  j2 d_x [x<=50] sup jax 0.12.0.1: 2.7e-01 (28 nan) at ('cpu', [], 0.0147737767547369)
+  j2 d_x [x<=50] sup chebax 0.12.0.1: 3.5e-15 at ('gpu', [], 7.800000190734863)
+  j2 d_x [x<=50] sup chebax 0.11.0: 3.5e-15 at ('gpu', [], 7.800000190734863)
+  j2 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('cpu', [], 58.900001525878906)
+  j2 d_x [x>50] sup chebax 0.12.0.1: 3.8e-16 at ('cpu', [], 51.70000076293945)
+  j2 d_x [x>50] sup chebax 0.11.0: 3.8e-16 at ('cpu', [], 51.70000076293945)
+  j5 v [x<=50] sup jax 0.12.0.1: 1.4e-01 (28 nan) at ('cpu', [], 50.0)
+  j5 v [x<=50] sup chebax 0.12.0.1: 9.6e-16 at ('gpu', [], 7.900000095367432)
+  j5 v [x<=50] sup chebax 0.11.0: 9.6e-16 at ('gpu', [], 7.900000095367432)
+  j5 v [x>50] sup jax 0.12.0.1: 7.8e+01 at ('cpu', [], 476.0)
+  j5 v [x>50] sup chebax 0.12.0.1: 1.4e-15 at ('gpu', [], 54.20000076293945)
+  j5 v [x>50] sup chebax 0.11.0: 1.4e-15 at ('gpu', [], 54.20000076293945)
+  j5 d_x [x<=50] sup jax 0.12.0.1: 1.2e-01 (28 nan) at ('gpu', [], 49.20000076293945)
+  j5 d_x [x<=50] sup chebax 0.12.0.1: 2.4e-15 at ('cpu', [], 8.0)
+  j5 d_x [x<=50] sup chebax 0.11.0: 2.4e-15 at ('cpu', [], 8.0)
+  j5 d_x [x>50] sup jax 0.12.0.1: 3.1e+00 at ('cpu', [], 69.69999694824219)
+  j5 d_x [x>50] sup chebax 0.12.0.1: 1.3e-15 at ('gpu', [], 58.900001525878906)
+  j5 d_x [x>50] sup chebax 0.11.0: 1.3e-15 at ('gpu', [], 58.900001525878906)
+  j10 v [x<=50] sup jax 0.12.0.1: 1.3e-01 (28 nan) at ('cpu', [], 50.0)
+  j10 v [x<=50] sup chebax 0.12.0.1: 5.4e-16 at ('gpu', [], 28.799999237060547)
+  j10 v [x<=50] sup chebax 0.11.0: 5.4e-16 at ('gpu', [], 28.799999237060547)
+  j10 v [x>50] sup jax 0.12.0.1: 1.6e+02 at ('cpu', [], 1000.0)
+  j10 v [x>50] sup chebax 0.12.0.1: 4.9e-16 at ('cpu', [], 61.0)
+  j10 v [x>50] sup chebax 0.11.0: 4.9e-16 at ('cpu', [], 61.0)
+  j10 d_x [x<=50] sup jax 0.12.0.1: 2.5e-01 (28 nan) at ('gpu', [], 50.0)
+  j10 d_x [x<=50] sup chebax 0.12.0.1: 2.0e-15 at ('cpu', [], 30.0)
+  j10 d_x [x<=50] sup chebax 0.11.0: 2.0e-15 at ('cpu', [], 30.0)
+  j10 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('cpu', [], 86.5999984741211)
+  j10 d_x [x>50] sup chebax 0.12.0.1: 6.3e-16 at ('cpu', [], 57.20000076293945)
+  j10 d_x [x>50] sup chebax 0.11.0: 6.3e-16 at ('cpu', [], 57.20000076293945)
+  betainc v abs jax 0.12.0.1: 1.0e-13 at ('cpu', [100.0, 100.0], 0.5)
+  betainc v abs chebax 0.12.0.1: 1.4e-13 at ('gpu', [2.5, 100.0], 0.5)
+  betainc v abs chebax 0.11.0: 1.4e-13 at ('gpu', [2.5, 100.0], 0.5)
+  betainc v rel jax 0.12.0.1: 2.3e-12 at ('cpu', [100.0, 0.10000000149011612], 0.9930721521377563)
+  betainc v rel chebax 0.12.0.1: 8.3e+02 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc v rel chebax 0.11.0: 8.3e+02 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc d_x split jax 0.12.0.1: 2.8e-13 at ('gpu', [100.0, 7.0], 0.0037593799643218517)
+  betainc d_x split chebax 0.12.0.1: 3.3e+00 at ('gpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc d_x split chebax 0.11.0: 3.3e+00 at ('gpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc d_a abs chebax 0.12.0.1: 2.8e-13 at ('cpu', [0.10000000149011612, 100.0], 3.9164297049865127e-07)
+  betainc d_a abs chebax 0.11.0: 2.8e-13 at ('cpu', [0.10000000149011612, 100.0], 3.9164297049865127e-07)
+  betainc d_b abs chebax 0.12.0.1: 2.8e-13 at ('cpu', [100.0, 0.10000000149011612], 0.9999995827674866)
+  betainc d_b abs chebax 0.11.0: 2.8e-13 at ('cpu', [100.0, 0.10000000149011612], 0.9999995827674866)
+  gammainc v abs jax 0.12.0.1: 3.1e-13 at ('cpu', [1000.0], 995.196533203125)
+  gammainc v abs chebax 0.12.0.1: 3.3e-15 at ('gpu', [10.0], 9.519654273986816)
+  gammainc v abs chebax 0.11.0: 3.3e-15 at ('gpu', [10.0], 9.519654273986816)
+  gammainc v abs chebax_array 0.12.0.1: 5.6e-16 at ('cpu', [0.10000000149011612], 0.9617801308631897)
+  gammainc v rel jax 0.12.0.1: 1.1e-12 at ('cpu', [1000.0], 939.1561889648438)
+  gammainc v rel chebax 0.12.0.1: 7.6e-13 at ('cpu', [1000.0], 348.4521179199219)
+  gammainc v rel chebax 0.11.0: 1.1e-12 at ('cpu', [1000.0], 621.9622192382812)
+  gammainc v rel chebax_array 0.12.0.1: 1.6e-13 at ('cpu', [1000.0], 260.8150634765625)
+  gammainc d_x split jax 0.12.0.1: 1.0e-12 at ('cpu', [1000.0], 915.1388549804688)
+  gammainc d_x split chebax 0.12.0.1: 2.0e-12 at ('cpu', [0.30000001192092896], 6.595343112945557)
+  gammainc d_x split chebax 0.11.0: 2.0e-12 at ('cpu', [0.30000001192092896], 6.595343112945557)
+  gammainc d_x split chebax_array 0.12.0.1: 2.8e-08 at ('cpu', [100.0], 0.03422701731324196)
+  gammainc d_a abs jax 0.12.0.1: 8.3e-15 at ('cpu', [1000.0], 995.196533203125)
+  gammainc d_a abs chebax 0.12.0.1: 4.4e-15 at ('cpu', [0.10000000149011612], 0.00017493248742539436)
+  gammainc d_a abs chebax 0.11.0: 4.4e-15 at ('cpu', [0.10000000149011612], 0.00017493248742539436)
+  gammainc d_a abs chebax_array 0.12.0.1: 1.5e-13 at ('cpu', [1.0], 0.45190438628196716)
+  gammaincc v abs jax 0.12.0.1: 3.1e-13 at ('cpu', [1000.0], 995.196533203125)
+  gammaincc v abs chebax 0.12.0.1: 3.2e-15 at ('gpu', [10.0], 9.519654273986816)
+  gammaincc v abs chebax 0.11.0: 3.2e-15 at ('gpu', [10.0], 9.519654273986816)
+  gammaincc v abs chebax_array 0.12.0.1: 5.2e-16 at ('cpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc v rel jax 0.12.0.1: 1.1e-12 at ('cpu', [1000.0], 1339.4444580078125)
+  gammaincc v rel chebax 0.12.0.1: 3.5e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc v rel chebax 0.11.0: 3.5e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc v rel chebax_array 0.12.0.1: 7.6e-14 at ('cpu', [1000.0], 2290.398193359375)
+  gammaincc d_x split jax 0.12.0.1: 1.2e-12 at ('cpu', [1000.0], 1339.4444580078125)
+  gammaincc d_x split chebax 0.12.0.1: 6.5e-12 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc d_x split chebax 0.11.0: 6.5e-12 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc d_x split chebax_array 0.12.0.1: 7.6e-14 at ('cpu', [1000.0], 2290.398193359375)
+  gammaincc d_a abs jax 0.12.0.1: 8.3e-15 at ('cpu', [1000.0], 995.196533203125)
+  gammaincc d_a abs chebax 0.12.0.1: 4.4e-15 at ('cpu', [0.10000000149011612], 0.00017493248742539436)
+  gammaincc d_a abs chebax 0.11.0: 4.4e-15 at ('cpu', [0.10000000149011612], 0.00017493248742539436)
+  gammaincc d_a abs chebax_array 0.12.0.1: 1.5e-13 at ('cpu', [1.0], 0.45190438628196716)
+  hyp1f1 v rel_lnM jax 0.12.0.1: 6.4e-16 at ('cpu', [0.10000000149011612, 2.5], 1.0)
+  hyp1f1 v rel_lnM chebax 0.12.0.1: 3.6e-13 at ('gpu', [0.10000000149011612, 5.0], 12.82758617401123)
+  hyp1f1 v rel_lnM chebax 0.11.0: 3.6e-13 at ('gpu', [0.10000000149011612, 5.0], 12.82758617401123)
+  hyp1f1 d_x dlog jax 0.12.0.1: 5.8e-15 at ('gpu', [10.0, 1.0], 100.0)
+  hyp1f1 d_x dlog chebax 0.12.0.1: 1.1e-12 at ('cpu', [0.10000000149011612, 5.0], 11.137930870056152)
+  hyp1f1 d_x dlog chebax 0.11.0: 1.1e-12 at ('cpu', [0.10000000149011612, 5.0], 11.137930870056152)
+  hyp1f1 d_a dlog jax 0.12.0.1: 1.0e+00 at ('cpu', [0.10000000149011612, 0.10000000149011612], 500.0)
+  hyp1f1 d_a dlog chebax 0.12.0.1: 7.7e-12 at ('cpu', [0.10000000149011612, 10.0], 9.448275566101074)
+  hyp1f1 d_a dlog chebax 0.11.0: 7.7e-12 at ('cpu', [0.10000000149011612, 10.0], 9.448275566101074)
+  hyp1f1 d_b dlog jax 0.12.0.1: 1.0e+00 at ('cpu', [0.10000000149011612, 0.10000000149011612], 500.0)
+  hyp1f1 d_b dlog chebax 0.12.0.1: 1.4e-10 at ('gpu', [0.10000000149011612, 0.10000000149011612], 11.137930870056152)
+  hyp1f1 d_b dlog chebax 0.11.0: 1.4e-10 at ('gpu', [0.10000000149011612, 0.10000000149011612], 11.137930870056152)
+  stdtr v abs jax 0.12.0.1: 3.7e-12 at ('cpu', [200.0], 0.0012638481566682458)
+  stdtr v abs chebax 0.12.0.1: 3.6e-15 at ('cpu', [200.0], 11.689517974853516)
+  stdtr v abs chebax 0.11.0: 9.2e-14 at ('cpu', [30.0], -4.581597805023193)
+  stdtr v rel jax 0.12.0.1: 7.4e-12 at ('cpu', [200.0], -0.0012638481566682458)
+  stdtr v rel chebax 0.12.0.1: 3.3e+09 at ('cpu', [200.0], -11.689517974853516)
+  stdtr v rel chebax 0.11.0: 3.3e+09 at ('gpu', [200.0], -11.689517974853516)
+  stdtr d_t split jax 0.12.0.1: 7.3e-09 (14 nan) at ('cpu', [200.0], -0.0012638481566682458)
+  stdtr d_t split chebax 0.12.0.1: 5.9e-14 at ('gpu', [200.0], -60.208946228027344)
+  stdtr d_t split chebax 0.11.0: 5.9e-14 at ('gpu', [200.0], -60.208946228027344)
+  stdtr d_nu abs chebax 0.12.0.1: 3.9e-16 at ('gpu', [0.5], -37.69390869140625)
+  stdtr d_nu abs chebax 0.11.0: 3.0e-15 at ('cpu', [30.0], -4.581597805023193)
+
+=== ACCURACY f32 (worst over CPU and GPU; '(k nan)' = k points nan/inf where the reference is finite)
+family     quantity     metric   jax 0.11.0         jax 0.12.0.1       chebax 0.12.0.1    chebax 0.11.0      chebax array 0.12.0.1
+erfcx      v            rel      1.0e+00            1.8e-07            4.6e-07            4.6e-07            -                    
+erfcx      d_x          rel      2.2e+03            2.4e-07            5.6e-07            5.6e-07            -                    
+dawsn      v            rel      2.2e-07            2.2e-07            1.5e-06            1.5e-06            -                    
+dawsn      d_x          rel      1.2e+01            1.2e+01            6.5e-05            6.5e-05            -                    
+i0         v            rel      3.6e-07 (2 nan)    3.6e-07 (2 nan)    7.1e-07 (2 nan)    1.2e-06 (2 nan)    -                    
+i0         d_x          rel      4.6e-02 (2 nan)    7.1e-07 (2 nan)    8.1e-07 (2 nan)    1.3e-06 (2 nan)    -                    
+i1         v            rel      7.1e-07 (2 nan)    7.1e-07 (2 nan)    5.9e-07 (2 nan)    8.9e-07 (2 nan)    -                    
+i1         d_x          rel      8.4e-07 (2 nan)    8.4e-07 (2 nan)    4.6e-07 (2 nan)    8.3e-07 (2 nan)    -                    
+i0e        v            rel      3.2e-07            3.2e-07            7.5e-07            1.2e-06            -                    
+i0e        d_x          rel      1.5e-03            1.5e-03            3.2e-06            4.1e-06            -                    
+i1e        v            rel      6.9e-07            6.9e-07            5.6e-07            8.2e-07            -                    
+i1e        d_x          rel      2.3e-03            2.3e-03            4.7e-06            7.4e-06            -                    
+j0         v [x<=50]    sup      2.6e-02 (188 nan)  2.6e-02 (188 nan)  4.6e-07            4.6e-07            -                    
+j0         v [x>50]     sup      1.7e+02            1.7e+02            2.0e-07            2.0e-07            -                    
+j0         d_x [x<=50]  sup      1.6e+01 (188 nan)  1.6e+01 (188 nan)  3.3e-07            3.3e-07            -                    
+j0         d_x [x>50]   sup      2.9e+00            2.9e+00            1.8e-07            1.8e-07            -                    
+j1         v [x<=50]    sup      8.8e-02 (188 nan)  8.8e-02 (188 nan)  2.7e-07            2.7e-07            -                    
+j1         v [x>50]     sup      7.9e+01            7.9e+01            1.6e-07            1.6e-07            -                    
+j1         d_x [x<=50]  sup      6.7e+00 (188 nan)  6.7e+00 (188 nan)  1.0e-06            1.0e-06            -                    
+j1         d_x [x>50]   sup      3.1e+00            3.1e+00            2.0e-07            2.0e-07            -                    
+j2         v [x<=50]    sup      5.3e-02 (188 nan)  5.3e-02 (188 nan)  4.9e-07            4.9e-07            -                    
+j2         v [x>50]     sup      1.7e+02            1.7e+02            1.7e-07            1.7e-07            -                    
+j2         d_x [x<=50]  sup      1.9e+01 (188 nan)  1.9e+01 (188 nan)  2.1e-06            2.1e-06            -                    
+j2         d_x [x>50]   sup      2.9e+00            2.9e+00            2.2e-07            2.2e-07            -                    
+j5         v [x<=50]    sup      1.4e-01 (188 nan)  1.4e-01 (188 nan)  4.2e-07            4.2e-07            -                    
+j5         v [x>50]     sup      7.8e+01            7.8e+01            2.3e-07            2.3e-07            -                    
+j5         d_x [x<=50]  sup      1.2e+01 (188 nan)  1.2e+01 (188 nan)  1.0e-06            1.0e-06            -                    
+j5         d_x [x>50]   sup      3.1e+00            3.1e+00            2.2e-07            2.2e-07            -                    
+j10        v [x<=50]    sup      1.3e-01 (124 nan)  1.3e-01 (124 nan)  3.0e-07            3.0e-07            -                    
+j10        v [x>50]     sup      1.6e+02            1.6e+02            2.6e-07            2.6e-07            -                    
+j10        d_x [x<=50]  sup      2.4e+00 (124 nan)  2.4e+00 (124 nan)  4.4e-07            4.4e-07            -                    
+j10        d_x [x>50]   sup      2.9e+00            2.9e+00            2.7e-07            2.7e-07            -                    
+betainc    v            abs      3.1e-05            2.1e-05            2.3e-05            3.2e-05            -                    
+betainc    v            rel      3.4e-04            3.3e-04            1.8e+11            1.8e+11            -                    
+betainc    d_x          split    4.5e-05            4.5e-05            1.1e+08            1.1e+08            -                    
+betainc    d_a          abs      -                  -                  6.9e-05            6.9e-05            -                    
+betainc    d_b          abs      -                  -                  6.7e-05            6.7e-05            -                    
+gammainc   v            abs      2.9e-04            2.9e-04            1.4e-06            1.9e-06            2.6e-07              
+gammainc   v            rel      7.6e-04            7.6e-04            3.4e-05            6.4e-05            1.8e-05              
+gammainc   d_x          split    7.3e-04            7.3e-04            3.1e-03            3.1e-03            3.1e-03              
+gammainc   d_a          abs      8.0e-06            8.0e-06            1.6e-06            3.1e-06            1.3e-06              
+gammaincc  v            abs      2.9e-04            2.9e-04            1.5e-06            1.9e-06            2.6e-07              
+gammaincc  v            rel      7.0e-04            7.0e-04            4.0e-02            8.0e-02            1.2e-05              
+gammaincc  d_x          split    9.2e-04            9.2e-04            5.6e-03            5.1e-03            4.0e-05              
+gammaincc  d_a          abs      8.0e-06            8.0e-06            1.6e-06            3.1e-06            1.1e-06              
+hyp1f1     v            rel_lnM  3.7e-07 (18 nan)   3.7e-07 (18 nan)   3.4e-06            3.4e-06            -                    
+hyp1f1     d_x          dlog     2.2e-06 (18 nan)   2.2e-06 (18 nan)   8.5e-06 (2 nan)    1.1e-05 (2 nan)    -                    
+hyp1f1     d_a          dlog     6.1e-06            6.1e-06            8.2e-06 (3 nan)    1.1e-05 (3 nan)    -                    
+hyp1f1     d_b          dlog     4.8e-06            4.8e-06            9.3e-06 (2 nan)    1.1e-05 (2 nan)    -                    
+stdtr      v            abs      1.0e-03            1.0e-03            3.1e-06            1.5e-05            -                    
+stdtr      v            rel      2.0e-03            2.0e-03            1.0e+00            1.1e+19            -                    
+stdtr      d_t          split    1.0e+00 (34 nan)   1.0e+00 (34 nan)   7.4e-06            3.8e-05            -                    
+stdtr      d_nu         abs      -                  -                  1.3e-07 (242 nan)  4.1e-07 (242 nan)  -                    
+
+  worst points (device, params, x), f32:
+  erfcx v rel jax 0.12.0.1: 1.8e-07 at ('gpu', [], -0.009999999776482582)
+  erfcx v rel chebax 0.12.0.1: 4.6e-07 at ('gpu', [], -0.03810654208064079)
+  erfcx v rel chebax 0.11.0: 4.6e-07 at ('gpu', [], -0.03810654208064079)
+  erfcx d_x rel jax 0.12.0.1: 2.4e-07 at ('gpu', [], 1975.783447265625)
+  erfcx d_x rel chebax 0.12.0.1: 5.6e-07 at ('gpu', [], 0.12167827039957047)
+  erfcx d_x rel chebax 0.11.0: 5.6e-07 at ('gpu', [], 0.12167827039957047)
+  dawsn v rel jax 0.12.0.1: 2.2e-07 at ('gpu', [], -3.5358593463897705)
+  dawsn v rel chebax 0.12.0.1: 1.5e-06 at ('gpu', [], -5.788177013397217)
+  dawsn v rel chebax 0.11.0: 1.5e-06 at ('gpu', [], -5.788177013397217)
+  dawsn d_x rel jax 0.12.0.1: 1.2e+01 at ('gpu', [], -7348.873046875)
+  dawsn d_x rel chebax 0.12.0.1: 6.5e-05 at ('gpu', [], -5.788177013397217)
+  dawsn d_x rel chebax 0.11.0: 6.5e-05 at ('gpu', [], -5.788177013397217)
+  i0 v rel jax 0.12.0.1: 3.6e-07 (2 nan) at ('gpu', [], 0.0006693469476886094)
+  i0 v rel chebax 0.12.0.1: 7.1e-07 (2 nan) at ('cpu', [], 0.0009682152885943651)
+  i0 v rel chebax 0.11.0: 1.2e-06 (2 nan) at ('cpu', [], 0.0009682152885943651)
+  i0 d_x rel jax 0.12.0.1: 7.1e-07 (2 nan) at ('cpu', [], 6.818162441253662)
+  i0 d_x rel chebax 0.12.0.1: 8.1e-07 (2 nan) at ('gpu', [], 0.008087525144219398)
+  i0 d_x rel chebax 0.11.0: 1.3e-06 (2 nan) at ('gpu', [], 0.035407740622758865)
+  i1 v rel jax 0.12.0.1: 7.1e-07 (2 nan) at ('cpu', [], 6.818162441253662)
+  i1 v rel chebax 0.12.0.1: 5.9e-07 (2 nan) at ('gpu', [], 7.830465316772461)
+  i1 v rel chebax 0.11.0: 8.9e-07 (2 nan) at ('gpu', [], 0.004439096432179213)
+  i1 d_x rel jax 0.12.0.1: 8.4e-07 (2 nan) at ('gpu', [], 0.23482346534729004)
+  i1 d_x rel chebax 0.12.0.1: 4.6e-07 (2 nan) at ('gpu', [], 7.830465316772461)
+  i1 d_x rel chebax 0.11.0: 8.3e-07 (2 nan) at ('gpu', [], 0.004439096432179213)
+  i0e v rel jax 0.12.0.1: 3.2e-07 at ('gpu', [], 0.23482346534729004)
+  i0e v rel chebax 0.12.0.1: 7.5e-07 at ('gpu', [], 0.005591070745140314)
+  i0e v rel chebax 0.11.0: 1.2e-06 at ('gpu', [], 0.005591070745140314)
+  i0e d_x rel jax 0.12.0.1: 1.5e-03 at ('cpu', [], 10000.0)
+  i0e d_x rel chebax 0.12.0.1: 3.2e-06 at ('gpu', [], 7.830465316772461)
+  i0e d_x rel chebax 0.11.0: 4.1e-06 at ('gpu', [], 6.510693550109863)
+  i1e v rel jax 0.12.0.1: 6.9e-07 at ('cpu', [], 6.818162441253662)
+  i1e v rel chebax 0.12.0.1: 5.6e-07 at ('gpu', [], 7.830465316772461)
+  i1e v rel chebax 0.11.0: 8.2e-07 at ('gpu', [], 0.004439096432179213)
+  i1e d_x rel jax 0.12.0.1: 2.3e-03 at ('cpu', [], 8707.224609375)
+  i1e d_x rel chebax 0.12.0.1: 4.7e-06 at ('gpu', [], 7.830465316772461)
+  i1e d_x rel chebax 0.11.0: 7.4e-06 at ('cpu', [], 1.6308907270431519)
+  j0 v [x<=50] sup jax 0.12.0.1: 2.6e-02 (188 nan) at ('cpu', [], 48.900001525878906)
+  j0 v [x<=50] sup chebax 0.12.0.1: 4.6e-07 at ('gpu', [], 0.1941491961479187)
+  j0 v [x<=50] sup chebax 0.11.0: 4.6e-07 at ('gpu', [], 0.1941491961479187)
+  j0 v [x>50] sup jax 0.12.0.1: 1.7e+02 at ('cpu', [], 1000.0)
+  j0 v [x>50] sup chebax 0.12.0.1: 2.0e-07 at ('cpu', [], 67.19999694824219)
+  j0 v [x>50] sup chebax 0.11.0: 2.0e-07 at ('cpu', [], 67.19999694824219)
+  j0 d_x [x<=50] sup jax 0.12.0.1: 1.6e+01 (188 nan) at ('cpu', [], 3.5999999046325684)
+  j0 d_x [x<=50] sup chebax 0.12.0.1: 3.3e-07 at ('gpu', [], 2.299999952316284)
+  j0 d_x [x<=50] sup chebax 0.11.0: 3.3e-07 at ('gpu', [], 2.299999952316284)
+  j0 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('cpu', [], 58.900001525878906)
+  j0 d_x [x>50] sup chebax 0.12.0.1: 1.8e-07 at ('gpu', [], 58.900001525878906)
+  j0 d_x [x>50] sup chebax 0.11.0: 1.8e-07 at ('gpu', [], 58.900001525878906)
+  j1 v [x<=50] sup jax 0.12.0.1: 8.8e-02 (188 nan) at ('gpu', [], 50.0)
+  j1 v [x<=50] sup chebax 0.12.0.1: 2.7e-07 at ('gpu', [], 6.699999809265137)
+  j1 v [x<=50] sup chebax 0.11.0: 2.7e-07 at ('gpu', [], 6.699999809265137)
+  j1 v [x>50] sup jax 0.12.0.1: 7.9e+01 at ('gpu', [], 490.0)
+  j1 v [x>50] sup chebax 0.12.0.1: 1.6e-07 at ('cpu', [], 56.29999923706055)
+  j1 v [x>50] sup chebax 0.11.0: 1.6e-07 at ('cpu', [], 56.29999923706055)
+  j1 d_x [x<=50] sup jax 0.12.0.1: 6.7e+00 (188 nan) at ('cpu', [], 5.099999904632568)
+  j1 d_x [x<=50] sup chebax 0.12.0.1: 1.0e-06 at ('cpu', [], 8.0)
+  j1 d_x [x<=50] sup chebax 0.11.0: 1.0e-06 at ('cpu', [], 8.0)
+  j1 d_x [x>50] sup jax 0.12.0.1: 3.1e+00 at ('gpu', [], 70.0)
+  j1 d_x [x>50] sup chebax 0.12.0.1: 2.0e-07 at ('gpu', [], 60.20000076293945)
+  j1 d_x [x>50] sup chebax 0.11.0: 2.0e-07 at ('gpu', [], 60.20000076293945)
+  j2 v [x<=50] sup jax 0.12.0.1: 5.3e-02 (188 nan) at ('cpu', [], 48.900001525878906)
+  j2 v [x<=50] sup chebax 0.12.0.1: 4.9e-07 at ('gpu', [], 7.199999809265137)
+  j2 v [x<=50] sup chebax 0.11.0: 4.9e-07 at ('gpu', [], 7.199999809265137)
+  j2 v [x>50] sup jax 0.12.0.1: 1.7e+02 at ('cpu', [], 1000.0)
+  j2 v [x>50] sup chebax 0.12.0.1: 1.7e-07 at ('gpu', [], 51.0)
+  j2 v [x>50] sup chebax 0.11.0: 1.7e-07 at ('gpu', [], 51.0)
+  j2 d_x [x<=50] sup jax 0.12.0.1: 1.9e+01 (188 nan) at ('gpu', [], 3.5)
+  j2 d_x [x<=50] sup chebax 0.12.0.1: 2.1e-06 at ('cpu', [], 8.0)
+  j2 d_x [x<=50] sup chebax 0.11.0: 2.1e-06 at ('cpu', [], 8.0)
+  j2 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('cpu', [], 58.900001525878906)
+  j2 d_x [x>50] sup chebax 0.12.0.1: 2.2e-07 at ('gpu', [], 74.9000015258789)
+  j2 d_x [x>50] sup chebax 0.11.0: 2.2e-07 at ('gpu', [], 74.9000015258789)
+  j5 v [x<=50] sup jax 0.12.0.1: 1.4e-01 (188 nan) at ('gpu', [], 50.0)
+  j5 v [x<=50] sup chebax 0.12.0.1: 4.2e-07 at ('gpu', [], 8.699999809265137)
+  j5 v [x<=50] sup chebax 0.11.0: 4.2e-07 at ('gpu', [], 8.699999809265137)
+  j5 v [x>50] sup jax 0.12.0.1: 7.8e+01 at ('cpu', [], 476.0)
+  j5 v [x>50] sup chebax 0.12.0.1: 2.3e-07 at ('gpu', [], 59.0)
+  j5 v [x>50] sup chebax 0.11.0: 2.3e-07 at ('gpu', [], 59.0)
+  j5 d_x [x<=50] sup jax 0.12.0.1: 1.2e+01 (188 nan) at ('cpu', [], 6.0)
+  j5 d_x [x<=50] sup chebax 0.12.0.1: 1.0e-06 at ('gpu', [], 7.900000095367432)
+  j5 d_x [x<=50] sup chebax 0.11.0: 1.0e-06 at ('gpu', [], 7.900000095367432)
+  j5 d_x [x>50] sup jax 0.12.0.1: 3.1e+00 at ('gpu', [], 69.69999694824219)
+  j5 d_x [x>50] sup chebax 0.12.0.1: 2.2e-07 at ('cpu', [], 50.599998474121094)
+  j5 d_x [x>50] sup chebax 0.11.0: 2.2e-07 at ('cpu', [], 50.599998474121094)
+  j10 v [x<=50] sup jax 0.12.0.1: 1.3e-01 (124 nan) at ('gpu', [], 50.0)
+  j10 v [x<=50] sup chebax 0.12.0.1: 3.0e-07 at ('gpu', [], 28.700000762939453)
+  j10 v [x<=50] sup chebax 0.11.0: 3.0e-07 at ('gpu', [], 28.700000762939453)
+  j10 v [x>50] sup jax 0.12.0.1: 1.6e+02 at ('cpu', [], 1000.0)
+  j10 v [x>50] sup chebax 0.12.0.1: 2.6e-07 at ('gpu', [], 56.29999923706055)
+  j10 v [x>50] sup chebax 0.11.0: 2.6e-07 at ('gpu', [], 56.29999923706055)
+  j10 d_x [x<=50] sup jax 0.12.0.1: 2.4e+00 (124 nan) at ('cpu', [], 8.199999809265137)
+  j10 d_x [x<=50] sup chebax 0.12.0.1: 4.4e-07 at ('cpu', [], 29.899999618530273)
+  j10 d_x [x<=50] sup chebax 0.11.0: 4.4e-07 at ('cpu', [], 29.899999618530273)
+  j10 d_x [x>50] sup jax 0.12.0.1: 2.9e+00 at ('gpu', [], 86.5999984741211)
+  j10 d_x [x>50] sup chebax 0.12.0.1: 2.7e-07 at ('cpu', [], 54.79999923706055)
+  j10 d_x [x>50] sup chebax 0.11.0: 2.7e-07 at ('cpu', [], 54.79999923706055)
+  betainc v abs jax 0.12.0.1: 2.1e-05 at ('cpu', [100.0, 100.0], 0.5)
+  betainc v abs chebax 0.12.0.1: 2.3e-05 at ('cpu', [0.10000000149011612, 100.0], 0.5)
+  betainc v abs chebax 0.11.0: 3.2e-05 at ('gpu', [20.0, 100.0], 0.5)
+  betainc v rel jax 0.12.0.1: 3.3e-04 at ('cpu', [100.0, 0.10000000149011612], 0.9930721521377563)
+  betainc v rel chebax 0.12.0.1: 1.8e+11 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc v rel chebax 0.11.0: 1.8e+11 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc d_x split jax 0.12.0.1: 4.5e-05 at ('cpu', [100.0, 100.0], 0.14723347127437592)
+  betainc d_x split chebax 0.12.0.1: 1.1e+08 at ('cpu', [100.0, 0.5], 0.7286759614944458)
+  betainc d_x split chebax 0.11.0: 1.1e+08 at ('gpu', [100.0, 0.5], 0.7286759614944458)
+  betainc d_a abs chebax 0.12.0.1: 6.9e-05 at ('cpu', [0.10000000149011612, 100.0], 2.450956117172609e-06)
+  betainc d_a abs chebax 0.11.0: 6.9e-05 at ('cpu', [0.10000000149011612, 100.0], 2.450956117172609e-06)
+  betainc d_b abs chebax 0.12.0.1: 6.7e-05 at ('gpu', [100.0, 0.10000000149011612], 0.9999997615814209)
+  betainc d_b abs chebax 0.11.0: 6.7e-05 at ('cpu', [100.0, 0.10000000149011612], 0.9999975562095642)
+  gammainc v abs jax 0.12.0.1: 2.9e-04 at ('gpu', [1000.0], 995.196533203125)
+  gammainc v abs chebax 0.12.0.1: 1.4e-06 at ('gpu', [1000.0], 1003.2023315429688)
+  gammainc v abs chebax 0.11.0: 1.9e-06 at ('cpu', [10.0], 8.007442474365234)
+  gammainc v abs chebax_array 0.12.0.1: 2.6e-07 at ('gpu', [0.10000000149011612], 0.9617801308631897)
+  gammainc v rel jax 0.12.0.1: 7.6e-04 at ('gpu', [1000.0], 915.1388549804688)
+  gammainc v rel chebax 0.12.0.1: 3.4e-05 at ('gpu', [100.0], 45.31645584106445)
+  gammainc v rel chebax 0.11.0: 6.4e-05 at ('gpu', [100.0], 45.31645584106445)
+  gammainc v rel chebax_array 0.12.0.1: 1.8e-05 at ('gpu', [100.0], 25.078868865966797)
+  gammainc d_x split jax 0.12.0.1: 7.3e-04 at ('gpu', [1000.0], 795.0523681640625)
+  gammainc d_x split chebax 0.12.0.1: 3.1e-03 at ('cpu', [100.0], 20.0)
+  gammainc d_x split chebax 0.11.0: 3.1e-03 at ('cpu', [100.0], 20.0)
+  gammainc d_x split chebax_array 0.12.0.1: 3.1e-03 at ('cpu', [100.0], 20.0)
+  gammainc d_a abs jax 0.12.0.1: 8.0e-06 at ('gpu', [1000.0], 995.196533203125)
+  gammainc d_a abs chebax 0.12.0.1: 1.6e-06 at ('gpu', [0.10000000149011612], 0.00019563410023692995)
+  gammainc d_a abs chebax 0.11.0: 3.1e-06 at ('gpu', [0.10000000149011612], 0.00038272704114206135)
+  gammainc d_a abs chebax_array 0.12.0.1: 1.3e-06 at ('gpu', [0.10000000149011612], 0.002865648129954934)
+  gammaincc v abs jax 0.12.0.1: 2.9e-04 at ('gpu', [1000.0], 995.196533203125)
+  gammaincc v abs chebax 0.12.0.1: 1.5e-06 at ('gpu', [1000.0], 1003.2023315429688)
+  gammaincc v abs chebax 0.11.0: 1.9e-06 at ('cpu', [10.0], 8.007442474365234)
+  gammaincc v abs chebax_array 0.12.0.1: 2.6e-07 at ('gpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc v rel jax 0.12.0.1: 7.0e-04 at ('gpu', [1000.0], 1331.438720703125)
+  gammaincc v rel chebax 0.12.0.1: 4.0e-02 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc v rel chebax 0.11.0: 8.0e-02 at ('gpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc v rel chebax_array 0.12.0.1: 1.2e-05 at ('gpu', [1000.0], 1339.4444580078125)
+  gammaincc d_x split jax 0.12.0.1: 9.2e-04 at ('gpu', [1000.0], 1163.317626953125)
+  gammaincc d_x split chebax 0.12.0.1: 5.6e-03 at ('gpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc d_x split chebax 0.11.0: 5.1e-03 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc d_x split chebax_array 0.12.0.1: 4.0e-05 at ('cpu', [100.0], 279.3267517089844)
+  gammaincc d_a abs jax 0.12.0.1: 8.0e-06 at ('gpu', [1000.0], 995.196533203125)
+  gammaincc d_a abs chebax 0.12.0.1: 1.6e-06 at ('gpu', [0.10000000149011612], 0.00019563410023692995)
+  gammaincc d_a abs chebax 0.11.0: 3.1e-06 at ('gpu', [0.10000000149011612], 0.00038272704114206135)
+  gammaincc d_a abs chebax_array 0.12.0.1: 1.1e-06 at ('gpu', [0.10000000149011612], 0.3514867424964905)
+  hyp1f1 v rel_lnM jax 0.12.0.1: 3.7e-07 (18 nan) at ('cpu', [0.10000000149011612, 10.0], 7.758620738983154)
+  hyp1f1 v rel_lnM chebax 0.12.0.1: 3.4e-06 at ('cpu', [10.0, 1.0], 0.13894954323768616)
+  hyp1f1 v rel_lnM chebax 0.11.0: 3.4e-06 at ('cpu', [10.0, 1.0], 0.13894954323768616)
+  hyp1f1 d_x dlog jax 0.12.0.1: 2.2e-06 (18 nan) at ('gpu', [0.5, 1.0], 75.0)
+  hyp1f1 d_x dlog chebax 0.12.0.1: 8.5e-06 (2 nan) at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  hyp1f1 d_x dlog chebax 0.11.0: 1.1e-05 (2 nan) at ('cpu', [5.0, 10.0], 100.0)
+  hyp1f1 d_a dlog jax 0.12.0.1: 6.1e-06 at ('cpu', [0.10000000149011612, 10.0], 100.0)
+  hyp1f1 d_a dlog chebax 0.12.0.1: 8.2e-06 (3 nan) at ('cpu', [2.5, 10.0], 100.0)
+  hyp1f1 d_a dlog chebax 0.11.0: 1.1e-05 (3 nan) at ('cpu', [5.0, 10.0], 100.0)
+  hyp1f1 d_b dlog jax 0.12.0.1: 4.8e-06 at ('gpu', [0.10000000149011612, 0.10000000149011612], 75.0)
+  hyp1f1 d_b dlog chebax 0.12.0.1: 9.3e-06 (2 nan) at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  hyp1f1 d_b dlog chebax 0.11.0: 1.1e-05 (2 nan) at ('cpu', [5.0, 10.0], 100.0)
+  stdtr v abs jax 0.12.0.1: 1.0e-03 at ('cpu', [200.0], -0.0025514066219329834)
+  stdtr v abs chebax 0.12.0.1: 3.1e-06 at ('cpu', [200.0], -4.581597805023193)
+  stdtr v abs chebax 0.11.0: 1.5e-05 at ('cpu', [200.0], 9.249147415161133)
+  stdtr v rel jax 0.12.0.1: 2.0e-03 at ('cpu', [200.0], -0.0025514066219329834)
+  stdtr v rel chebax 0.12.0.1: 1.0e+00 at ('cpu', [200.0], -11.689517974853516)
+  stdtr v rel chebax 0.11.0: 1.1e+19 at ('cpu', [200.0], -11.689517974853516)
+  stdtr d_t split jax 0.12.0.1: 1.0e+00 (34 nan) at ('cpu', [30.0], -76.09496307373047)
+  stdtr d_t split chebax 0.12.0.1: 7.4e-06 at ('cpu', [200.0], -14.773776054382324)
+  stdtr d_t split chebax 0.11.0: 3.8e-05 at ('cpu', [200.0], -14.773776054382324)
+  stdtr d_nu abs chebax 0.12.0.1: 1.3e-07 (242 nan) at ('gpu', [4.5], -1.4208308458328247)
+  stdtr d_nu abs chebax 0.11.0: 4.1e-07 (242 nan) at ('gpu', [0.5], -3.625117063522339)
+
+=== LOG FORMS f64: chebax log_* against log(jax f); error / max(1, |ref|), worst over CPU and GPU
+family     quantity  jax 0.11.0         jax 0.12.0.1       chebax 0.12.0.1  chebax 0.11.0    chebax_array 0.12.0.1
+betainc    lv        2.3e-04 (255 nan)  2.3e-04 (255 nan)  1.8e-01          1.8e-01          -                    
+betainc    ld_x      2.8e-12 (260 nan)  2.4e-12 (260 nan)  9.9e-01          9.9e-01          -                    
+betainc    ld_a      -                  -                  3.8e-01          3.8e-01          -                    
+betainc    ld_b      -                  -                  1.0e+00          1.0e+00          -                    
+gammainc   lv        3.6e-04 (292 nan)  3.6e-04 (292 nan)  6.7e-15          3.0e-14          9.9e-16              
+gammainc   ld_x      6.3e-13 (296 nan)  6.3e-13 (296 nan)  3.6e-15          3.6e-15          8.2e-15              
+gammainc   ld_a      1.1e-13 (296 nan)  1.1e-13 (296 nan)  4.4e-15          4.4e-15          3.2e-13              
+gammaincc  lv        5.5e-13 (2 nan)    5.5e-13 (2 nan)    3.3e-12          3.3e-12          5.6e-15              
+gammaincc  ld_x      4.8e-13 (2 nan)    4.8e-13 (2 nan)    3.3e-11          3.3e-11          2.1e-14              
+gammaincc  ld_a      5.8e-14 (2 nan)    5.8e-14 (2 nan)    3.9e-11          3.9e-11          2.4e-13              
+hyp1f1     lv        7.8e-16            7.8e-16            3.6e-13          3.6e-13          -                    
+hyp1f1     ld_x      8.8e-15            8.8e-15            1.0e-12          1.0e-12          -                    
+hyp1f1     ld_a      1.0e+00            1.0e+00            7.7e-12          7.7e-12          -                    
+hyp1f1     ld_b      1.0e+00            1.0e+00            1.4e-10          1.4e-10          -                    
+stdtr      lv        7.4e-12 (7 nan)    7.4e-12 (7 nan)    4.0e-01 (2 nan)  4.0e-01 (3 nan)  -                    
+stdtr      ld_t      5.8e-09 (22 nan)   5.8e-09 (22 nan)   1.0e+00 (2 nan)  1.0e+00 (3 nan)  -                    
+stdtr      ld_nu     -                  -                  4.3e-02 (4 nan)  4.3e-02 (6 nan)  -                    
+
+  worst points (device, params, x), log forms f64:
+  betainc lv jax 0.12.0.1: 2.3e-04 (255 nan) at ('gpu', [100.0, 0.5], 0.0006007185438647866)
+  betainc lv chebax 0.12.0.1: 1.8e-01 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc lv chebax 0.11.0: 1.8e-01 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_x jax 0.12.0.1: 2.4e-12 (260 nan) at ('cpu', [100.0, 0.10000000149011612], 0.9930721521377563)
+  betainc ld_x chebax 0.12.0.1: 9.9e-01 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_x chebax 0.11.0: 9.9e-01 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_a chebax 0.12.0.1: 3.8e-01 at ('gpu', [100.0, 0.5], 0.7286759614944458)
+  betainc ld_a chebax 0.11.0: 3.8e-01 at ('gpu', [100.0, 0.5], 0.7286759614944458)
+  betainc ld_b chebax 0.12.0.1: 1.0e+00 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_b chebax 0.11.0: 1.0e+00 at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  gammainc lv jax 0.12.0.1: 3.6e-04 (292 nan) at ('gpu', [1000.0], 225.64588928222656)
+  gammainc lv chebax 0.12.0.1: 6.7e-15 at ('gpu', [10.0], 9.519654273986816)
+  gammainc lv chebax 0.11.0: 3.0e-14 at ('cpu', [30.0], 18.074901580810547)
+  gammainc lv chebax_array 0.12.0.1: 9.9e-16 at ('cpu', [1000.0], 621.9622192382812)
+  gammainc ld_x jax 0.12.0.1: 6.3e-13 (296 nan) at ('cpu', [1000.0], 301.4656677246094)
+  gammainc ld_x chebax 0.12.0.1: 3.6e-15 at ('cpu', [10.0], 8.007442474365234)
+  gammainc ld_x chebax 0.11.0: 3.6e-15 at ('cpu', [10.0], 8.007442474365234)
+  gammainc ld_x chebax_array 0.12.0.1: 8.2e-15 at ('gpu', [1.0], 1.101265788078308)
+  gammainc ld_a jax 0.12.0.1: 1.1e-13 (296 nan) at ('cpu', [100.0], 0.03422701731324196)
+  gammainc ld_a chebax 0.12.0.1: 4.4e-15 at ('gpu', [10.0], 8.007442474365234)
+  gammainc ld_a chebax 0.11.0: 4.4e-15 at ('gpu', [10.0], 8.007442474365234)
+  gammainc ld_a chebax_array 0.12.0.1: 3.2e-13 at ('cpu', [1.0], 0.45190438628196716)
+  gammaincc lv jax 0.12.0.1: 5.5e-13 (2 nan) at ('cpu', [1000.0], 995.196533203125)
+  gammaincc lv chebax 0.12.0.1: 3.3e-12 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc lv chebax 0.11.0: 3.3e-12 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc lv chebax_array 0.12.0.1: 5.6e-15 at ('cpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc ld_x jax 0.12.0.1: 4.8e-13 (2 nan) at ('cpu', [1000.0], 2290.398193359375)
+  gammaincc ld_x chebax 0.12.0.1: 3.3e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc ld_x chebax 0.11.0: 3.3e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc ld_x chebax_array 0.12.0.1: 2.1e-14 at ('cpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc ld_a jax 0.12.0.1: 5.8e-14 (2 nan) at ('cpu', [100.0], 360.0)
+  gammaincc ld_a chebax 0.12.0.1: 3.9e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc ld_a chebax 0.11.0: 3.9e-11 at ('cpu', [0.10000000149011612], 6.439251899719238)
+  gammaincc ld_a chebax_array 0.12.0.1: 2.4e-13 at ('cpu', [1.0], 0.45190438628196716)
+  hyp1f1 lv jax 0.12.0.1: 7.8e-16 at ('cpu', [0.5, 2.5], 2.689655065536499)
+  hyp1f1 lv chebax 0.12.0.1: 3.6e-13 at ('gpu', [0.10000000149011612, 5.0], 12.82758617401123)
+  hyp1f1 lv chebax 0.11.0: 3.6e-13 at ('gpu', [0.10000000149011612, 5.0], 12.82758617401123)
+  hyp1f1 ld_x jax 0.12.0.1: 8.8e-15 at ('gpu', [10.0, 1.0], 100.0)
+  hyp1f1 ld_x chebax 0.12.0.1: 1.0e-12 at ('cpu', [0.10000000149011612, 5.0], 11.137930870056152)
+  hyp1f1 ld_x chebax 0.11.0: 1.0e-12 at ('cpu', [0.10000000149011612, 5.0], 11.137930870056152)
+  hyp1f1 ld_a jax 0.12.0.1: 1.0e+00 at ('cpu', [0.10000000149011612, 0.10000000149011612], 500.0)
+  hyp1f1 ld_a chebax 0.12.0.1: 7.7e-12 at ('cpu', [0.10000000149011612, 10.0], 9.448275566101074)
+  hyp1f1 ld_a chebax 0.11.0: 7.7e-12 at ('cpu', [0.10000000149011612, 10.0], 9.448275566101074)
+  hyp1f1 ld_b jax 0.12.0.1: 1.0e+00 at ('cpu', [0.10000000149011612, 0.10000000149011612], 500.0)
+  hyp1f1 ld_b chebax 0.12.0.1: 1.4e-10 at ('gpu', [0.10000000149011612, 0.10000000149011612], 11.137930870056152)
+  hyp1f1 ld_b chebax 0.11.0: 1.4e-10 at ('gpu', [0.10000000149011612, 0.10000000149011612], 11.137930870056152)
+  stdtr lv jax 0.12.0.1: 7.4e-12 (7 nan) at ('cpu', [200.0], -0.0012638481566682458)
+  stdtr lv chebax 0.12.0.1: 4.0e-01 (2 nan) at ('cpu', [200.0], -11.689517974853516)
+  stdtr lv chebax 0.11.0: 4.0e-01 (3 nan) at ('gpu', [200.0], -11.689517974853516)
+  stdtr ld_t jax 0.12.0.1: 5.8e-09 (22 nan) at ('cpu', [200.0], -0.0012638481566682458)
+  stdtr ld_t chebax 0.12.0.1: 1.0e+00 (2 nan) at ('cpu', [200.0], -11.689517974853516)
+  stdtr ld_t chebax 0.11.0: 1.0e+00 (3 nan) at ('gpu', [200.0], -11.689517974853516)
+  stdtr ld_nu chebax 0.12.0.1: 4.3e-02 (4 nan) at ('gpu', [200.0], -11.689517974853516)
+  stdtr ld_nu chebax 0.11.0: 4.3e-02 (6 nan) at ('gpu', [200.0], -11.689517974853516)
+
+=== LOG FORMS f32: chebax log_* against log(jax f); error / max(1, |ref|), worst over CPU and GPU
+family     quantity  jax 0.11.0         jax 0.12.0.1       chebax 0.12.0.1    chebax 0.11.0      chebax_array 0.12.0.1
+betainc    lv        2.7e-03 (801 nan)  2.7e-03 (801 nan)  7.0e-01 (8 nan)    7.0e-01 (13 nan)   -                    
+betainc    ld_x      3.5e-04 (833 nan)  3.4e-04 (833 nan)  1.6e+00 (2 nan)    1.6e+00 (1 nan)    -                    
+betainc    ld_a      -                  -                  3.3e-01 (2 nan)    3.3e-01 (1 nan)    -                    
+betainc    ld_b      -                  -                  1.5e+00 (2 nan)    1.5e+00 (1 nan)    -                    
+gammainc   lv        9.5e-03 (580 nan)  9.5e-03 (580 nan)  2.8e-06            5.4e-06            6.1e-07              
+gammainc   ld_x      1.3e-04 (601 nan)  1.3e-04 (601 nan)  1.3e-06            4.4e-06            3.4e-07              
+gammainc   ld_a      2.2e-05 (601 nan)  2.2e-05 (601 nan)  1.8e-06            3.6e-06            1.1e-06              
+gammaincc  lv        5.3e-04 (15 nan)   5.3e-04 (15 nan)   3.5e-03            6.8e-03            2.8e-06              
+gammaincc  ld_x      1.5e-04 (16 nan)   1.5e-04 (16 nan)   3.4e-02            6.7e-02            1.1e-05              
+gammaincc  ld_a      2.6e-05 (16 nan)   2.6e-05 (16 nan)   3.7e-02            7.2e-02            1.4e-05              
+hyp1f1     lv        3.7e-07 (230 nan)  3.7e-07 (230 nan)  3.4e-06            3.4e-06            -                    
+hyp1f1     ld_x      1.0e+00 (230 nan)  1.0e+00 (230 nan)  7.5e-06            7.5e-06            -                    
+hyp1f1     ld_a      1.0e+00 (214 nan)  1.0e+00 (214 nan)  1.1e-06            1.1e-06            -                    
+hyp1f1     ld_b      1.0e+00 (214 nan)  1.0e+00 (214 nan)  8.3e-06            8.3e-06            -                    
+stdtr      lv        2.0e-03 (55 nan)   2.0e-03 (55 nan)   1.2e-01 (8 nan)    7.9e-01 (4 nan)    -                    
+stdtr      ld_t      2.7e-01 (91 nan)   2.7e-01 (91 nan)   3.3e+00 (8 nan)    1.1e+00 (4 nan)    -                    
+stdtr      ld_nu     -                  -                  1.2e-03 (242 nan)  3.2e-03 (242 nan)  -                    
+
+  worst points (device, params, x), log forms f32:
+  betainc lv jax 0.12.0.1: 2.7e-03 (801 nan) at ('gpu', [7.0, 0.10000000149011612], 7.217255415525869e-07)
+  betainc lv chebax 0.12.0.1: 7.0e-01 (8 nan) at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc lv chebax 0.11.0: 7.0e-01 (13 nan) at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_x jax 0.12.0.1: 3.4e-04 (833 nan) at ('gpu', [100.0, 0.10000000149011612], 0.9930721521377563)
+  betainc ld_x chebax 0.12.0.1: 1.6e+00 (2 nan) at ('gpu', [100.0, 2.5], 0.8527665138244629)
+  betainc ld_x chebax 0.11.0: 1.6e+00 (1 nan) at ('gpu', [100.0, 2.5], 0.8527665138244629)
+  betainc ld_a chebax 0.12.0.1: 3.3e-01 (2 nan) at ('cpu', [100.0, 0.10000000149011612], 0.7286759614944458)
+  betainc ld_a chebax 0.11.0: 3.3e-01 (1 nan) at ('cpu', [100.0, 1.0], 0.7286759614944458)
+  betainc ld_b chebax 0.12.0.1: 1.5e+00 (2 nan) at ('gpu', [100.0, 2.5], 0.8527665138244629)
+  betainc ld_b chebax 0.11.0: 1.5e+00 (1 nan) at ('gpu', [100.0, 2.5], 0.8527665138244629)
+  gammainc lv jax 0.12.0.1: 9.5e-03 (580 nan) at ('gpu', [1000.0], 621.9622192382812)
+  gammainc lv chebax 0.12.0.1: 2.8e-06 at ('gpu', [1000.0], 1003.2023315429688)
+  gammainc lv chebax 0.11.0: 5.4e-06 at ('cpu', [10.0], 8.007442474365234)
+  gammainc lv chebax_array 0.12.0.1: 6.1e-07 at ('cpu', [30.0], 18.074901580810547)
+  gammainc ld_x jax 0.12.0.1: 1.3e-04 (601 nan) at ('cpu', [1000.0], 763.029296875)
+  gammainc ld_x chebax 0.12.0.1: 1.3e-06 at ('gpu', [10.0], 8.719077110290527)
+  gammainc ld_x chebax 0.11.0: 4.4e-06 at ('cpu', [10.0], 8.007442474365234)
+  gammainc ld_x chebax_array 0.12.0.1: 3.4e-07 at ('gpu', [30.0], 13.914982795715332)
+  gammainc ld_a jax 0.12.0.1: 2.2e-05 (601 nan) at ('gpu', [1000.0], 1003.2023315429688)
+  gammainc ld_a chebax 0.12.0.1: 1.8e-06 at ('gpu', [10.0], 8.719077110290527)
+  gammainc ld_a chebax 0.11.0: 3.6e-06 at ('cpu', [10.0], 8.007442474365234)
+  gammainc ld_a chebax_array 0.12.0.1: 1.1e-06 at ('cpu', [0.10000000149011612], 0.5498007535934448)
+  gammaincc lv jax 0.12.0.1: 5.3e-04 (15 nan) at ('gpu', [1000.0], 1003.2023315429688)
+  gammaincc lv chebax 0.12.0.1: 3.5e-03 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc lv chebax 0.11.0: 6.8e-03 at ('gpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc lv chebax_array 0.12.0.1: 2.8e-06 at ('gpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc ld_x jax 0.12.0.1: 1.5e-04 (16 nan) at ('gpu', [1000.0], 1203.346435546875)
+  gammaincc ld_x chebax 0.12.0.1: 3.4e-02 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc ld_x chebax 0.11.0: 6.7e-02 at ('gpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc ld_x chebax_array 0.12.0.1: 1.1e-05 at ('gpu', [0.10000000149011612], 0.9617801308631897)
+  gammaincc ld_a jax 0.12.0.1: 2.6e-05 (16 nan) at ('gpu', [1000.0], 995.196533203125)
+  gammaincc ld_a chebax 0.12.0.1: 3.7e-02 at ('cpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc ld_a chebax 0.11.0: 7.2e-02 at ('gpu', [0.10000000149011612], 7.201276779174805)
+  gammaincc ld_a chebax_array 0.12.0.1: 1.4e-05 at ('gpu', [0.10000000149011612], 0.9617801308631897)
+  hyp1f1 lv jax 0.12.0.1: 3.7e-07 (230 nan) at ('cpu', [0.10000000149011612, 10.0], 7.758620738983154)
+  hyp1f1 lv chebax 0.12.0.1: 3.4e-06 at ('cpu', [10.0, 1.0], 0.13894954323768616)
+  hyp1f1 lv chebax 0.11.0: 3.4e-06 at ('cpu', [10.0, 1.0], 0.13894954323768616)
+  hyp1f1 ld_x jax 0.12.0.1: 1.0e+00 (230 nan) at ('cpu', [2.5, 0.10000000149011612], 75.0)
+  hyp1f1 ld_x chebax 0.12.0.1: 7.5e-06 at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  hyp1f1 ld_x chebax 0.11.0: 7.5e-06 at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  hyp1f1 ld_a jax 0.12.0.1: 1.0e+00 (214 nan) at ('cpu', [0.10000000149011612, 5.0], 100.0)
+  hyp1f1 ld_a chebax 0.12.0.1: 1.1e-06 at ('gpu', [2.5, 0.10000000149011612], 0.13894954323768616)
+  hyp1f1 ld_a chebax 0.11.0: 1.1e-06 at ('gpu', [2.5, 0.10000000149011612], 0.13894954323768616)
+  hyp1f1 ld_b jax 0.12.0.1: 1.0e+00 (214 nan) at ('cpu', [0.10000000149011612, 2.5], 100.0)
+  hyp1f1 ld_b chebax 0.12.0.1: 8.3e-06 at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  hyp1f1 ld_b chebax 0.11.0: 8.3e-06 at ('cpu', [10.0, 0.10000000149011612], 0.0013894954463467002)
+  stdtr lv jax 0.12.0.1: 2.0e-03 (55 nan) at ('cpu', [200.0], -0.0025514066219329834)
+  stdtr lv chebax 0.12.0.1: 1.2e-01 (8 nan) at ('cpu', [200.0], -4.581597805023193)
+  stdtr lv chebax 0.11.0: 7.9e-01 (4 nan) at ('cpu', [200.0], -11.689517974853516)
+  stdtr ld_t jax 0.12.0.1: 2.7e-01 (91 nan) at ('gpu', [200.0], -0.0032245905604213476)
+  stdtr ld_t chebax 0.12.0.1: 3.3e+00 (8 nan) at ('cpu', [200.0], -4.581597805023193)
+  stdtr ld_t chebax 0.11.0: 1.1e+00 (4 nan) at ('gpu', [200.0], -4.581597805023193)
+  stdtr ld_nu chebax 0.12.0.1: 1.2e-03 (242 nan) at ('cpu', [30.0], -4.581597805023193)
+  stdtr ld_nu chebax 0.11.0: 3.2e-03 (242 nan) at ('cpu', [30.0], -4.581597805023193)
+
+=== SPEED, ns per element (median): value / value_and_grad; compile s value + grad
+
+--- f64 cpu (N = 65536)
+setting                            jax 0.11.0                      jax 0.12.0.1                    chebax 0.11.0              chebax 0.12.0.1            speedup vs jax 0.12.0.1
+erfcx, x ~ N(0, 3)                 7.05 / 7.35 (0.1+0.1s)          7.39 / 11.9 (0.1+0.1s)          7.5 / 17.7 (0.1+0.2s)      7.25 / 17.5 (0.1+0.1s)     1x / 0.68x             
+dawsn, x ~ N(0, 5)                 4.8 / 4.84 (0.1+0.1s)           4.56 / 4.52 (0.1+0.1s)          13 / 33.5 (0.1+0.3s)       12.4 / 33.4 (0.1+0.5s)     0.37x / 0.14x          
+i0, x ~ U(0, 50)                   12.3 / 32.8 (0.1+0.2s)          11.7 / 20.8 (0.1+0.2s)          48.3 / 98.4 (0.3+1.6s)     45.1 / 86.6 (0.2+1.3s)     0.26x / 0.24x          
+i1, x ~ U(0, 50)                   12.2 / 34 (0.1+0.3s)            11.3 / 22.4 (0.1+0.1s)          46.7 / 90.3 (0.3+1.4s)     45.3 / 88.8 (0.2+1.2s)     0.25x / 0.25x          
+i0e, x ~ U(0, 50)                  10.2 / 22.2 (0.1+0.2s)          9.97 / 19.4 (0.1+0.1s)          34.8 / 76.6 (0.2+1.3s)     38.1 / 73.7 (0.2+1.5s)     0.26x / 0.26x          
+i1e, x ~ U(0, 50)                  10.1 / 20.2 (0.1+0.1s)          9.83 / 19.5 (0.1+0.1s)          35 / 76.1 (0.2+1.5s)       34.2 / 72.4 (0.2+1.2s)     0.29x / 0.27x          
+J1, x ~ U(0, 50)                   143 / 709 (0.2+0.4s)            124 / 705 (0.1+0.2s)            38.2 / 66.9 (0.2+0.4s)     29.6 / 68.6 (0.1+0.4s)     4.2x / 10x             
+J10, x ~ U(0, 50)                  151 / 786 (0.2+0.4s)            131 / 766 (0.1+0.2s)            32.9 / 77.8 (0.2+0.4s)     30.6 / 69.8 (0.1+0.6s)     4.3x / 11x             
+betainc a=2.5 b=7, x ~ Beta        2.61e+03 / 2.61e+03 (0.4+0.6s)  216 / 231 (0.2+0.4s)            23.7 / 34.2 (2.3+3.7s)     23.4 / 29 (2.0+3.2s)       9.2x / 8x              
+  chebax, grad in all args         -                               -                               - / 47.7 (2.3+9.0s)        - / 45.7 (2.3+7.3s)        -                      
+betainc a=0.5 b=50, x ~ Beta       2.59e+03 / 2.62e+03 (0.5+0.8s)  430 / 444 (0.3+0.4s)            49 / 71.9 (2.3+3.7s)       46.2 / 68.4 (2.1+2.8s)     9.3x / 6.5x            
+  chebax, grad in all args         -                               -                               - / 124 (2.4+9.1s)         - / 115 (2.0+7.6s)         -                      
+gammainc a=2.5, x ~ Gamma          783 / 1.93e+03 (0.6+1.5s)       666 / 1.7e+03 (0.4+0.9s)        26.7 / 140 (0.8+4.5s)      26.3 / 90.1 (0.7+3.6s)     25x / 19x              
+gammainc a=30, x ~ Gamma           710 / 1.73e+03 (0.7+1.5s)       597 / 1.49e+03 (0.3+0.9s)       42.5 / 198 (0.8+4.2s)      40.4 / 146 (0.7+3.3s)      15x / 10x              
+gammainc a per element, x ~ Gamma  2.19e+03 / 5.75e+03 (0.6+1.1s)  1.84e+03 / 4.98e+03 (0.4+0.7s)  783 / 1.07e+03 (0.9+1.9s)  727 / 1.02e+03 (0.7+1.5s)  2.5x / 4.9x            
+gammaincc a=2.5, x ~ Gamma         782 / 1.92e+03 (0.6+1.5s)       677 / 1.69e+03 (0.4+0.9s)       27.9 / 139 (1.1+4.2s)      26.7 / 90.9 (0.7+3.6s)     25x / 19x              
+hyp1f1 a=1.5 b=4, x ~ U(0, 20)     1.78e+03 / 7.32e+03 (0.5+1.0s)  1.35e+03 / 6.25e+03 (0.3+0.8s)  81 / 286 (0.7+14.5s)       79.7 / 266 (0.6+9.6s)      17x / 24x              
+hyp1f1 a=0.5 b=8, x ~ U(0, 20)     1.72e+03 / 6.91e+03 (0.4+1.0s)  1.31e+03 / 5.93e+03 (0.3+0.8s)  86.5 / 287 (0.7+14.1s)     79.2 / 260 (0.6+9.3s)      17x / 23x              
+stdtr nu=4.5, t ~ t(4.5)           2.62e+03 / 2.64e+03 (0.5+0.7s)  238 / 256 (0.3+0.4s)            62.9 / 81.8 (0.8+1.3s)     61.2 / 79.4 (0.6+1.2s)     3.9x / 3.2x            
+  chebax, grad in all args         -                               -                               - / 280 (0.8+4.8s)         - / 263 (0.6+3.7s)         -                      
+
+--- f64 gpu (N = 1048576)
+setting                            jax 0.11.0              jax 0.12.0.1            chebax 0.11.0             chebax 0.12.0.1           speedup vs jax 0.12.0.1
+erfcx, x ~ N(0, 3)                 1.32 / 1.23 (1.4+0.3s)  1.62 / 2.78 (1.7+0.5s)  0.667 / 1.29 (0.4+0.4s)   0.668 / 1.24 (0.2+0.3s)   2.4x / 2.2x            
+dawsn, x ~ N(0, 5)                 1.25 / 1.17 (0.3+0.4s)  1.23 / 1.17 (0.2+0.3s)  1.62 / 4.09 (0.7+1.7s)    1.63 / 3.18 (0.7+0.5s)    0.75x / 0.37x          
+i0, x ~ U(0, 50)                   1.57 / 2.94 (2.1+0.8s)  1.59 / 2.85 (1.7+0.3s)  3.62 / 6.99 (3.5+4.1s)    3.62 / 6.96 (3.2+3.7s)    0.44x / 0.41x          
+i1, x ~ U(0, 50)                   1.59 / 2.98 (0.3+0.8s)  1.59 / 3.03 (0.2+0.4s)  3.64 / 6.8 (3.1+4.1s)     3.64 / 6.81 (3.0+3.7s)    0.44x / 0.45x          
+i0e, x ~ U(0, 50)                  1.45 / 2.69 (1.7+0.9s)  1.46 / 2.7 (0.9+0.5s)   3.3 / 6.23 (2.8+3.6s)     3.29 / 6.35 (2.8+3.1s)    0.44x / 0.43x          
+i1e, x ~ U(0, 50)                  1.47 / 2.83 (0.3+0.7s)  1.46 / 2.84 (0.2+0.4s)  3.32 / 6.2 (2.8+3.5s)     3.31 / 6.18 (2.9+3.2s)    0.44x / 0.46x          
+J1, x ~ U(0, 50)                   18.9 / 39.4 (0.6+0.7s)  15.6 / 35.1 (0.5+0.5s)  2.59 / 4.99 (2.5+2.3s)    2.64 / 4.95 (3.1+1.1s)    5.9x / 7.1x            
+J10, x ~ U(0, 50)                  19 / 40.8 (0.5+0.7s)    15.6 / 36.4 (0.4+0.5s)  2.7 / 5.01 (3.2+2.2s)     2.63 / 4.99 (2.9+1.4s)    5.9x / 7.3x            
+betainc a=2.5 b=7, x ~ Beta        303 / 301 (7.0+5.9s)    23.8 / 24.4 (3.5+3.5s)  1.45 / 2.08 (12.6+21.0s)  1.37 / 2.08 (10.1+16.7s)  17x / 12x              
+  chebax, grad in all args         -                       -                       - / 3.26 (12.1+43.4s)     - / 3.31 (10.0+35.7s)     -                      
+betainc a=0.5 b=50, x ~ Beta       299 / 299 (4.2+4.6s)    48.5 / 48.9 (3.3+3.6s)  2.36 / 4.09 (12.1+18.6s)  2.3 / 4.13 (10.2+16.6s)   21x / 12x              
+  chebax, grad in all args         -                       -                       - / 7.7 (11.8+42.3s)      - / 8.04 (10.1+37.1s)     -                      
+gammainc a=2.5, x ~ Gamma          26.3 / 59.4 (1.8+1.4s)  26.3 / 59.1 (1.4+1.2s)  6.64 / 11.2 (13.2+9.6s)   6.69 / 11.1 (14.7+8.2s)   3.9x / 5.3x            
+gammainc a=30, x ~ Gamma           23.1 / 50.6 (1.0+1.3s)  22.6 / 49.9 (0.7+1.1s)  6.46 / 12.5 (2.8+9.3s)    6.48 / 12.4 (2.5+8.8s)    3.5x / 4x              
+gammainc a per element, x ~ Gamma  72.5 / 183 (1.4+3.3s)   71.4 / 182 (1.4+2.6s)   12.9 / 22 (1.4+3.7s)      9.82 / 18.5 (1.2+3.1s)    7.3x / 9.8x            
+gammaincc a=2.5, x ~ Gamma         26.4 / 56 (1.8+1.5s)    25.8 / 54.9 (1.3+1.1s)  6.64 / 11 (12.0+9.8s)     6.67 / 10.9 (13.9+7.9s)   3.9x / 5x              
+hyp1f1 a=1.5 b=4, x ~ U(0, 20)     117 / 505 (2.7+2.3s)    116 / 508 (2.7+2.0s)    5.18 / 15.5 (14.5+16.5s)  5.21 / 15.3 (21.8+12.5s)  22x / 33x              
+hyp1f1 a=0.5 b=8, x ~ U(0, 20)     115 / 481 (1.0+2.3s)    115 / 484 (0.8+2.0s)    5.2 / 15.4 (3.1+16.3s)    5.21 / 15.4 (13.1+12.4s)  22x / 31x              
+stdtr nu=4.5, t ~ t(4.5)           298 / 300 (4.3+4.5s)    23 / 23.7 (3.2+3.4s)    4.72 / 5.22 (9.1+3.7s)    4.75 / 5.23 (8.9+4.7s)    4.8x / 4.5x            
+  chebax, grad in all args         -                       -                       - / 16.3 (2.2+11.6s)      - / 16.2 (3.1+8.3s)       -                      
+
+--- f32 cpu (N = 65536)
+setting                            jax 0.11.0                 jax 0.12.0.1               chebax 0.11.0           chebax 0.12.0.1         speedup vs jax 0.12.0.1
+erfcx, x ~ N(0, 3)                 2.15 / 2.34 (0.1+0.1s)     2.17 / 3.1 (0.1+0.1s)      7.4 / 11.3 (0.1+0.2s)   4.56 / 11.3 (0.1+0.1s)  0.48x / 0.27x          
+dawsn, x ~ N(0, 5)                 2.27 / 2.19 (0.1+0.1s)     2.22 / 2.16 (0.1+0.3s)     6.23 / 16.3 (0.1+0.3s)  6.15 / 16.2 (0.1+0.3s)  0.36x / 0.13x          
+i0, x ~ U(0, 50)                   2.77 / 8.17 (0.1+0.2s)     2.71 / 4.68 (0.1+0.1s)     17.4 / 38.9 (0.2+1.3s)  18.4 / 39.6 (0.3+1.3s)  0.15x / 0.12x          
+i1, x ~ U(0, 50)                   2.92 / 8.56 (0.1+0.2s)     2.77 / 5.24 (0.1+0.1s)     17.3 / 38.8 (0.2+1.5s)  18 / 39.3 (0.3+1.3s)    0.15x / 0.13x          
+i0e, x ~ U(0, 50)                  1.97 / 6 (0.1+0.1s)        2 / 4.01 (0.1+0.1s)        17.6 / 33.3 (0.2+1.3s)  17.9 / 33.8 (0.4+1.2s)  0.11x / 0.12x          
+i1e, x ~ U(0, 50)                  2.22 / 4.06 (0.1+0.1s)     2.16 / 4.11 (0.0+0.1s)     17.7 / 33.8 (0.2+1.4s)  18.1 / 33.8 (0.2+1.2s)  0.12x / 0.12x          
+J1, x ~ U(0, 50)                   43.1 / 182 (0.2+0.4s)      41.7 / 181 (0.1+0.2s)      14.9 / 29.3 (0.2+0.4s)  12.6 / 28.8 (0.1+0.4s)  3.3x / 6.3x            
+J10, x ~ U(0, 50)                  43.3 / 348 (0.2+0.4s)      42.6 / 328 (0.1+0.2s)      15 / 29.3 (0.1+0.4s)    12.7 / 29.5 (0.1+0.6s)  3.3x / 11x             
+betainc a=2.5 b=7, x ~ Beta        312 / 316 (0.4+0.6s)       65.7 / 69.6 (0.8+1.0s)     8.3 / 11.8 (2.3+3.5s)   8.86 / 12.2 (2.8+4.0s)  7.4x / 5.7x            
+  chebax, grad in all args         -                          -                          - / 22.5 (2.3+8.6s)     - / 22.4 (2.8+8.1s)     -                      
+betainc a=0.5 b=50, x ~ Beta       306 / 312 (0.4+0.7s)       95.5 / 104 (0.7+1.1s)      19.1 / 32 (2.3+3.5s)    20.2 / 31.3 (2.8+4.1s)  4.7x / 3.3x            
+  chebax, grad in all args         -                          -                          - / 56.6 (2.3+8.5s)     - / 57.1 (2.8+8.4s)     -                      
+gammainc a=2.5, x ~ Gamma          88.2 / 241 (0.6+1.4s)      86.3 / 235 (0.5+1.2s)      10 / 42.1 (0.8+3.8s)    11.4 / 37.3 (0.9+3.5s)  7.6x / 6.3x            
+gammainc a=30, x ~ Gamma           168 / 430 (0.6+1.3s)       161 / 410 (0.5+1.2s)       14.8 / 61.4 (0.8+4.0s)  15.6 / 53.7 (0.9+3.7s)  10x / 7.6x             
+gammainc a per element, x ~ Gamma  311 / 855 (0.6+1.1s)       306 / 841 (0.5+1.0s)       195 / 196 (0.9+1.8s)    130 / 195 (0.9+1.5s)    2.4x / 4.3x            
+gammaincc a=2.5, x ~ Gamma         90.4 / 244 (0.6+1.3s)      87.6 / 240 (0.5+1.2s)      10.2 / 42.6 (0.8+4.1s)  11 / 38.1 (1.0+3.8s)    8x / 6.3x              
+hyp1f1 a=1.5 b=4, x ~ U(0, 20)     279 / 1.58e+03 (0.4+0.9s)  265 / 1.59e+03 (0.5+1.0s)  37.1 / 121 (0.7+13.4s)  37.3 / 120 (0.8+9.5s)   7.1x / 13x             
+hyp1f1 a=0.5 b=8, x ~ U(0, 20)     266 / 1.46e+03 (0.4+0.9s)  252 / 1.46e+03 (0.5+1.1s)  36.4 / 120 (0.7+13.4s)  37.2 / 118 (0.8+9.7s)   6.8x / 12x             
+stdtr nu=4.5, t ~ t(4.5)           315 / 317 (0.4+0.6s)       72.3 / 73.9 (0.8+1.1s)     23.3 / 26.1 (0.8+1.3s)  23.9 / 27.1 (0.9+1.6s)  3x / 2.7x              
+  chebax, grad in all args         -                          -                          - / 98.7 (0.7+4.2s)     - / 98.1 (0.8+4.2s)     -                      
+
+--- f32 gpu (N = 1048576)
+setting                            jax 0.11.0                  jax 0.12.0.1                chebax 0.11.0                  chebax 0.12.0.1                speedup vs jax 0.12.0.1
+erfcx, x ~ N(0, 3)                 0.0336 / 0.0365 (1.1+0.3s)  0.0429 / 0.0835 (1.0+0.3s)  0.0346 / 0.0733 (0.2+0.3s)     0.0403 / 0.0793 (0.2+0.3s)     1.1x / 1.1x            
+dawsn, x ~ N(0, 5)                 0.0311 / 0.036 (0.2+0.3s)   0.0385 / 0.054 (0.3+0.3s)   0.0312 / 0.0649 (0.3+0.7s)     0.0381 / 0.0785 (0.3+0.7s)     1x / 0.69x             
+i0, x ~ U(0, 50)                   0.0336 / 0.0336 (1.2+0.3s)  0.0387 / 0.045 (1.3+0.2s)   0.0744 / 0.127 (18.8+2.5s)     0.0738 / 0.133 (11.0+2.6s)     0.52x / 0.34x          
+i1, x ~ U(0, 50)                   0.0343 / 0.0354 (0.1+0.3s)  0.0407 / 0.0543 (0.1+0.3s)  0.0748 / 0.126 (14.9+2.3s)     0.0738 / 0.143 (16.1+2.3s)     0.55x / 0.38x          
+i0e, x ~ U(0, 50)                  0.0347 / 0.0354 (0.7+0.3s)  0.0384 / 0.0502 (0.8+0.3s)  0.0713 / 0.126 (15.9+2.4s)     0.0745 / 0.127 (11.6+2.3s)     0.52x / 0.39x          
+i1e, x ~ U(0, 50)                  0.0334 / 0.0337 (0.2+0.3s)  0.0427 / 0.0498 (0.2+0.3s)  0.0726 / 0.133 (12.2+2.1s)     0.0752 / 0.127 (17.5+2.2s)     0.57x / 0.39x          
+J1, x ~ U(0, 50)                   8.57 / 19 (0.4+0.5s)        6.83 / 17.1 (0.4+0.4s)      0.0708 / 0.181 (5.0+1.2s)      0.0716 / 0.192 (5.3+1.2s)      95x / 89x              
+J10, x ~ U(0, 50)                  8.58 / 19.2 (0.4+0.5s)      6.85 / 17.3 (0.4+0.4s)      0.0717 / 0.183 (5.1+1.3s)      0.0721 / 0.191 (5.3+1.2s)      95x / 90x              
+betainc a=2.5 b=7, x ~ Beta        25.3 / 25.3 (2.1+2.2s)      2.97 / 2.98 (4.4+5.5s)      0.107 / 0.218 (11.5+18.7s)     0.0696 / 0.237 (14.5+21.1s)    43x / 13x              
+  chebax, grad in all args         -                           -                           - / 0.545 (11.3+41.9s)         - / 0.495 (14.1+41.5s)         -                      
+betainc a=0.5 b=50, x ~ Beta       25.3 / 25.3 (2.0+2.2s)      5.46 / 5.49 (4.3+5.6s)      0.122 / 0.212 (11.4+18.4s)     0.092 / 0.222 (14.3+20.9s)     59x / 25x              
+  chebax, grad in all args         -                           -                           - / 1.27 (11.1+41.1s)          - / 1.24 (14.3+41.5s)          -                      
+gammainc a=2.5, x ~ Gamma          4.97 / 10.6 (1.4+1.1s)      5.09 / 10.7 (1.1+1.4s)      0.162 / 1.92 (20.9+8.0s)       0.134 / 1.93 (20.9+9.1s)       38x / 5.5x             
+gammainc a=30, x ~ Gamma           8.08 / 16.7 (0.6+1.1s)      7.99 / 16.8 (1.0+1.4s)      0.165 / 1.68 (2.1+7.8s)        0.138 / 1.68 (3.6+8.7s)        58x / 10x              
+gammainc a per element, x ~ Gamma  13.9 / 33.8 (0.9+2.2s)      14 / 34.1 (1.6+2.8s)        0.951 / 1.81 (1.0+2.9s)        0.657 / 1.93 (1.0+2.7s)        21x / 18x              
+gammaincc a=2.5, x ~ Gamma         6.17 / 12 (1.2+1.1s)        6.17 / 12.1 (0.9+1.3s)      0.162 / 1.92 (20.6+7.7s)       0.137 / 1.93 (20.2+8.6s)       45x / 6.3x             
+hyp1f1 a=1.5 b=4, x ~ U(0, 20)     19.7 / 48.6 (2.1+1.7s)      20.2 / 50.2 (1.6+3.1s)      0.102 / 2.54e+03 (19.7+38.2s)  0.103 / 4.71e+03 (19.1+25.7s)  2e+02x / 0.011x        
+hyp1f1 a=0.5 b=8, x ~ U(0, 20)     18.5 / 46.5 (0.7+1.6s)      18.9 / 47.3 (1.3+3.0s)      0.102 / 2.53e+03 (3.6+38.2s)   0.103 / 4.66e+03 (3.8+25.6s)   1.8e+02x / 0.01x       
+stdtr nu=4.5, t ~ t(4.5)           25.2 / 25.3 (1.9+2.0s)      3.21 / 3.22 (4.3+5.3s)      0.0748 / 0.0911 (12.1+4.1s)    0.0785 / 0.113 (14.2+6.1s)     41x / 28x              
+  chebax, grad in all args         -                           -                           - / 0.792 (2.1+10.1s)          - / 1.15 (2.9+11.7s)           -                      
+
+=== HYP1F1 GRADIENT ON THE GPU, split by argument (mode hyp1f1grad, 2026-11-06, ns per element)
+jax 0.11.0
+f32 N 65536 val 0.617 dx 0.937 dab 4.04e+04 all 4.05e+04 ns/el | scatter 0 while 0 sort 0
+f32 N 1048576 val 0.102 dx 0.231 dab 2.53e+03 all 2.53e+03 ns/el | scatter 0 while 0 sort 0
+f64 N 65536 val 5.43 dx 12.1 dab 18.8 all 25.2 ns/el | scatter 0 while 0 sort 0
+f64 N 1048576 val 5.22 dx 9.3 dab 10.8 all 15.4 ns/el | scatter 0 while 0 sort 0
+jax 0.12.0.1
+f32 N 65536 val 0.688 dx 1.02 dab 7.59e+04 all 7.54e+04 ns/el | scatter 0 while 0 sort 0
+f32 N 1048576 val 0.104 dx 0.186 dab 4.79e+03 all 4.74e+03 ns/el | scatter 0 while 0 sort 0
+f64 N 65536 val 5.46 dx 11.7 dab 19.3 all 25.5 ns/el | scatter 0 while 0 sort 0
+f64 N 1048576 val 5.21 dx 9.39 dab 11.1 all 15.4 ns/el | scatter 0 while 0 sort 0

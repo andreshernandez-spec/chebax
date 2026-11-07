@@ -137,10 +137,17 @@ def _exp_cdf_jvp(primals, tangents):
     dlv, _, dx, _ = tangents
     e = jnp.exp(lv)
     deep = (e < jnp.finfo(e.dtype).tiny) & (x > 0.0) & (x < jnp.inf)
-    xs, as_ = jnp.where(deep, x, 1.0), jnp.where(deep, a, 1.0)
-    lpdf = log_xpdf(as_, _log_ratio(xs, as_)) - jnp.log(xs)
-    pdf = jnp.where(deep, jnp.exp(lpdf), 0.0)
-    return e, jnp.where(deep, sign * pdf * dx, jnp.where(e == 0.0, 0.0, e * dlv))
+
+    def underflow():
+        xs, as_ = jnp.where(deep, x, 1.0), jnp.where(deep, a, 1.0)
+        lpdf = log_xpdf(as_, _log_ratio(xs, as_)) - jnp.log(xs)
+        pdf = jnp.where(deep, jnp.exp(lpdf), 0.0)
+        return jnp.where(deep, sign * pdf * dx, jnp.where(e == 0.0, 0.0, e * dlv))
+
+    # Most arrays have no underflowing CDF; the log-density fallback is costly.
+    return e, jax.lax.cond(
+        jnp.any(deep), underflow, lambda: jnp.where(e == 0.0, 0.0, e * dlv)
+    )
 
 
 def _log_pq(a, x, d=None):

@@ -1449,3 +1449,53 @@ recipe column is this path now): 14 ms against jax's residual at
 above, the dP/da rows unchanged. test_quantiles passes unchanged;
 test_matches_the_scalar_path's bar is 5e-13 from a measured 1.4e-13 at
 a = 0.3 below the small tables' seam, where the scalar side's Q is 1 - P.
+
+## 46. Reuse work in the CDF density gradients (2026-11-07)
+
+The density fixes in #63 and #69 kept gradients finite and retained
+representable densities when the CDF underflowed, but added work to ordinary
+inputs too (experiments/35). For betainc, the CDF already computes ln(t)
+and ln(1-t) in the selected orientation, t = x below 1/2 and t = 1-x above.
+The density is symmetric under swapping a, b and x, 1-x. Computing it in
+that same orientation lets XLA reuse those logs instead of taking four
+more logs of the two masked coordinates. It remains the analytic density
+from its logs; no derivative of a nearly cancelled CDF or product of an
+underflowing probability and an overflowing slope is used.
+
+For gammainc_array, the fallback to the density's logs was evaluated on
+every element even when no CDF underflowed. A scalar any(deep) now guards
+the tangent calculation, with the original safe dummy operands inside it.
+The ordinary branch just multiplies by the CDF, retaining the zero-slope
+mask. One deep element still triggers the original calculation for the array;
+vmap can also turn the conditional into a select. Neither case gives up
+the underflow fix. The tables, degrees and formulas are unchanged.
+
+experiments/36, against 0.5.0 on one CPU core at N = 2^16, jax 0.11.0,
+two rounds in reverse order. betainc value_and_grad in x at (2.5, 7):
+float64 47.8 -> 24.9 ns per element (1.92x), float32 14.3 -> 8.79
+(1.62x). At (0.5, 50): 70.3 -> 44.5 and 24.0 -> 18.1 (1.58x and
+1.33x). Gradients in all three arguments also improve. gammainc_array
+value_and_grad in (a, x): 1270 -> 952 in float64 (1.34x), 349 -> 190 in
+float32 (1.83x). With one or all elements deep in the lower tail it is
+1.08-1.09x faster in float64 and 1.60-1.71x in float32.
+
+The separate GPU capture uses the RTX 3080 Laptop at N = 2^20, after the
+CPU tests finished. betainc at (2.5, 7), x-gradient: float64 2.65 -> 1.58
+ns (1.68x), float32 0.182 -> 0.178 (1.02x). gammainc_array: 28.7 -> 22.6
+(1.27x) and 3.00 -> 2.21 (1.35x). Float64 gamma with one or all elements
+deep is about 1-3% slower (28.7 -> 29.1 and 27.8 -> 28.5); float32 is
+1.26x faster in both. The wide beta's float32 gradient in all parameters
+is about 4% slower (0.629 -> 0.652), while its x-gradient and all the other
+beta cells improve. These small costs accompany the larger gains above.
+
+Against mpmath at 60 dps on dtype-rounded inputs, the grid's worst errors
+are unchanged except for rounding in the Beta density (float64 relative
+4.89e-13 -> 4.82e-13). Beta CDF absolute 4.97e-13, gamma CDF absolute
+5.55e-16, gamma x-gradient relative 2.44e-14; the a/b-gradient metrics
+and every float32 metric are unchanged. No acceptance bars were relaxed.
+The new Gamma(2) checks cover mixed ordinary, deep and endpoint lanes,
+forward and reverse AD, vmap, and normal-path second derivatives.
+The targeted density and higher-derivative checks also pass on JAX 0.5.3
+and 0.12.0.1, including the default-float32 child process.
+Every measured GPU accuracy metric is unchanged. The full CPU suite passes
+818 tests; regeneration passes 15, with the two usual skips.

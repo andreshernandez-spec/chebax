@@ -466,3 +466,41 @@ def test_density_where_the_cdf_underflows():
     ):
         g = float(jax.grad(lambda x: f(a, x))(jnp.asarray(1e-160)))
         assert abs(g / (s * 1e-160) - 1) <= 3e-14, (f.__name__, g)
+
+
+def test_density_in_mixed_underflow_lanes():
+    """The conditional fallback keeps normal, deep and endpoint lanes separate.
+    Gamma(2)'s exact density is x exp(-x), its derivative (1-x) exp(-x).
+    Relative first-derivative error below 3e-14, bar 2e-13; normal-path second
+    below 1e-13, bar 5e-13. Check both branches, reverse/forward AD and batching.
+    """
+    for xs in ([0.2, 0.7, 3.0], [1e-160, 0.7, 3.0], [1e-160, 1e-170, 0.0]):
+        x = jnp.asarray(xs)
+        a = jnp.full_like(x, 2.0)
+        pdf = np.asarray(x) * np.exp(-np.asarray(x))
+        for f, sign in (
+            (chebax.gammainc_array, 1.0),
+            (chebax.gammaincc_array, -1.0),
+            (chebax.log_gammaincc_array, -1.0),
+        ):
+            ref = sign * pdf
+            if f is chebax.log_gammaincc_array:
+                ref = -np.asarray(x) / (1.0 + np.asarray(x))
+            rev = jax.jit(jax.grad(lambda x: f(a, x).sum()))(x)
+            fwd = jax.jit(
+                lambda x: jax.jvp(lambda x: f(a, x), (x,), (jnp.ones_like(x),))[1]
+            )(x)
+            batched = jax.jit(jax.vmap(jax.grad(f, 1)))(a, x)
+            for got in (rev, fwd, batched):
+                assert np.all(np.isfinite(got))
+                np.testing.assert_allclose(got, ref, rtol=2e-13, atol=0)
+        # The original rule's extreme-tail second derivatives can overflow.
+        if all(t > np.sqrt(np.finfo(float).tiny) for t in xs):
+            first = jax.grad(lambda x: chebax.gammainc_array(a, x).sum())
+            second = jax.jit(jax.grad(lambda x: first(x).sum()))(x)
+            np.testing.assert_allclose(
+                second,
+                (1.0 - np.asarray(x)) * np.exp(-np.asarray(x)),
+                rtol=5e-13,
+                atol=0,
+            )

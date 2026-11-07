@@ -162,6 +162,19 @@ def test_gamma_quantile_second_shape_derivative_at_huge_a_under_x64_off():
     )
 
 
+def test_gamma_quantile_forward_mode_at_huge_a_under_x64_off():
+    # forward mode formed x_s dlog before dividing by l_s: inf at a = 1e12,
+    # p = 1e-33, where reverse mode was right. References from the uniform
+    # expansion as in test_gammainc_large, at the float32 a and p
+    _run(
+        "a, p = jnp.float32(1e12), jnp.float32(1e-33)\n"
+        "for f, ref in [(chebax.gammaincinv_scalar, 8.24438722e37),\n"
+        "               (chebax.gammainccinv_scalar, -8.24451965e37)]:\n"
+        "    g = float(jax.jit(lambda t: jax.jvp(lambda s: f(a, s), (t,), (1.0,))[1])(p))\n"
+        "    assert abs(g / ref - 1.0) <= 3e-5, (f.__name__, g, ref)\n"
+    )
+
+
 def test_parameter_gradients_across_both_panels_under_x64_off():
     # the panel not taken was evaluated past its range, where its series
     # overflows float32, and reverse mode turned inf * 0 into nan: d/dnu was

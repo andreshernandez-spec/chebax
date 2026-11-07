@@ -1,8 +1,9 @@
 """Generator for the dawsn/erfcx tables. Build-time only; mpmath inside.
 
-dawsn: D(x) = x E(x^2) with E on z in [0, 36], degree 37; tail x D(x) = G(t),
-t = (6/x)^2, degree 10. The seam is at 6, not 4: the recessive e^{-x^2}
-part (1e-7 at x = 4) slows the tail fit there. erfcx: x >= 0 maps onto
+dawsn: D(x) = x E(|x|), E(x) = D(x)/x on 64 equal panels of [0, 6],
+9 terms per panel (5 in float32); tail x D(x) = G(t), t = (6/x)^2.
+The seam is at 6, not 4: the recessive e^{-x^2} part (1e-7 at x = 4)
+slows the tail fit there. erfcx: x >= 0 maps onto
 t = K/(K + x) (Schonfelder, Math. Comp. 32, 1978), erfcx(x) = t h(t) with
 h smooth on [0, 1], h(1) = 1, h(0) = 1/(K sqrt(pi)). One series in t needs
 26 terms above 2^-56 min h; NP equal t-panels of NTP terms instead, each
@@ -30,7 +31,9 @@ from chebax._src.recipes._gen_common import (
 )
 
 XS_E = 6.0
-NZ_DAWSN = 44
+NP_DAWSN = 64
+NN_DAWSN = 24
+NTP_DAWSN = 9
 NT_DAWSN = 16
 K_ERFCX = 3.0
 NP_ERFCX = 32  # t-panels
@@ -43,7 +46,6 @@ def generate_tables():
 
     with mp.workdps(DPS):
         xs = mp.mpf(XS_E)
-        zmax = xs * xs
 
         def dawsn(x):
             return mp.sqrt(mp.pi) / 2 * mp.exp(-x * x) * mp.erfi(x)
@@ -54,13 +56,16 @@ def generate_tables():
             x = k * (1 - t) / t
             return mp.erfc(x) * mp.exp(x * x) * (k + x) / k
 
-        e = dct(
-            mp,
-            [
-                (lambda x: dawsn(x) / x)(mp.sqrt((t + 1) / 2 * zmax))
-                for t in nodes(mp, NZ_DAWSN)
-            ],
-        )
+        p = []
+        for j in range(NP_DAWSN):
+            row = dct(
+                mp,
+                [
+                    (lambda x: dawsn(x) / x)(xs * (j + (t + 1) / 2) / NP_DAWSN)
+                    for t in nodes(mp, NN_DAWSN)
+                ],
+            )[:NTP_DAWSN]
+            p.append([float(v) for v in row])
         g = dct(
             mp,
             [
@@ -78,20 +83,23 @@ def generate_tables():
             c.append([float(v) for v in row])
             cl.append([float(v - mp.mpf(float(v))) for v in row])
     tof = lambda row: np.array([float(v) for v in row])
-    return tof(e), tof(g), np.array(c), np.array(cl)
+    return np.array(p), tof(g), np.array(c), np.array(cl)
 
 
 def main(out_dir=None):
-    e, g, c, cl = generate_tables()
+    p, g, c, cl = generate_tables()
     write_table_module(
         table_path(out_dir, __file__, "erf_table.py"),
         "chebax._src.recipes.erf_gen",
-        "1-D coefficient vectors; DAWSN_E on z = x^2 in [0, XS^2], DAWSN_G "
-        "on t = (XS/x)^2 in [0, 1]; ERFCX_P[j, k] the k-th coefficient of h on "
+        "DAWSN_P[j, k] the k-th coefficient of D(x)/x on x-panel "
+        "[j XS/NPD, (j+1) XS/NPD]; DAWSN_G on t = (XS/x)^2 in [0, 1]; "
+        "ERFCX_P[j, k] the k-th coefficient of h on "
         "the t-panel [j/NP, (j+1)/NP], t = K/(K + x), ERFCX_PL its rounding "
         "residues",
         {
-            "nz_dawsn": NZ_DAWSN,
+            "np_dawsn": NP_DAWSN,
+            "nn_dawsn": NN_DAWSN,
+            "ntp_dawsn": NTP_DAWSN,
             "nt_dawsn": NT_DAWSN,
             "np_erfcx": NP_ERFCX,
             "nn_erfcx": NN_ERFCX,
@@ -99,8 +107,8 @@ def main(out_dir=None):
             "xs": XS_E,
             "k": K_ERFCX,
         },
-        {"XS": XS_E, "K": K_ERFCX, "NP": NP_ERFCX},
-        {"DAWSN_E": e, "DAWSN_G": g, "ERFCX_P": c, "ERFCX_PL": cl},
+        {"XS": XS_E, "NPD": NP_DAWSN, "K": K_ERFCX, "NP": NP_ERFCX},
+        {"DAWSN_P": p, "DAWSN_G": g, "ERFCX_P": c, "ERFCX_PL": cl},
     )
 
 

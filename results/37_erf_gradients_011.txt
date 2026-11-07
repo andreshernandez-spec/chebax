@@ -1,0 +1,92 @@
+erf-family speed: ns per element, mean of round medians
+{
+  "date": "2026-11-07 18:20",
+  "jax": "0.11.0",
+  "baseline": "353ea37",
+  "affinity": [
+    3
+  ],
+  "rounds": 2,
+  "load_start": 1.06103515625,
+  "candidate sha256": {
+    "erf_family.py": "5df847cb12d206992db45fe00efdb136658dc01810fb2be8c2577e145f6ab023",
+    "erf_gen.py": "b0dcd18737faf6a97d4a8bff474e72ca251b01a2a831a622c66fa786396a8f8b",
+    "erf_table.py": "72931d4480938b77e5e823ec919b7a9d2eb2bf8c62e84412de28fdb7d28983a8"
+  },
+  "load_end": 2.1044921875
+}
+Dawson omitted coefficient mass / min E per panel:
+{
+  "32 panels": {
+    "6": 2.0474179335098113e-09,
+    "10": 4.173738552140937e-16,
+    "11": 7.623656040838946e-18
+  },
+  "64 panels": {
+    "5": 2.7734496208634373e-09,
+    "8": 3.872773597020466e-15,
+    "9": 3.9470689857501845e-17
+  }
+}
+
+cpu f64, N=65536
+function/source                    value        grad    value_grad
+erfcx baseline                     7.278       8.521       17.34
+erfcx candidate                    7.509       7.369       12.52
+erfcx jax                          7.105       6.914       7.123
+dawsn baseline                     12.62       19.71       32.51
+dawsn candidate                    6.462       6.139       8.598
+dawsn jax                          4.757       4.422       4.745
+
+cpu f32, N=65536
+function/source                    value        grad    value_grad
+erfcx baseline                     4.775       5.405       11.38
+erfcx candidate                    3.822       3.929       6.193
+erfcx jax                           2.15       2.104       2.277
+dawsn baseline                     6.236       9.778       16.28
+dawsn candidate                    3.179       3.318        3.88
+dawsn jax                          2.275       2.098       2.196
+
+gpu f64, N=1048576
+function/source                    value        grad    value_grad
+erfcx baseline                    0.6711       1.004       1.301
+erfcx candidate                   0.6683      0.6459      0.9038
+erfcx jax                          1.318       1.191       1.233
+dawsn baseline                     1.633       2.915       4.134
+dawsn candidate                   0.8379      0.7954       1.199
+dawsn jax                          1.252       1.133       1.174
+
+gpu f32, N=1048576
+function/source                    value        grad    value_grad
+erfcx baseline                   0.03366     0.05714     0.07291
+erfcx candidate                  0.03289     0.02917     0.03579
+erfcx jax                        0.03169     0.02809      0.0342
+dawsn baseline                   0.03097     0.07423     0.06492
+dawsn candidate                  0.03371     0.02938     0.05409
+dawsn jax                        0.03512     0.02831      0.0338
+
+Accuracy at 60 dps:
+cpu f64 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.3655743202889425e-14, "d2 underflow abs": 0.0}
+cpu f64 dawsn baseline {"d0 bulk abs": 9.992007221626409e-16, "d0 nonfinite": 0, "d0 rel": 2.3314683517128287e-15, "d0 underflow abs": 0.0, "d1 bulk abs": 2.806782584130474e-15, "d1 nonfinite": 0, "d1 rel": 1.8052226380405045e-13, "d1 underflow abs": 0.0, "d2 bulk abs": 2.850150671029894e-14, "d2 nonfinite": 0, "d2 rel": 5.6307181139914064e-12, "d2 underflow abs": 0.0}
+gpu f64 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.3766765505351941e-14, "d2 underflow abs": 0.0}
+gpu f64 dawsn baseline {"d0 bulk abs": 8.881784197001252e-16, "d0 nonfinite": 0, "d0 rel": 2.7755575615628914e-15, "d0 underflow abs": 0.0, "d1 bulk abs": 3.389649672058681e-15, "d1 nonfinite": 0, "d1 rel": 2.320366121466577e-13, "d1 underflow abs": 0.0, "d2 bulk abs": 2.827946210537391e-14, "d2 nonfinite": 0, "d2 rel": 5.58675328221625e-12, "d2 underflow abs": 0.0}
+cpu f32 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 6.67231038642413e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 7.041228516913023e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 6.550665674343037e-07, "d2 underflow abs": 1.1283792202193252e-54}
+cpu f32 dawsn baseline {"d0 bulk abs": 4.212526650837489e-07, "d0 nonfinite": 0, "d0 rel": 3.3102611758373257e-06, "d0 underflow abs": 0.0, "d1 bulk abs": 4.152416850998486e-06, "d1 nonfinite": 0, "d1 rel": 0.00028613144739164653, "d1 underflow abs": 0.0, "d2 bulk abs": 2.9761610161119223e-05, "d2 nonfinite": 0, "d2 rel": 0.005879609622941984, "d2 underflow abs": 1.0000000470797531e-54}
+gpu f32 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 4.810105566077638e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 5.227708889110616e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 4.797547870083463e-07, "d2 underflow abs": 1.1283792202193252e-54}
+gpu f32 dawsn baseline {"d0 bulk abs": 5.501567247323536e-07, "d0 nonfinite": 0, "d0 rel": 2.946981316864772e-06, "d0 underflow abs": 0.0, "d1 bulk abs": 4.145517296282736e-06, "d1 nonfinite": 0, "d1 rel": 0.00028565606585706504, "d1 underflow abs": 0.0, "d2 bulk abs": 2.984077257996154e-05, "d2 nonfinite": 0, "d2 rel": 0.005895248700165334, "d2 underflow abs": 1.0000000470797531e-54}
+cpu f64 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.2426505097428162e-14, "d2 underflow abs": 0.0}
+cpu f64 erfcx jax {"d0 nonfinite": 0, "d0 rel": 5.639932965095795e-14, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 1.6042808103706877e+282, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": Infinity, "d2 underflow abs": 1.8102370445933904e+132}
+cpu f64 dawsn candidate {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 5.551115123125783e-16, "d1 nonfinite": 0, "d1 rel": 2.2426505097428162e-14, "d1 underflow abs": 0.0, "d2 bulk abs": 4.160734257130372e-15, "d2 nonfinite": 0, "d2 rel": 6.512568262451168e-13, "d2 underflow abs": 0.0}
+cpu f64 dawsn jax {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 4.996003610813204e-16, "d1 nonfinite": 0, "d1 rel": 2.5738091190779323e+283, "d1 underflow abs": 0.0, "d2 bulk abs": 2.615963001773025e-15, "d2 nonfinite": 0, "d2 rel": Infinity, "d2 underflow abs": 2.573809119077932e+133}
+gpu f64 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.2426505097428162e-14, "d2 underflow abs": 0.0}
+gpu f64 erfcx jax {"d0 nonfinite": 0, "d0 rel": 5.617728504603292e-14, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 3.935638150721656e+184, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": Infinity, "d2 underflow abs": 1.1283791670955126e-150}
+gpu f64 dawsn candidate {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 6.106226635438361e-16, "d1 nonfinite": 0, "d1 rel": 1.9761969838327786e-14, "d1 underflow abs": 0.0, "d2 bulk abs": 3.986394547794703e-15, "d2 nonfinite": 0, "d2 rel": 5.877520692365579e-13, "d2 underflow abs": 0.0}
+gpu f64 dawsn jax {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 5.551115123125783e-16, "d1 nonfinite": 0, "d1 rel": 1.0, "d1 underflow abs": 0.0, "d2 bulk abs": 3.492865718879301e-15, "d2 nonfinite": 0, "d2 rel": 1e+200, "d2 underflow abs": 1e-150}
+cpu f32 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 2.83097775888308e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 4.674474141097562e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 6.56815008159839e-07, "d2 underflow abs": 1.1283792202193252e-54}
+cpu f32 erfcx jax {"d0 nonfinite": 0, "d0 rel": 3.6229672747412067e-06, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 7.581469523514653e+28, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.7633007884410743e+33, "d2 underflow abs": 85547720704.0}
+cpu f32 dawsn candidate {"d0 bulk abs": 6.773228972134504e-08, "d0 nonfinite": 0, "d0 rel": 2.5559575755895736e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.68986567748819e-07, "d1 nonfinite": 0, "d1 rel": 9.509366506676997e-06, "d1 underflow abs": 0.0, "d2 bulk abs": 1.954511789546698e-06, "d2 nonfinite": 0, "d2 rel": 0.0002625949424868157, "d2 underflow abs": 1.0000000470797531e-54}
+cpu f32 dawsn jax {"d0 bulk abs": 5.874406455719239e-08, "d0 nonfinite": 0, "d0 rel": 2.5413777904326196e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.651541164133686e-07, "d1 nonfinite": 0, "d1 rel": 6.024090548280308e+28, "d1 underflow abs": 0.0, "d2 bulk abs": 1.9847840565419272e-06, "d2 nonfinite": 0, "d2 rel": 2.6702862548828123e+32, "d2 underflow abs": 60240908288.0}
+gpu f32 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 3.6582712170663e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 6.757908932453205e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 8.013847210275316e-07, "d2 underflow abs": 1.1283792202193252e-54}
+gpu f32 erfcx jax {"d0 nonfinite": 0, "d0 rel": 3.6229672747412067e-06, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 21129296432798.293, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.1129296432799293e+33, "d2 underflow abs": 1.1283792006649708e-18}
+gpu f32 dawsn candidate {"d0 bulk abs": 6.773228972134504e-08, "d0 nonfinite": 0, "d0 rel": 2.5559575755895736e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.964282071749036e-07, "d1 nonfinite": 0, "d1 rel": 1.1904154315178772e-05, "d1 underflow abs": 0.0, "d2 bulk abs": 2.4525691492745944e-06, "d2 nonfinite": 0, "d2 rel": 0.0002866227203842664, "d2 underflow abs": 1.0000000470797531e-54}
+gpu f32 dawsn jax {"d0 bulk abs": 8.85463869448877e-08, "d0 nonfinite": 0, "d0 rel": 3.159189660983941e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 3.1457636170961756e-07, "d1 nonfinite": 0, "d1 rel": 1.0, "d1 underflow abs": 0.0, "d2 bulk abs": 1.9747468246560096e-06, "d2 nonfinite": 0, "d2 rel": 1.0000000133514319e+20, "d2 underflow abs": 1.000000045813705e-18}

@@ -70,10 +70,10 @@ TABLES = {
     "stdtr_table": ["TABLE_A_LO", "TABLE_A_HI", "TABLE_B_LO", "TABLE_B_HI"],
     "vonmises_table": ["TABLE"],
     "tweedie_table": ["TABLE_TAIL"],
-    "erf_table": ["DAWSN_E", "DAWSN_G", "ERFCX_P"],
+    "erf_table": ["DAWSN_P", "DAWSN_G", "ERFCX_P"],
 }
 # arrays whose axis 0 indexes panels, each row its own 1-D series
-PANELS = {"ERFCX_P"}
+PANELS = {"DAWSN_P", "ERFCX_P"}
 
 
 def unit_grid(m):

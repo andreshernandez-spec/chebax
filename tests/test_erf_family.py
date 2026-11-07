@@ -1,22 +1,23 @@
-"""M6 (third increment) acceptance: dawsn and erfcx on the real line.
+"""Erf-family acceptance: Dawson panels and scaled complementary error.
 
-References mpmath at 40 dps; errors pointwise relative (neither function
-has zeros away from dawsn's x = 0, which is tested exactly). Derivative
-tests use the exact ODE identities as oracles, so no mp.diff is needed:
-D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi).
+References are mpmath at 40 dps for values and 60 dps for the analytic JVPs.
+The derivative oracles form D' = 1 - 2 x D and erfcx' = 2 x erfcx - 2/sqrt(pi)
+from high-precision values, independently of the runtime. Errors are relative
+away from Dawson's derivative zeros, with absolute checks near those zeros.
 
-erfcx comes from 32 panels in t = 3/(3 + |x|) since 2026-11-01, with x^2
-split exactly in the reflection's e^{x^2}. Measured worst (jax 0.11 and
-0.5.3, CPU and GPU, eager and jitted) against the bars: values 4.0e-16 on
-XE (bar 1.5e-15), 4.1e-16 on the deep negatives XN (bar 1.5e-15; the
-rounded x^2 gave 5.7e-14), 1.9e-16 on XBIG (bar 1e-15), the derivative
-identity 4.1e-16 (bar 2e-15) and 3.9e-16 on XN (bar 1.5e-15).
+Experiment 37 sweeps every panel seam, both tails and normal-range limits.
+Float64 worst: Dawson value 4.5e-16, first-derivative relative 2.3e-14,
+second-derivative absolute in the inner region 4.2e-15; erfcx value 5.6e-16,
+first derivative 9e-16 and second derivative 2.3e-14. The derivative bars
+below are 2e-14 absolute for inner Dawson, 1e-13 relative in its tail, and
+4e-15 / 1e-13 relative for erfcx's first / second derivatives. The earlier
+value datasets retain their existing bars. No bars were relaxed.
 
-The sections after the acceptance tests cover the 2026-08-01 review fixes:
-the x64 keying of this module's series cache, and, since series.py's own
-file (test_m1.py) was not part of that change, the O(n) coefficient
-recurrences that replaced its cached dense matrices and the coefficient
-conversion that no longer loses values silently.
+The negative erfcx reflection splits x^2 exactly: rounding it first cost
+5.7e-14 at x = -22.75. Float32 uses five terms for the split exponential's
+correction; its own child-process check uses dtype-rounded 60-dps references.
+The later sections retain the series-cache and coefficient-calculus
+regressions from the 2026-08-01 review.
 """
 
 import ast
@@ -137,14 +138,14 @@ _FLIP = """
 import jax
 import chebax
 from chebax._src.recipes import erf_family
-before = (float(chebax.dawsn(1.0)), str(erf_family._series()[0].coef.dtype))
+before = (float(chebax.dawsn(1.0)), str(erf_family._tables().dawsn.dtype))
 jax.config.update("jax_enable_x64", True)
-after = (float(chebax.dawsn(1.0)), str(erf_family._series()[0].coef.dtype))
+after = (float(chebax.dawsn(1.0)), str(erf_family._tables().dawsn.dtype))
 print(repr((before, after)))
 """
 
 
-def test_series_cache_keyed_per_x64_mode():
+def test_tables_cache_keyed_per_x64_mode():
     # x64 is process-global and conftest turns it on, so the flip needs a
     # subprocess. A cache filled under x64 off used to pin float32
     # coefficients, and dawsn kept returning the float32 value after.
@@ -347,3 +348,144 @@ def test_tables_regenerate_bit_for_bit(tmp_path):
     assert (tmp_path / "erf_table.py").read_text() == pathlib.Path(
         et.__file__
     ).read_text()
+
+
+@pytest.mark.parametrize("name", ["dawsn", "erfcx"])
+def test_analytic_jvps_against_mpmath(name):
+    """Pointwise first derivatives and second derivatives, including every seam.
+    Dawson's inner errors are absolute (derivatives have zeros), bar 2e-14;
+    tail relative bar 1e-13. erfcx relative bars 4e-15 and 1e-13. References
+    use 60 dps; the broad sweep and measured floors are in experiment 37.
+    """
+    if name == "dawsn":
+        seams = np.arange(et.NPD + 1) * et.XS / et.NPD
+        xs = np.unique(
+            np.r_[
+                seams,
+                -seams,
+                [-1e4, -1e-20, 1e-20, 1e4],
+                seams * (1 - 1e-7),
+                seams * (1 + 1e-7),
+            ]
+        )
+    else:
+        seams = et.K * (et.NP / np.arange(1, et.NP + 1) - 1)
+        xs = np.unique(
+            np.r_[
+                seams,
+                seams * (1 - 1e-7),
+                seams * (1 + 1e-7),
+                [-26.0, -5.0, -1e-20, 1e-20, 1e4],
+            ]
+        )
+    with mp.workdps(60):
+
+        def ref(x):
+            x = mp.mpf(float(x))
+            if name == "dawsn":
+                y = mp.sqrt(mp.pi) / 2 * mp.exp(-x * x) * mp.erfi(x)
+                d1 = 1 - 2 * x * y
+                return d1, -2 * y - 2 * x * d1
+            y = mp.exp(x * x) * mp.erfc(x)
+            d1 = 2 * x * y - 2 / mp.sqrt(mp.pi)
+            return d1, 2 * y + 2 * x * d1
+
+        expected = np.array([[float(v) for v in ref(x)] for x in xs]).T
+    f = getattr(chebax, name)
+    x = jnp.asarray(xs)
+    first = jax.grad(lambda x: f(x).sum())
+    rev = jax.jit(first)(x)
+    fwd = jax.jit(lambda x: jax.jvp(f, (x,), (jnp.ones_like(x),))[1])(x)
+    batched = jax.jit(jax.vmap(jax.grad(f)))(x)
+    second = jax.jit(jax.grad(lambda x: first(x).sum()))(x)
+    for k, got in ((0, rev), (0, fwd), (0, batched), (1, second)):
+        assert np.all(np.isfinite(got))
+        if name == "dawsn":
+            inner = abs(xs) <= 6
+            np.testing.assert_allclose(
+                np.asarray(got)[inner], expected[k, inner], rtol=0, atol=2e-14
+            )
+            np.testing.assert_allclose(
+                np.asarray(got)[~inner], expected[k, ~inner], rtol=1e-13, atol=0
+            )
+        else:
+            np.testing.assert_allclose(
+                got, expected[k], rtol=4e-15 if k == 0 else 1e-13, atol=0
+            )
+
+
+def test_erf_endpoints_and_signed_zero():
+    tiny = jnp.finfo(jnp.float64).tiny
+    small = jnp.asarray([-tiny, tiny, 2 * tiny])
+    np.testing.assert_array_equal(jax.jit(chebax.dawsn)(small), small)
+    first = jax.grad(lambda x: chebax.dawsn(x).sum())
+    np.testing.assert_array_equal(jax.jit(first)(small), jnp.ones_like(small))
+    np.testing.assert_array_equal(
+        jax.jit(jax.grad(lambda x: first(x).sum()))(small), -4 * small
+    )
+    for f in (chebax.dawsn, chebax.erfcx):
+        vals = jax.jit(f)(jnp.asarray([-jnp.inf, 0.0, jnp.inf, jnp.nan]))
+        grad = jax.jit(jax.vmap(jax.grad(f)))(
+            jnp.asarray([-jnp.inf, 0.0, jnp.inf, jnp.nan])
+        )
+        assert np.isnan(vals[-1]) and np.isnan(grad[-1])
+        assert vals[-2] == 0.0 and grad[-2] == 0.0
+        if f is chebax.dawsn:
+            assert vals[0] == 0.0 and grad[0] == 0.0
+            assert np.signbit(float(f(-0.0)))
+            assert grad[1] == 1.0
+        else:
+            assert np.isposinf(vals[0]) and np.isneginf(grad[0])
+    # Normalization happens before the JVP sees integer or half-precision inputs.
+    for f in (chebax.dawsn, chebax.erfcx):
+        np.testing.assert_allclose(
+            f(x=jnp.asarray([0, 1, 2])), f(jnp.asarray([0.0, 1.0, 2.0])), rtol=0, atol=0
+        )
+        assert f(jnp.float16(1.0)).dtype == jnp.float64
+
+
+def test_erf_gradients_float32():
+    """Independent 60-dps references at float32 inputs; tails stay relative.
+    Value/erfcx-slope bars 2e-6, Dawson slope bar 5e-5 away from its zeros.
+    """
+    code = r"""
+import jax
+import jax.numpy as jnp
+import numpy as np
+import mpmath as mp
+import chebax
+mp.mp.dps = 60
+tiny = jnp.finfo(jnp.float32).tiny
+small = jnp.asarray([-tiny, tiny, 2*tiny])
+np.testing.assert_array_equal(jax.jit(chebax.dawsn)(small), small)
+first = jax.grad(lambda x:chebax.dawsn(x).sum())
+np.testing.assert_array_equal(jax.jit(first)(small), jnp.ones_like(small))
+np.testing.assert_array_equal(jax.jit(jax.grad(lambda x:first(x).sum()))(small), -4*small)
+for name in ('dawsn','erfcx'):
+    f = getattr(chebax,name)
+    xs = np.asarray([-8., -3., -.5, 0., .2, .7, 1., 2., 5.5, 6., 6.0001, 10., 1e4],np.float32)
+    values, slopes = [], []
+    for t in xs:
+        x = mp.mpf(float(t))
+        if name == 'dawsn':
+            y = mp.sqrt(mp.pi)/2*mp.exp(-x*x)*mp.erfi(x)
+            d = 1-2*x*y
+        else:
+            y = mp.exp(x*x)*mp.erfc(x)
+            d = 2*x*y-2/mp.sqrt(mp.pi)
+        values.append(float(y)); slopes.append(float(d))
+    rev = jax.jit(jax.grad(lambda x:f(x).sum()))(jnp.asarray(xs))
+    fwd = jax.jit(lambda x:jax.jvp(f,(x,),(jnp.ones_like(x),))[1])(jnp.asarray(xs))
+    np.testing.assert_allclose(f(xs), values, rtol=2e-6, atol=0)
+    for got in (rev,fwd):
+        assert np.all(np.isfinite(got))
+        np.testing.assert_allclose(got, slopes, rtol=5e-5 if name=='dawsn' else 2e-6, atol=0)
+"""
+    env = {k: v for k, v in os.environ.items() if k != "JAX_ENABLE_X64"}
+    run = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**env, "JAX_ENABLE_X64": "false", "JAX_PLATFORMS": "cpu"},
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr

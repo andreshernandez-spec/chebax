@@ -1,0 +1,92 @@
+erf-family speed: ns per element, mean of round medians
+{
+  "date": "2026-11-07 18:23",
+  "jax": "0.12.0.1",
+  "baseline": "353ea37",
+  "affinity": [
+    3
+  ],
+  "rounds": 2,
+  "load_start": 1.85400390625,
+  "candidate sha256": {
+    "erf_family.py": "5df847cb12d206992db45fe00efdb136658dc01810fb2be8c2577e145f6ab023",
+    "erf_gen.py": "b0dcd18737faf6a97d4a8bff474e72ca251b01a2a831a622c66fa786396a8f8b",
+    "erf_table.py": "72931d4480938b77e5e823ec919b7a9d2eb2bf8c62e84412de28fdb7d28983a8"
+  },
+  "load_end": 1.7509765625
+}
+Dawson omitted coefficient mass / min E per panel:
+{
+  "32 panels": {
+    "6": 2.0474179335098113e-09,
+    "10": 4.173738552140937e-16,
+    "11": 7.623656040838946e-18
+  },
+  "64 panels": {
+    "5": 2.7734496208634373e-09,
+    "8": 3.872773597020466e-15,
+    "9": 3.9470689857501845e-17
+  }
+}
+
+cpu f64, N=65536
+function/source                    value        grad    value_grad
+erfcx baseline                     7.472       9.092       18.19
+erfcx candidate                    7.663       7.396       12.83
+erfcx jax                          7.702       11.56       12.51
+dawsn baseline                     13.17       20.48       34.42
+dawsn candidate                    6.538       6.241       9.105
+dawsn jax                          4.679       4.329       4.732
+
+cpu f32, N=65536
+function/source                    value        grad    value_grad
+erfcx baseline                     4.748       5.675       11.81
+erfcx candidate                    3.913       4.208       6.413
+erfcx jax                          2.326        2.93       3.241
+dawsn baseline                     6.534        10.2       16.94
+dawsn candidate                    3.267       3.406       4.016
+dawsn jax                          2.326       2.109       2.336
+
+gpu f64, N=1048576
+function/source                    value        grad    value_grad
+erfcx baseline                    0.6745       1.004       1.256
+erfcx candidate                   0.6698      0.6328       0.871
+erfcx jax                          1.615       2.671       2.775
+dawsn baseline                     1.638       2.906       3.208
+dawsn candidate                   0.8301      0.8022       1.207
+dawsn jax                          1.224       1.125       1.169
+
+gpu f32, N=1048576
+function/source                    value        grad    value_grad
+erfcx baseline                   0.03865     0.05413     0.07971
+erfcx candidate                  0.03847      0.0335     0.04083
+erfcx jax                        0.04253     0.05374     0.08172
+dawsn baseline                   0.03439     0.07256     0.07923
+dawsn candidate                  0.03777     0.03387     0.05617
+dawsn jax                        0.03629     0.03241     0.05412
+
+Accuracy at 60 dps:
+cpu f64 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.3655743202889425e-14, "d2 underflow abs": 0.0}
+cpu f64 dawsn baseline {"d0 bulk abs": 9.992007221626409e-16, "d0 nonfinite": 0, "d0 rel": 2.3314683517128287e-15, "d0 underflow abs": 0.0, "d1 bulk abs": 2.806782584130474e-15, "d1 nonfinite": 0, "d1 rel": 1.8052226380405045e-13, "d1 underflow abs": 0.0, "d2 bulk abs": 2.850150671029894e-14, "d2 nonfinite": 0, "d2 rel": 5.6307181139914064e-12, "d2 underflow abs": 0.0}
+gpu f64 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.3766765505351941e-14, "d2 underflow abs": 0.0}
+gpu f64 dawsn baseline {"d0 bulk abs": 8.881784197001252e-16, "d0 nonfinite": 0, "d0 rel": 2.7755575615628914e-15, "d0 underflow abs": 0.0, "d1 bulk abs": 3.389649672058681e-15, "d1 nonfinite": 0, "d1 rel": 2.320366121466577e-13, "d1 underflow abs": 0.0, "d2 bulk abs": 2.827946210537391e-14, "d2 nonfinite": 0, "d2 rel": 5.58675328221625e-12, "d2 underflow abs": 0.0}
+cpu f32 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 6.67231038642413e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 7.041228516913023e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 6.550665674343037e-07, "d2 underflow abs": 1.1283792202193252e-54}
+cpu f32 dawsn baseline {"d0 bulk abs": 4.212526650837489e-07, "d0 nonfinite": 0, "d0 rel": 3.3102611758373257e-06, "d0 underflow abs": 0.0, "d1 bulk abs": 4.152416850998486e-06, "d1 nonfinite": 0, "d1 rel": 0.00028613144739164653, "d1 underflow abs": 0.0, "d2 bulk abs": 2.9761610161119223e-05, "d2 nonfinite": 0, "d2 rel": 0.005879609622941984, "d2 underflow abs": 1.0000000470797531e-54}
+gpu f32 erfcx baseline {"d0 nonfinite": 0, "d0 rel": 4.810105566077638e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 5.227708889110616e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 4.797547870083463e-07, "d2 underflow abs": 1.1283792202193252e-54}
+gpu f32 dawsn baseline {"d0 bulk abs": 5.501567247323536e-07, "d0 nonfinite": 0, "d0 rel": 2.946981316864772e-06, "d0 underflow abs": 0.0, "d1 bulk abs": 4.145517296282736e-06, "d1 nonfinite": 0, "d1 rel": 0.00028565606585706504, "d1 underflow abs": 0.0, "d2 bulk abs": 2.984077257996154e-05, "d2 nonfinite": 0, "d2 rel": 0.005895248700165334, "d2 underflow abs": 1.0000000470797531e-54}
+cpu f64 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.2426505097428162e-14, "d2 underflow abs": 0.0}
+cpu f64 erfcx jax {"d0 nonfinite": 0, "d0 rel": 3.3306690738754696e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 4.440892098500626e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.6645352591003757e-15, "d2 underflow abs": 0.0, "d2 vector error": "select cases must have the same shapes, got [(), (880,)]."}
+cpu f64 dawsn candidate {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 5.551115123125783e-16, "d1 nonfinite": 0, "d1 rel": 2.2426505097428162e-14, "d1 underflow abs": 0.0, "d2 bulk abs": 4.160734257130372e-15, "d2 nonfinite": 0, "d2 rel": 6.512568262451168e-13, "d2 underflow abs": 0.0}
+cpu f64 dawsn jax {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 4.996003610813204e-16, "d1 nonfinite": 0, "d1 rel": 2.5738091190779323e+283, "d1 underflow abs": 0.0, "d2 bulk abs": 2.615963001773025e-15, "d2 nonfinite": 0, "d2 rel": Infinity, "d2 underflow abs": 2.573809119077932e+133}
+gpu f64 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 5.551115123125783e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 8.881784197001252e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.2426505097428162e-14, "d2 underflow abs": 0.0}
+gpu f64 erfcx jax {"d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 4.440892098500626e-16, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 2.6645352591003757e-15, "d2 underflow abs": 0.0, "d2 vector error": "select cases must have the same shapes, got [(), (880,)]."}
+gpu f64 dawsn candidate {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 6.106226635438361e-16, "d1 nonfinite": 0, "d1 rel": 1.9761969838327786e-14, "d1 underflow abs": 0.0, "d2 bulk abs": 3.986394547794703e-15, "d2 nonfinite": 0, "d2 rel": 5.877520692365579e-13, "d2 underflow abs": 0.0}
+gpu f64 dawsn jax {"d0 bulk abs": 1.6653345369377348e-16, "d0 nonfinite": 0, "d0 rel": 4.440892098500626e-16, "d0 underflow abs": 0.0, "d1 bulk abs": 5.551115123125783e-16, "d1 nonfinite": 0, "d1 rel": 1.0, "d1 underflow abs": 0.0, "d2 bulk abs": 3.492865718879301e-15, "d2 nonfinite": 0, "d2 rel": 1e+200, "d2 underflow abs": 1e-150}
+cpu f32 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 2.83097775888308e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 4.674474141097562e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 6.56815008159839e-07, "d2 underflow abs": 1.1283792202193252e-54}
+cpu f32 erfcx jax {"d0 nonfinite": 0, "d0 rel": 1.630613657432889e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 2.3669228510492246e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 1.2517567844483324e-06, "d2 underflow abs": 1.1283792202193252e-54, "d2 vector error": "select cases must have the same shapes, got [(), (873,)]."}
+cpu f32 dawsn candidate {"d0 bulk abs": 6.773228972134504e-08, "d0 nonfinite": 0, "d0 rel": 2.5559575755895736e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.68986567748819e-07, "d1 nonfinite": 0, "d1 rel": 9.509366506676997e-06, "d1 underflow abs": 0.0, "d2 bulk abs": 1.954511789546698e-06, "d2 nonfinite": 0, "d2 rel": 0.0002625949424868157, "d2 underflow abs": 1.0000000470797531e-54}
+cpu f32 dawsn jax {"d0 bulk abs": 5.874406455719239e-08, "d0 nonfinite": 0, "d0 rel": 2.5413777904326196e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.651541164133686e-07, "d1 nonfinite": 0, "d1 rel": 6.024090548280308e+28, "d1 underflow abs": 0.0, "d2 bulk abs": 1.9847840565419272e-06, "d2 nonfinite": 0, "d2 rel": 2.6702862548828123e+32, "d2 underflow abs": 60240908288.0}
+gpu f32 erfcx candidate {"d0 nonfinite": 0, "d0 rel": 3.6582712170663e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 6.757908932453205e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 8.013847210275316e-07, "d2 underflow abs": 1.1283792202193252e-54}
+gpu f32 erfcx jax {"d0 nonfinite": 0, "d0 rel": 1.5160908006794926e-07, "d0 underflow abs": 0.0, "d1 nonfinite": 0, "d1 rel": 2.5679317661175816e-07, "d1 underflow abs": 0.0, "d2 nonfinite": 0, "d2 rel": 9.074969462563587e-07, "d2 underflow abs": 1.1283792202193252e-54, "d2 vector error": "select cases must have the same shapes, got [(), (873,)]."}
+gpu f32 dawsn candidate {"d0 bulk abs": 6.773228972134504e-08, "d0 nonfinite": 0, "d0 rel": 2.5559575755895736e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 2.964282071749036e-07, "d1 nonfinite": 0, "d1 rel": 1.1904154315178772e-05, "d1 underflow abs": 0.0, "d2 bulk abs": 2.4525691492745944e-06, "d2 nonfinite": 0, "d2 rel": 0.0002866227203842664, "d2 underflow abs": 1.0000000470797531e-54}
+gpu f32 dawsn jax {"d0 bulk abs": 8.85463869448877e-08, "d0 nonfinite": 0, "d0 rel": 3.159189660983941e-07, "d0 underflow abs": 0.0, "d1 bulk abs": 3.1457636170961756e-07, "d1 nonfinite": 0, "d1 rel": 1.0, "d1 underflow abs": 0.0, "d2 bulk abs": 1.9747468246560096e-06, "d2 nonfinite": 0, "d2 rel": 1.0000000133514319e+20, "d2 underflow abs": 1.000000045813705e-18}

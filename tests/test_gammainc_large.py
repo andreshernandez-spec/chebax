@@ -372,6 +372,24 @@ def test_huge_shape_quantiles():
     assert abs(g - fd) <= 1e-9, (g, fd)
 
 
+def test_huge_shape_forward_mode():
+    # forward mode formed x_s dlog before dividing by l_s, which overflows
+    # where dx/dp does not: inf at a = 1e12, p = 1e-303 for a true 2.7e307.
+    # Measured worst 2.2e-16 against the expansion, bar 2e-15; forward dx/da
+    # matches reverse mode to the bit, bar 1e-15
+    for f, upper in (
+        (chebax.gammaincinv_scalar, False),
+        (chebax.gammainccinv_scalar, True),
+    ):
+        for a, p in ((1e12, 1e-303), (1e15, 1e-302), (1e12, 1e-20)):
+            g = float(jax.jvp(lambda t: f(a, t), (p,), (1.0,))[1])
+            rg = float(_huge_quantile_ref(a, p, upper)[1])
+            assert abs(g / rg - 1) <= 2e-15, (a, p, upper, g, rg)
+            fa = lambda s: f(s, p)
+            ga = float(jax.jvp(fa, (a,), (1.0,))[1])
+            assert abs(ga / float(jax.grad(fa)(a)) - 1) <= 1e-15, (a, p, upper, ga)
+
+
 def test_quantile_density_below_huge():
     # Below 1e10 the x-derivative divides by the density at x, and
     # a ln x - x - lnGamma(a) put that 8e-6 off at a = 1e10 (4e-7 at 1e8).

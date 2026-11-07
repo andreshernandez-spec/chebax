@@ -168,11 +168,13 @@ def _huge_dx(a, da, s, upper, dlog):
     one = jnp.ones_like(s)
     l_s = jax.jvp(lambda ss: lfn(ss, a), (s,), (one,))[1]
     x_s = jax.jvp(lambda ss: xfn(ss, a), (s,), (one,))[1]
+    # divide first: x_s dlog overflows float32 at a = 1e12, p = 1e-33
+    ratio = x_s / l_s
     if da is None:
-        return x_s * dlog / l_s
+        return ratio * dlog
     l_a = jax.jvp(lambda aa: lfn(s, aa), (a,), (jnp.ones_like(a),))[1]
     x_a = jax.jvp(lambda aa: xfn(s, aa), (a,), (jnp.ones_like(a),))[1]
-    return x_s * (dlog - l_a * da) / l_s + x_a * da
+    return ratio * (dlog - l_a * da) + x_a * da
 
 
 def _residual(a, use_recipe):

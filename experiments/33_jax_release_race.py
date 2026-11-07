@@ -103,8 +103,9 @@ chebax against jax 0.12.0.1, speed:
   (a, b) part is 4.5-5.2 ns at 2^16 (was 40-76 us).
 
 chebax accuracy:
-- Values: 4e-16 to 4e-13 where jax is 3e-16 to 3e-13. chebax is better
-  on gammainc (3e-15 vs 3e-13 absolute) and the t CDF, jax on hyp1f1
+- Values: 3e-16 to 4e-13 where jax is 3e-16 to 4e-12 (bessel_jn aside).
+  chebax is better on gammainc (3e-15 vs 3e-13 absolute) and the t CDF
+  (3.6e-15 vs 3.7e-12), jax on hyp1f1
   (6e-16 vs 3.6e-13); dawsn and I are close (4e-16 to 1.3e-15 against
   jax's 4e-16 to 8e-16).
 - float32 I0 and I1 are finite up to x = 91.9, where jax (its 2 nan)

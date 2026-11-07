@@ -28,9 +28,11 @@ from chebax._src.recipes._common import (
     deprecated_factory,
     digamma64,
     frozen_cache,
+    log_half,
     param_coefs,
     param_coefs_der,
     positional_domain,
+    pow_half,
 )
 from chebax._src.series import ChebSeries
 
@@ -80,7 +82,7 @@ class _JBase(Recipe):
         xi = self._xin(x)
         # integer powers avoid 0 * inf in higher derivatives at 0
         power = int(self.v) if self.v.is_integer() else self.v
-        pref = jnp.power(xi / 2, power)
+        pref = pow_half(xi, power)
         return self._inv_gamma * pref * self.g(xi * xi)
 
     def _mid(self, x):
@@ -149,8 +151,8 @@ class BesselJdnu(_JBase):
     def _inner_dnu(self, x):
         xi = self._xin(x)
         z = xi * xi
-        pref = self._inv_gamma * jnp.power(xi / 2, self.v)
-        return pref * ((jnp.log(xi / 2) - self._psi) * self.g(z) + self.gnu(z))
+        pref = self._inv_gamma * pow_half(xi, self.v)
+        return pref * ((log_half(xi) - self._psi) * self.g(z) + self.gnu(z))
 
     def _outer_dnu(self, x):
         xo, P, Q = self._outer_pq(x)

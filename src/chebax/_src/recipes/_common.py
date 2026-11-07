@@ -48,6 +48,26 @@ def canon_float(x):
     return jnp.asarray(x, dtype=jnp.empty(()).dtype)
 
 
+def _half_parts(x):
+    # x/2 is subnormal below 2 tiny and XLA flushes it to 0; each branch sees a
+    # masked x, so the other's nan gradient does not leak through the where
+    small = x < 2 * jnp.finfo(x.dtype).tiny
+    return small, jnp.where(small, x, 1.0), jnp.where(small, 2.0, x)
+
+
+def pow_half(x, v):
+    """(x/2)^v, as x^v 2^-v below 2 tiny."""
+    small, lo, hi = _half_parts(x)
+    scale = 2.0 ** -v if isinstance(v, (int, float)) else jnp.exp2(-v)
+    return jnp.where(small, jnp.power(lo, v) * scale, jnp.power(hi / 2, v))
+
+
+def log_half(x):
+    """ln(x/2), as ln x - ln 2 below 2 tiny."""
+    small, lo, hi = _half_parts(x)
+    return jnp.where(small, jnp.log(lo) - math.log(2.0), jnp.log(hi / 2))
+
+
 def canon_param(p, who, name, array=None):
     """A uniform-per-call parameter: a scalar, or any array holding one value
     (numpyro and pytensor pass (1,) where the caller wrote a scalar, e.g. a

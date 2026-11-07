@@ -177,3 +177,24 @@ def test_factory_cache_keyed_per_x64_mode():
         [sys.executable, "-c", code], capture_output=True, text=True, env=env
     )
     assert out.returncode == 0, out.stderr[-1500:]
+
+
+def test_fractional_order_just_above_tiny():
+    # x/2 is subnormal below 2 tiny and XLA flushes it: J was 0, dJ/dv nan.
+    # (J, dJ/dv) at mpmath 40 dps, dJ/dx = v J / x this close to 0. Measured
+    # worst 2.2e-16, bar 1e-15; dJ/dx 2.0e-14 (the rounding of v - 1 in
+    # d/dx x^v, times |ln x| ~ 708), bar 8e-14
+    ref = {
+        (0.1, 2.3e-308): (1.68938685277697e-31, -1.1971547529062514e-28),
+        (0.1, 4e-308): (1.7855101592779915e-31, -1.2642827953681088e-28),
+        (0.5, 2.3e-308): (1.2100518486599808e-154, -8.5803921889382945e-152),
+        (0.5, 4e-308): (1.5957691216057307e-154, -1.1306655376172815e-151),
+    }
+    for (v, x), (val, dval) in ref.items():
+        got = [
+            (chebax.besselj_frozen(v)(x), val, 1e-15),
+            (chebax.besselj_dnu_frozen(v)(x), dval, 1e-15),
+            (jax.jit(jax.grad(chebax.besselj_frozen(v)))(x), v * val / x, 8e-14),
+        ]
+        for k, (g, r, bar) in enumerate(got):
+            assert abs(float(g) / r - 1.0) <= bar, (v, x, k, float(g), r)

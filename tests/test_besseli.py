@@ -334,3 +334,29 @@ def test_x64_off():
         [sys.executable, "-c", code], capture_output=True, text=True, env=env
     )
     assert out.returncode == 0, out.stderr[-1500:]
+
+
+def test_fractional_order_just_above_tiny():
+    # x/2 is subnormal below 2 tiny and XLA flushes it: I was 0, dI/dx inf.
+    # (I, dI/dv) at mpmath 40 dps, dI/dx = v I / x this close to 0. Measured
+    # worst 1.6e-15 (traced dI/dv), bar 6e-15. d/dx x^v is v x^(v-1), and
+    # the rounding of v - 1 times |ln x| ~ 708 gives 2.0e-14, bar 8e-14
+    ref = {
+        (0.1, 2.3e-308): (1.68938685277697e-31, -1.1971547529062514e-28),
+        (0.1, 4e-308): (1.7855101592779915e-31, -1.2642827953681088e-28),
+        (0.5, 2.3e-308): (1.2100518486599808e-154, -8.5803921889382945e-152),
+        (0.5, 4e-308): (1.5957691216057307e-154, -1.1306655376172815e-151),
+    }
+    dv = jax.jit(jax.grad(chebax.besseli_scalar))
+    dx = jax.jit(jax.grad(chebax.besseli_scalar, argnums=1))
+    for (v, x), (val, dval) in ref.items():
+        got = [
+            (chebax.besseli_frozen(v)(x), val, 6e-15),
+            (chebax.besseli_scalar(v, x), val, 6e-15),
+            (chebax.besseli_dnu_frozen(v)(x), dval, 6e-15),
+            (dv(v, x), dval, 6e-15),
+            (dx(v, x), v * val / x, 8e-14),
+            (jax.grad(chebax.besseli_frozen(v))(x), v * val / x, 8e-14),
+        ]
+        for k, (g, r, bar) in enumerate(got):
+            assert abs(float(g) / r - 1.0) <= bar, (v, x, k, float(g), r)

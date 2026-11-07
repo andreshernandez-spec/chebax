@@ -214,6 +214,27 @@ def test_matern_close_points_under_x64_off():
     )
 
 
+def test_fractional_bessel_orders_just_above_tiny_under_x64_off():
+    # x/2 is subnormal below 2 tiny and XLA flushes it, so (x/2)^v was 0 and
+    # ln(x/2) -inf. (value, d/dv) at mpmath 40 dps, the same for I and J this
+    # close to 0; d/dx is v value / x. Measured worst 2.6e-6 (dI/dx), bar 2e-5
+    _run(
+        "ref = {(0.1, 1.2e-38): (1.5829764368384466e-4, -0.013864547281792216),\n"
+        "       (0.1, 2e-38): (1.6659398861819009e-4, -0.014506084694866106),\n"
+        "       (0.5, 1.2e-38): (8.7403873650050227e-20, -7.6955220533351474e-18),\n"
+        "       (0.5, 2e-38): (1.1283791699788393e-19, -9.8772358650238096e-18)}\n"
+        "for (v, x), (val, dv) in ref.items():\n"
+        "    t, n, i = jnp.float32(x), jnp.float32(v), chebax.besseli_scalar\n"
+        "    got = [(chebax.besseli(v, t), val), (chebax.besselj_frozen(v)(t), val),\n"
+        "           (jax.jit(jax.grad(i))(n, t), dv),\n"
+        "           (chebax.besselj_dnu_frozen(v)(t), dv),\n"
+        "           (jax.jit(jax.grad(i, argnums=1))(n, t), v * val / x),\n"
+        "           (jax.jit(jax.grad(chebax.besselj_frozen(v)))(t), v * val / x)]\n"
+        "    for k, (g, r) in enumerate(got):\n"
+        "        assert abs(float(g) / r - 1.0) <= 2e-5, (v, x, k, float(g), r)\n"
+    )
+
+
 def test_widest_float32_domain_under_jit():
     # float32's version of the reciprocal flush: half-width 1e38 is past
     # 1/tiny = 2^126, so XLA's folded reciprocal was flushed to zero and a

@@ -32,8 +32,10 @@ from chebax._src.recipes._common import (
     deprecated_factory,
     digamma64,
     frozen_cache,
+    log_half,
     param_coefs,
     param_coefs_der,
+    pow_half,
     renamed_order,
     traced_coefs,
 )
@@ -87,12 +89,12 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
         # the power rule gives 0 * (x/2)^-1 at 0, a nan gradient
         pref = 1.0
     elif isinstance(v, (int, float)):
-        pref = jnp.power(xi / 2, v)
+        pref = pow_half(xi, v)
     else:
         # mask only v == 0 at x == 0 (0 * inf in reverse mode); elsewhere the
         # power keeps its v derivative ln(x/2), which dI/dv needs
         bad = (jnp.asarray(v) == 0.0) & (xi == 0.0)
-        pref = jnp.where(bad, 1.0, jnp.power(jnp.where(bad, 1.0, xi) / 2, v))
+        pref = jnp.where(bad, 1.0, pow_half(jnp.where(bad, 1.0, xi), v))
     inner = jnp.exp(lh(xi * xi)) * pref * inv_gamma
     if scaled:
         inner = inner * jnp.exp(-xi)
@@ -119,7 +121,7 @@ def _dlog_i(x, lh_nu, lt_nu, psi):
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     xo = jnp.where(x <= _it.XS, _it.XS, x)
     return jnp.where(
-        x <= _it.XS, lh_nu(xi * xi) + jnp.log(xi / 2) - psi, lt_nu(_it.XS / xo)
+        x <= _it.XS, lh_nu(xi * xi) + log_half(xi) - psi, lt_nu(_it.XS / xo)
     )
 
 

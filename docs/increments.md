@@ -1562,3 +1562,76 @@ errors stay below 5.6e-16 and 9e-16; its second derivative moves from
 0.12.0.1 vector second derivative of erfcx raises a shape error, so the
 experiment records that error and uses vmapped scalar AD for that
 comparison only. Chebax's vector derivatives run directly.
+
+## 48. Factor the entire part of Bessel I (2026-11-07)
+
+The I/J speed comparison used different standard-JAX baselines. I_0 and
+I_1 have dedicated XLA polynomial kernels; bessel_jn uses a backward
+recurrence with 50 iterations by default and computes the order ladder.
+Chebax's gain against that recurrence does not predict its gain against
+the I kernels. Experiment 38 includes J_1 on [8,20], where that recurrence
+is accurate in both dtypes, beside the I comparisons on [0,50].
+
+Chebax also did more work for I than its inner J approximation. It fit
+ln F, F = 0F1(; v+1; z/4), z = x^2. F is entire in z, but its logarithm
+has the complex zeros as singularities; the closest at v=0 is z=-5.78.
+The log needed 72 terms and an exponential. Values now use
+
+    F = 1 + z/(4(v+1)) (1 + z R(v,z)).
+
+Removing the first two terms before fitting keeps the value and x-slope
+accurate near zero. R needs 16 terms in float64, 10 in float32, without
+an exponential. Experiment 38 measures the omitted coefficient mass at
+60 dps and checks the composed values and derivatives independently.
+The scaled tail keeps its log representation and all 48 terms in
+float64; float32 uses 24. The existing log tables still supply the order
+derivative, including the integral correction near v=0. Symbolic-zero
+JVP tangents skip the order correction for an x-only derivative and skip
+the x derivative when only the order is differentiated.
+
+The tail reconstruction is shared by both representations. It switches
+to a combined exponential before exp(x) overflows in the compute dtype:
+x=700 in float64, 80 in float32. Previously the float32 threshold was
+also 700, losing finite I_0 and I_1 near x=90. The generic power's second
+derivative at v=1,x=0 is handled by its linear limit; the inactive power
+sees a safe dummy. Away from the origin its order derivative is retained.
+
+The 60-dps fit check in experiment 38 finds omitted coefficient mass /
+min R below 1.3e-21 at 16 terms, 6.3e-11 at 10, over six orders. Its
+independent sweep includes the origin, both sides of x=8, logarithmic
+bulk and tails to the dtype limits, and the overflow windows. Relative
+derivative errors skip only 1% windows around actual interior zeros,
+located at 60 dps; absolute errors are recorded there and for underflow.
+JAX's scaled functions use exp(-abs(x)), so the shared derivative metric
+excludes zero, where Chebax's right derivatives are tested separately.
+
+For scaled I_0/I_1, the worst float64 relative value / first / second
+errors across CPU and GPU are 1.5e-15 / 9.2e-15 / 3.1e-14, against
+2.0e-15 / 4.5e-14 / 4.4e-13 before. Float32 values improve from 7.5e-7
+to 2.8e-7. The unscaled float64 overflow window retains its ~1.3e-13
+floor; the new float32 combined exponential has several e-6 relative
+error there, where the previous values were infinite. The unscaled
+second derivative can still overflow before the function itself, as
+before (order 2.5 at x=713 in float64; points near x=91.5 in float32).
+The captured accuracy output counts every such point. No existing test
+bar was relaxed. JAX's scaled tail derivatives still lose accuracy by
+subtracting neighboring orders; differentiating Lt and the square-root
+factor avoids that cancellation.
+
+Experiment 38's timing capture uses JAX 0.12.0.1, one CPU core at
+N=2^16 and the RTX 3080 Laptop at N=2^20, compilation excluded, two
+rounds in reversed source order. I uses the scalar entry point with
+constant orders, x in [0,50]; J uses its frozen path on [8,20]. For I_0
+and I_1, value_and_grad improves 1.5x in float64 and 2.9x in float32 on
+CPU, 1.5x and 1.8-1.9x on GPU. Scaled I_0/I_1 improve 1.9x / 3.5x on
+CPU and 1.6x / 2.1x on GPU. The order-2.5 cases gain 1.3-1.8x too.
+Standard JAX still leads on CPU and float64 GPU; float32 GPU values are
+now roughly on par. On the same float64 CPU, Chebax I_1e takes 21.7 ns
+per value to JAX's 10.2; Chebax J_1 takes 28.7 to JAX's 131.8. The
+relative wins compare against very different baselines. The speed and
+accuracy captures are separate, with matching runtime source hashes.
+
+Acceptance on main including #75: 834 non-slow tests pass, regeneration
+15 with the two usual skips. The family passes 30 tests each on JAX
+0.5.3 and 0.12.0.1; stricter relative tail checks pass on those and
+0.11. Formatting and diff checks pass.

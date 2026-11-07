@@ -1,4 +1,9 @@
-"""Generator for the besseli log-tables. Build-time only; mpmath inside.
+"""Generator for Bessel I's factored values and order-derivative log tables.
+
+The direct inner value is 0F1 = 1 + z/(4(v+1)) (1 + z R(v,z)), so its
+constant and linear terms stay exact near zero. R is entire in z on [0,64];
+16 terms (10 in float32) suffice, measured by experiment 38. The log tables
+below retain the stable order derivative and the scaled tail.
 
 Inner, z = x^2 in [0, 64]: Lh(v, z) = ln[Gamma(v+1) (x/2)^(-v) I_v(x)], the
 log of the entire part 0F1(; v+1; z/4); the nearest complex zero of I_0, at
@@ -29,6 +34,24 @@ NZ_I = 72
 NV_I = 64
 NT_I = 48
 NVT_I = 32
+NN_VALUE = 24
+NT_VALUE = 16
+
+
+def generate_value_table():
+    """R(v,z) = (4(v+1)(0F1(;v+1;z/4)-1)/z - 1)/z."""
+    import mpmath as mp
+
+    with mp.workdps(DPS):
+        rows = []
+        for s in nodes(mp, NV_I):
+            v = (s + 1) * mp.mpf(VMAX) / 2
+            values = []
+            for t in nodes(mp, NN_VALUE):
+                z = (t + 1) * mp.mpf(ZMAX_I) / 2
+                values.append(((mp.hyp0f1(v + 1, z / 4) - 1) * 4 * (v + 1) / z - 1) / z)
+            rows.append(dct(mp, values)[:NT_VALUE])
+        return to_f64(param_fit(mp, rows))
 
 
 def generate_inner_table():
@@ -73,7 +96,7 @@ def main(out_dir=None):
         "chebax._src.recipes.besseli_gen",
         "T[k, j] = j-th v-coefficient (v in [0, VMAX]) of the k-th argument "
         "coefficient (z = x^2 in [0, ZMAX] for TABLE_IN; t = XS/x in [0, 1] "
-        "for TABLE_TAIL)",
+        "for TABLE_TAIL). VALUE_IN[k, j] holds R(v,z) in the same z/v coordinates",
         {
             "nz": NZ_I,
             "nv": NV_I,
@@ -82,9 +105,15 @@ def main(out_dir=None):
             "zmax": ZMAX_I,
             "xs": XS_I,
             "vmax": VMAX,
+            "nn_value": NN_VALUE,
+            "nt_value": NT_VALUE,
         },
         {"ZMAX": ZMAX_I, "XS": XS_I, "VMAX": VMAX},
-        {"TABLE_IN": generate_inner_table(), "TABLE_TAIL": generate_tail_table()},
+        {
+            "TABLE_IN": generate_inner_table(),
+            "TABLE_TAIL": generate_tail_table(),
+            "VALUE_IN": generate_value_table(),
+        },
     )
 
 

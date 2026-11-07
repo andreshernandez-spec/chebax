@@ -1,8 +1,12 @@
-"""I_v for real v in [0, 10] on x >= 0, from log-tables split at x = 8:
+"""I_v for real v in [0, 10] on x >= 0, split at x = 8:
 
-    x <= 8:  I = exp(Lh(v, x^2)) (x/2)^v / Gamma(v+1),
-             Lh = ln[Gamma(v+1) (x/2)^(-v) I_v(x)]
-    x > 8:   I = exp(Lt(v, 8/x)) e^x / sqrt(2 pi x),  Lt = ln[sqrt(2 pi x) e^-x I_v]
+    x <= 8: I = (x/2)^v / Gamma(v+1) [1 + z/(4(v+1)) (1 + z R(v,z))], z = x^2
+    x > 8:  I = exp(Lt(v, 8/x)) e^x / sqrt(2 pi x)
+
+R is an entire 16-term series (10 in float32), avoiding the logarithm's
+nearby complex singularities and preserving the first two terms at zero.
+Lt = ln[sqrt(2 pi x) e^-x I_v]. The original inner log table is used for
+order derivatives, whose near-zero correction needs that representation.
 
 sqrt(2 pi) and sqrt(x) stay separate, since 2 pi x overflows at x ~ 2.9e307.
 scaled=True gives e^-x I_v (scipy's ive), finite past x ~ 709. f64 floor
@@ -82,6 +86,17 @@ def _dlog_floor():
     return 1e-3 if _canon_is_f64() else 3e-2
 
 
+def _tail_i(x, log_value, scaled):
+    if scaled:
+        # Two square roots keep the denominator finite at the dtype's upper end.
+        return jnp.exp(log_value) / (_SQRT_2PI * jnp.sqrt(x))
+    cap = _X_SPLIT_EXP if log_value.dtype == jnp.float64 else 80.0
+    xc = jnp.where(x > cap, cap, x)
+    split = jnp.exp(log_value) / jnp.sqrt(2 * jnp.pi * xc) * jnp.exp(xc)
+    combined = jnp.exp(log_value + x - _LOG_SQRT_2PI - 0.5 * jnp.log(x))
+    return jnp.where(x > cap, combined, split)
+
+
 def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     xi = jnp.where(x <= _it.XS, x, _it.XS)
     static_zero = isinstance(v, (int, float)) and v == 0.0
@@ -100,20 +115,45 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
         inner = inner * jnp.exp(-xi)
     xo = jnp.where(x <= _it.XS, _it.XS, x)
     lt_val = lt(_it.XS / xo)
-    if scaled:
-        # 2 pi xo overflows past x ~ 2.9e307; two sqrts cannot
-        tail = jnp.exp(lt_val) / (_SQRT_2PI * jnp.sqrt(xo))
-    else:
-        # e^x as its own factor while it fits (a combined exp costs eps x),
-        # the combined form past its overflow
-        xc = jnp.where(xo > _X_SPLIT_EXP, _X_SPLIT_EXP, xo)
-        split = jnp.exp(lt_val) / jnp.sqrt(2 * jnp.pi * xc) * jnp.exp(xc)
-        combined = jnp.exp(lt_val + xo - _LOG_SQRT_2PI - 0.5 * jnp.log(xo))
-        tail = jnp.where(xo > _X_SPLIT_EXP, combined, split)
+    tail = _tail_i(xo, lt_val, scaled)
     out = jnp.where(x <= _it.XS, inner, tail)
     if not scaled:
         out = jnp.where(jnp.isinf(x), jnp.inf, out)
     return jnp.where(jnp.isnan(x), jnp.nan, out)
+
+
+def _eval_value(v, inv_gamma, x, r, lt, scaled):
+    inner = x <= _it.XS
+    xi = jnp.where(inner, x, _it.XS)
+    xo = jnp.where(inner, _it.XS, x)
+    if isinstance(v, (int, float)):
+        power = int(v) if float(v).is_integer() else v
+        pref = pow_half(xi, power)
+    else:
+        zero = (v == 0.0) & (xi == 0.0)
+        one = (v == 1.0) & (xi == 0.0)
+        # The generic second power derivative has 0 * inf at v=1, x=0.
+        pref = pow_half(jnp.where(zero | one, 1.0, xi), v)
+        pref = jnp.where(zero, 1.0, jnp.where(one, xi / 2.0, pref))
+    z = xi * xi
+    entire = 1.0 + (z / (4.0 * (v + 1.0))) * (1.0 + z * r(z))
+    small = pref * inv_gamma * entire
+    tail = _tail_i(xo, lt(_it.XS / xo), scaled)
+    if scaled:
+        small = small * jnp.exp(-xi)
+    value = jnp.where(inner, small, tail)
+    if not scaled:
+        value = jnp.where(jnp.isinf(x), jnp.inf, value)
+    return jnp.where(jnp.isnan(x), jnp.nan, value)
+
+
+def _value_series(v, reconstruct):
+    f32 = canon_tag() == "float32"
+    n, nt = (10, 24) if f32 else (16, 48)
+    return (
+        ChebSeries(reconstruct(_it.VALUE_IN[:n], 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
+        ChebSeries(reconstruct(_it.TABLE_TAIL[:nt], 0.0, _it.VMAX, v), (0.0, 1.0)),
+    )
 
 
 def _dlog_i(x, lh_nu, lt_nu, psi):
@@ -156,7 +196,7 @@ class BesselI(Recipe):
     """Callable I_v (or e^-x I_v if scaled) on x >= 0. Build with besseli_frozen()."""
 
     _static_fields = ("v", "scaled")
-    _series_fields = ("lh", "lt")
+    _series_fields = ("r", "lt")
 
     def _post_init(self):
         self.v = float(self.v)
@@ -164,8 +204,8 @@ class BesselI(Recipe):
         self._inv_gamma = 1.0 / math.gamma(self.v + 1.0)
 
     def __call__(self, x):
-        return _eval_i(
-            self.v, self._inv_gamma, jnp.asarray(x), self.lh, self.lt, self.scaled
+        return _eval_value(
+            self.v, self._inv_gamma, jnp.asarray(x), self.r, self.lt, self.scaled
         )
 
 
@@ -232,8 +272,7 @@ def _besseli_cached(v, scaled, _tag):
     return BesselI(
         v,
         scaled,
-        ChebSeries(param_coefs(_it.TABLE_IN, 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
-        ChebSeries(param_coefs(_it.TABLE_TAIL, 0.0, _it.VMAX, v), (0.0, 1.0)),
+        *_value_series(v, param_coefs),
     )
 
 
@@ -267,6 +306,12 @@ def _besseli_dnu_cached(v, scaled, _tag):
 
 
 def _besseli_impl(nu, x, scaled):
+    inv_gamma = jnp.exp(-jax.scipy.special.gammaln(nu + 1.0))
+    r, lt = _value_series(nu, traced_coefs)
+    return _eval_value(nu, inv_gamma, x, r, lt, scaled)
+
+
+def _besseli_log_impl(nu, x, scaled):
     inv_gamma = jnp.exp(-jax.scipy.special.gammaln(nu + 1.0))
     return _eval_i(
         nu,
@@ -315,15 +360,19 @@ def _besseli_scalar_cj(nu, x, scaled):
     return _besseli_impl(nu, x, scaled)
 
 
-@_besseli_scalar_cj.defjvp
+@functools.partial(_besseli_scalar_cj.defjvp, symbolic_zeros=True)
 def _besseli_scalar_jvp(scaled, primals, tangents):
     nu, x = primals
     dnu, dx = tangents
     val = _besseli_impl(nu, x, scaled)
-    _, d_x = jax.jvp(lambda xx: _besseli_impl(nu, xx, scaled), (x,), (dx,))
-    # AD on dnu itself: a unit tangent scaled afterwards stalls XLA's simplifier
-    _, d_ad = jax.jvp(lambda n: _besseli_impl(n, x, scaled), (nu,), (dnu,))
-    return val, d_x + _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu)
+    tangent = jnp.zeros_like(val)
+    if not isinstance(dx, jax.custom_derivatives.SymbolicZero):
+        _, tangent = jax.jvp(lambda xx: _besseli_impl(nu, xx, scaled), (x,), (dx,))
+    if not isinstance(dnu, jax.custom_derivatives.SymbolicZero):
+        # AD on dnu itself: a unit tangent scaled afterwards stalls XLA's simplifier.
+        _, d_ad = jax.jvp(lambda n: _besseli_log_impl(n, x, scaled), (nu,), (dnu,))
+        tangent = tangent + _besseli_dnu_impl(nu, x, scaled, val, d_ad, dnu)
+    return val, tangent
 
 
 def besseli_scalar(nu, x, scaled=False):

@@ -153,6 +153,16 @@ def test_origin_gradients():
     )
     assert abs(float(jax.grad(chebax.besseli_frozen(1.0))(0.0)) - 0.5) <= 1e-14
     assert float(jax.grad(chebax.besseli_scalar, argnums=1)(0.0, 0.0)) == 0.0
+    for nu in (0.0, 1.0):
+        for scaled in (False, True):
+            expected = (0.5 if nu == 0 else 0.0) + (1.0 if nu == 0 else -1.0) * scaled
+            for f in (
+                chebax.besseli_frozen(nu, scaled),
+                lambda x: chebax.besseli_scalar(nu, x, scaled),
+            ):
+                second = jax.jit(jax.grad(jax.grad(f)))(0.0)
+                assert np.isfinite(second)
+                assert abs(float(second) - expected) <= 1e-14
 
 
 def test_besseli_ratio():
@@ -360,3 +370,149 @@ def test_fractional_order_just_above_tiny():
         ]
         for k, (g, r, bar) in enumerate(got):
             assert abs(float(g) / r - 1.0) <= bar, (v, x, k, float(g), r)
+
+
+@pytest.mark.parametrize("v", [0.0, 0.5, 1.0, 2.5, 10.0])
+@pytest.mark.parametrize("scaled", [False, True])
+def test_factored_values_and_derivatives(v, scaled):
+    """The x=8 seam, both sides; 60-dps refs, relative value bar 2e-14,
+    first and second x-derivative bars 8e-14 and 4e-13 away from zeros.
+    Near derivative zeros use absolute bars 1e-16 and 2e-15. Experiment 38
+    records the measured floors; every result must be finite.
+    """
+    seams = np.r_[np.sqrt(np.arange(1, 5) * 16), 8 / (np.arange(1, 5) / 4)]
+    xs = np.unique(
+        np.r_[0.01, 0.5, 1.0, seams, seams * (1 - 1e-7), seams * (1 + 1e-7), 1e4]
+    )
+    with mp.workdps(60):
+        refs = []
+        for x in xs:
+            x, nu = mp.mpf(float(x)), mp.mpf(v)
+            y = mp.besseli(nu, x)
+            d1 = mp.besseli(nu + 1, x) + nu * y / x
+            d2 = (1 + nu * nu / (x * x)) * y - d1 / x
+            if scaled:
+                e = mp.exp(-x)
+                y, d1, d2 = y * e, (d1 - y) * e, (d2 - 2 * d1 + y) * e
+            refs.append([float(y), float(d1), float(d2)])
+        refs = np.array(refs).T
+    f = chebax.besseli_frozen(v, scaled=scaled)
+    x = jnp.asarray(xs)
+    # Unscaled I has already overflowed at the last point.
+    live = np.isfinite(refs[0])
+    x, refs = x[live], refs[:, live]
+    first = jax.grad(lambda x: f(x).sum())
+    got = (
+        jax.jit(f)(x),
+        jax.jit(first)(x),
+        jax.jit(jax.grad(lambda x: first(x).sum()))(x),
+    )
+
+    def check(g, k):
+        assert np.all(np.isfinite(g))
+        near = (
+            ((np.asarray(x) < 16) & (abs(refs[k]) < 0.01 * abs(refs[0])))
+            if scaled and k
+            else np.zeros(x.size, bool)
+        )
+        np.testing.assert_allclose(
+            np.asarray(g)[~near], refs[k, ~near], rtol=(2e-14, 8e-14, 4e-13)[k], atol=0
+        )
+        np.testing.assert_allclose(
+            np.asarray(g)[near], refs[k, near], rtol=0, atol=1e-16 if k == 1 else 2e-15
+        )
+
+    for k, g in enumerate(got):
+        check(g, k)
+    direct = lambda x: chebax.besseli_scalar(v, x, scaled=scaled)
+    rev = jax.jit(jax.grad(lambda x: direct(x).sum()))(x)
+    fwd = jax.jit(lambda x: jax.jvp(direct, (x,), (jnp.ones_like(x),))[1])(x)
+    for g in (rev, fwd):
+        check(g, 1)
+
+
+def test_value_order_and_argument_tangents():
+    """Symbolic-zero shortcuts preserve simultaneous and mixed tangents.
+    Independent 60-dps references; first bar 2e-13, mixed bar 2e-12.
+    """
+    x = jnp.asarray([0.5, 4.0, 8.0, 8.5, 32.0])
+    nu = 1.3
+    with mp.workdps(60):
+        ref = np.array(
+            [
+                [
+                    float(
+                        mp.diff(
+                            lambda n: mp.exp(-mp.mpf(float(t)))
+                            * mp.besseli(n, mp.mpf(float(t))),
+                            mp.mpf(nu),
+                        )
+                    ),
+                    float(
+                        mp.diff(
+                            lambda z: mp.exp(-z) * mp.besseli(mp.mpf(nu), z),
+                            mp.mpf(float(t)),
+                        )
+                    ),
+                    float(
+                        mp.diff(
+                            lambda n: mp.diff(
+                                lambda z: mp.exp(-z) * mp.besseli(n, z),
+                                mp.mpf(float(t)),
+                            ),
+                            mp.mpf(nu),
+                        )
+                    ),
+                ]
+                for t in x
+            ]
+        ).T
+    f = lambda nu, x: chebax.besseli_scalar(nu, x, scaled=True)
+    both = jax.jit(
+        lambda n, x: jax.jvp(f, (n, x), (jnp.ones_like(n), jnp.ones_like(x)))[1]
+    )(nu, x)
+    np.testing.assert_allclose(both, ref[0] + ref[1], rtol=2e-13, atol=0)
+    a = jax.jit(jax.jacfwd(jax.jacrev(f, 1), 0))(nu, x)
+    b = jax.jit(jax.jacrev(jax.jacfwd(f, 0), 1))(nu, x)
+    for mixed in (a, b):
+        assert np.all(np.isfinite(mixed))
+        np.testing.assert_allclose(mixed, np.diag(ref[2]), rtol=2e-12, atol=0)
+
+
+def test_float32_overflow_window(tmp_path):
+    """I_0/I_1 at x=90 fit in float32 although exp(90) overflows.
+    Check values and slopes at 60 dps; measured 3.4e-6, relative bar 2e-5.
+    """
+    import os
+    import subprocess
+    import sys
+
+    with mp.workdps(60):
+        ref = np.array(
+            [
+                [
+                    float(mp.besseli(n, 90)),
+                    float(mp.besseli(n + 1, 90) + mp.mpf(n) * mp.besseli(n, 90) / 90),
+                ]
+                for n in (0, 1)
+            ]
+        )
+    path = tmp_path / "refs.npy"
+    np.save(path, ref)
+    code = f"""
+import jax, jax.numpy as jnp, numpy as np, chebax
+ref=np.load({str(path)!r})
+for n in (0,1):
+    for f in (chebax.besseli_frozen(n),lambda x:chebax.besseli_scalar(float(n),x)):
+        val,grad=jax.jit(jax.value_and_grad(f))(jnp.float32(90))
+        assert np.isfinite(val) and np.isfinite(grad)
+        np.testing.assert_allclose([val,grad],ref[n],rtol=2e-5,atol=0)
+        second=jax.jit(jax.grad(jax.grad(f)))(jnp.float32(0))
+        assert np.isfinite(second)
+        assert abs(float(second)-(0.5 if n==0 else 0.0)) <= 2e-6
+"""
+    env = {**os.environ, "JAX_PLATFORMS": "cpu", "JAX_ENABLE_X64": "false"}
+    run = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert run.returncode == 0, run.stdout + run.stderr

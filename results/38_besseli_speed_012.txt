@@ -1,0 +1,168 @@
+Bessel I/J speed: ns per element, mean of round medians
+{
+  "mode": "speed",
+  "date": "2026-11-07 20:08",
+  "jax": "0.12.0.1",
+  "baseline": "f7efeb9",
+  "affinity": [
+    3
+  ],
+  "rounds": 2,
+  "load_start": 1.44384765625,
+  "candidate sha256": {
+    "besseli.py": "6c207cabbdc78274348d2705668fa8a395f12569d328b00ea53c41213c3dbfd8",
+    "besseli_gen.py": "ceae5a0c1636a251f3ef81bc9ebda78019789ed5504ea44913387f7ab8195582",
+    "besseli_table.py": "af14f3466b841b7695840e8b6af2c63dc08b9ddbe8110c7af2d520cb7cf97cdd"
+  },
+  "load_end": 2.1845703125
+}
+
+cpu f64, N=65536
+function/source                    value        grad    value_grad
+i0 baseline                        45.01       46.13       90.16
+i0 candidate                       31.24       34.74        59.2
+i0 jax                             11.98       11.65       22.12
+i1 baseline                        48.62       45.95       92.58
+i1 candidate                       31.24        34.5       63.48
+i1 jax                             12.08       21.11       23.55
+i0e baseline                       38.82       41.53       74.27
+i0e candidate                      21.46       27.63       39.14
+i0e jax                            10.42       18.51       20.83
+i1e baseline                        34.7       40.57       74.91
+i1e candidate                      21.74        28.5       38.97
+i1e jax                            10.25       18.81       20.36
+i2.5 baseline                      71.04       87.33       146.9
+i2.5 candidate                     56.35       77.72       116.7
+i2.5e baseline                     65.35       94.35       127.8
+i2.5e candidate                    49.33        70.1       96.27
+j1 x~U(8,20) candidate             28.66           -           -
+j1 x~U(8,20) jax                   131.8           -           -
+
+cpu f32, N=65536
+function/source                    value        grad    value_grad
+i0 baseline                        18.39       31.91       41.42
+i0 candidate                       7.226       10.33       14.39
+i0 jax                              2.74        2.51       4.991
+i1 baseline                        18.44       28.81       41.44
+i1 candidate                       7.048       8.826       14.24
+i1 jax                             2.898       4.526       5.256
+i0e baseline                       18.39       31.45        35.3
+i0e candidate                      4.957       7.004       10.05
+i0e jax                            2.202       3.576       4.147
+i1e baseline                       18.92       26.68       34.93
+i1e candidate                      4.925       7.043       10.13
+i1e jax                            2.235       3.866       4.238
+i2.5 baseline                      33.02       44.92       68.41
+i2.5 candidate                     19.99       34.84       41.62
+i2.5e baseline                     31.92       50.06       61.77
+i2.5e candidate                    18.68        33.3       38.08
+j1 x~U(8,20) candidate             13.19           -           -
+j1 x~U(8,20) jax                   43.52           -           -
+
+gpu f64, N=1048576
+function/source                    value        grad    value_grad
+i0 baseline                        3.835       6.682       7.119
+i0 candidate                       2.364       4.215       4.605
+i0 jax                             1.594       1.436       2.885
+i1 baseline                        3.694       6.564       6.986
+i1 candidate                       2.385       4.154       4.535
+i1 jax                             1.588        2.89       3.034
+i0e baseline                       3.341       6.125       6.588
+i0e candidate                      2.047       3.652       4.012
+i0e jax                            1.468       2.486        2.72
+i1e baseline                       3.374       5.983       6.524
+i1e candidate                      2.071       3.608        3.95
+i1e jax                             1.47       2.719        2.86
+i2.5 baseline                       5.02       8.966       9.591
+i2.5 candidate                     3.686       6.507       7.036
+i2.5e baseline                      4.68       8.382       9.051
+i2.5e candidate                    3.375       5.908       6.415
+j1 x~U(8,20) candidate             2.628           -           -
+j1 x~U(8,20) jax                   16.06           -           -
+
+gpu f32, N=1048576
+function/source                    value        grad    value_grad
+i0 baseline                       0.0744      0.1395      0.1329
+i0 candidate                     0.03462     0.04736     0.06856
+i0 jax                           0.03611     0.03211      0.0379
+i1 baseline                       0.0738      0.1211        0.12
+i1 candidate                     0.03474     0.04603     0.06775
+i1 jax                           0.03571     0.03163     0.05464
+i0e baseline                     0.07403      0.1216       0.129
+i0e candidate                    0.03594     0.04127     0.06161
+i0e jax                           0.0354     0.03256     0.05095
+i1e baseline                     0.07386      0.1199      0.1275
+i1e candidate                    0.03669     0.03892     0.06068
+i1e jax                          0.03679     0.03077     0.05044
+i2.5 baseline                    0.08349      0.1372      0.1589
+i2.5 candidate                   0.03906     0.07046      0.1006
+i2.5e baseline                   0.08077      0.1527      0.1466
+i2.5e candidate                   0.0358     0.05723      0.0823
+j1 x~U(8,20) candidate           0.07119           -           -
+j1 x~U(8,20) jax                   6.883           -           -
+
+Compile seconds (first round, value / grad / value_grad):
+cpu f64 i0 baseline 0.285 1.158 1.203
+cpu f64 i1 baseline 0.204 1.099 1.219
+cpu f64 i0e baseline 0.205 1.083 1.205
+cpu f64 i1e baseline 0.206 1.058 1.208
+cpu f64 i2.5 baseline 0.216 1.09 1.295
+cpu f64 i2.5e baseline 0.238 1.087 1.202
+gpu f64 i0 baseline 0.114 0.942 0.903
+gpu f64 i1 baseline 0.11 0.92 0.899
+gpu f64 i0e baseline 0.091 0.927 0.935
+gpu f64 i1e baseline 0.087 0.906 0.981
+gpu f64 i2.5 baseline 0.089 0.928 1.01
+gpu f64 i2.5e baseline 0.091 0.927 0.939
+cpu f32 i0 baseline 0.302 1.31 1.33
+cpu f32 i1 baseline 0.252 1.231 1.335
+cpu f32 i0e baseline 0.302 1.122 1.269
+cpu f32 i1e baseline 0.241 1.423 1.285
+cpu f32 i2.5 baseline 0.252 1.138 1.347
+cpu f32 i2.5e baseline 0.238 1.139 1.257
+gpu f32 i0 baseline 0.128 0.983 0.953
+gpu f32 i1 baseline 0.118 0.972 0.949
+gpu f32 i0e baseline 0.121 0.965 0.942
+gpu f32 i1e baseline 0.119 0.944 1.015
+gpu f32 i2.5 baseline 0.121 0.957 1.251
+gpu f32 i2.5e baseline 0.124 0.941 1.026
+cpu f64 i0 candidate 0.219 0.405 0.476
+cpu f64 i0 jax 0.079 0.05 0.135
+cpu f64 i1 candidate 0.166 0.384 0.475
+cpu f64 i1 jax 0.06 0.109 0.131
+cpu f64 i0e candidate 0.164 0.368 0.441
+cpu f64 i0e jax 0.067 0.096 0.119
+cpu f64 i1e candidate 0.163 0.385 0.459
+cpu f64 i1e jax 0.048 0.101 0.107
+cpu f64 i2.5 candidate 0.17 0.368 0.526
+cpu f64 i2.5e candidate 0.164 0.373 0.478
+gpu f64 i0 candidate 0.103 1.103 1.138
+gpu f64 i0 jax 0.025 0.151 0.29
+gpu f64 i1 candidate 0.077 1.036 1.116
+gpu f64 i1 jax 0.152 0.329 0.369
+gpu f64 i0e candidate 0.08 1.214 1.195
+gpu f64 i0e jax 0.184 0.366 0.411
+gpu f64 i1e candidate 0.078 1.129 1.188
+gpu f64 i1e jax 0.174 0.348 0.369
+gpu f64 i2.5 candidate 0.082 1.134 1.158
+gpu f64 i2.5e candidate 0.076 0.223 0.238
+cpu f32 i0 candidate 0.228 0.342 0.416
+cpu f32 i0 jax 0.054 0.036 0.091
+cpu f32 i1 candidate 0.169 0.324 0.411
+cpu f32 i1 jax 0.046 0.075 0.086
+cpu f32 i0e candidate 0.16 0.295 0.391
+cpu f32 i0e jax 0.047 0.062 0.09
+cpu f32 i1e candidate 0.166 0.301 0.387
+cpu f32 i1e jax 0.036 0.061 0.073
+cpu f32 i2.5 candidate 0.171 0.31 0.429
+cpu f32 i2.5e candidate 0.164 0.303 0.417
+gpu f32 i0 candidate 0.105 0.974 0.771
+gpu f32 i0 jax 0.016 0.106 0.182
+gpu f32 i1 candidate 0.092 0.953 0.784
+gpu f32 i1 jax 0.117 0.327 0.29
+gpu f32 i0e candidate 0.09 0.77 0.669
+gpu f32 i0e jax 0.149 0.216 0.266
+gpu f32 i1e candidate 0.092 0.8 0.707
+gpu f32 i1e jax 0.133 0.275 0.245
+gpu f32 i2.5 candidate 0.095 0.201 0.883
+gpu f32 i2.5e candidate 0.091 0.197 0.825

@@ -47,7 +47,13 @@ from jax.test_util import check_grads
 import chebax
 from chebax._src.recipes import tweedie_gen
 from chebax._src.recipes import tweedie_table as tt
-from chebax._src.recipes.tweedie import _half_deviance, _log_series, _over, _split
+from chebax._src.recipes.tweedie import (
+    _deviance_over,
+    _half_deviance,
+    _log_series,
+    _numerator,
+    _split,
+)
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
@@ -432,16 +438,24 @@ def test_half_deviance_against_mpmath():
 
 
 def test_deviance_partials_match_finite_differences():
-    # the mu and y partials of the half-deviance are written by hand, and so
-    # is _over's in phi: each against central differences to second order,
-    # in each of the deviance's forms (near, mid and far, both sides)
-    hd, over = jax.jit(_half_deviance), jax.jit(_over)
+    # the mu and y partials of the half-deviance are written by hand: against
+    # central differences to second order. So are those of the deviance over
+    # phi (with and without the series branch's y^a term): against plain AD of
+    # its value, exact at these points (measured 7.6e-14 in the Hessian). In
+    # each of the deviance's forms (near, mid and far, both sides)
+    hd = jax.jit(_half_deviance)
     for a in (0.05, 0.5, 0.95):
         for y in (2.3, 1.6, 4.5, 0.9, 30.0, 0.1):
             args = tuple(map(jnp.asarray, (a, 2.0, y)))
             check_grads(hd, args, order=2, modes=("fwd", "rev"))
-    for h, phi in ((0.0, 0.3), (2.5, 0.05), (-1.0, 40.0)):
-        check_grads(over, tuple(map(jnp.asarray, (h, phi))), order=2)
+            for w, phi in ((False, 0.3), (True, 40.0)):
+                v = jnp.asarray((a, 2.0, y, phi))
+                plain = lambda v: _numerator(*v[:3], w) / v[3]
+                for d in (jax.grad, jax.hessian):
+                    got = d(lambda v: _deviance_over(*v, w))(v)
+                    ref = d(plain)(v)
+                    err = jnp.max(jnp.abs(got - ref) / (1.0 + jnp.abs(ref)))
+                    assert err <= 1e-12, (w, a, y, d.__name__, err)
 
 
 def test_tweedie_normalizes_with_its_moments():

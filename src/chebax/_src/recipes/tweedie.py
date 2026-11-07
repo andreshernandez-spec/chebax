@@ -181,38 +181,30 @@ def _half_deviance_dy(a, mu, y):
     ) / (a - 1.0)
 
 
-@jax.custom_jvp
-def _over(h, phi):
-    """h / phi with d/dphi = -(h/phi)/phi: jax squares phi, which underflows
-    at phi = 1e-200 and makes a zero deviance a nan gradient."""
-    return h / phi
-
-
-@_over.defjvp
-def _over_jvp(primals, tangents):
-    (h, phi), (dh, dphi) = primals, tangents
-    q = h / phi
-    return q, (dh - q * dphi) / phi
-
-
 _barrier = jax.lax.optimization_barrier
 
 
-@jax.custom_jvp
-def _deviance_over(a, mu, y, phi):
-    """d(y, mu) / (2 phi)."""
-    return _half_deviance(a, mu, y) / phi
+def _numerator(a, mu, y, with_y):
+    h = _half_deviance_impl(a, mu, y)
+    return h - jnp.power(y, a) / (a * (a - 1.0)) if with_y else h
+
+
+@functools.partial(jax.custom_jvp, nondiff_argnums=(4,))
+def _deviance_over(a, mu, y, phi, with_y=False):
+    """d(y, mu) / (2 phi), less y^a / (a (a-1) phi) with_y (the series branch's
+    lambda + y/theta, without mu^(1-p)/phi terms that cancel)."""
+    return _numerator(a, mu, y, with_y) / phi
 
 
 @_deviance_over.defjvp
-def _deviance_over_jvp(primals, tangents):
+def _deviance_over_jvp(with_y, primals, tangents):
     # The mean partial over phi, -mu^(a-1) delta / phi = -(y - mu) / (phi mu^p).
     # Where mu^(a-1) delta leaves the float range before phi brings it back
     # (1e320 for 1e120 at mu = 1e-200, phi = 1e200, y = 1e20) it is formed as
     # -(y - mu) h^2, h = mu^(-p/2) / sqrt(phi), in range when the result is
     a, mu, y, phi = primals
     da, dmu, dy, dphi = tangents
-    h, h_a = jax.jvp(lambda s: _half_deviance_impl(s, mu, y), (a,), (da,))
+    h, h_a = jax.jvp(lambda s: _numerator(s, mu, y, with_y), (a,), (da,))
     q = h / phi
     t = jnp.power(mu, a - 1.0) * ((y - mu) / mu)
     far = ~jnp.isfinite(t) | ((jnp.abs(t) < jnp.finfo(t.dtype).tiny) & (y != mu))
@@ -222,9 +214,15 @@ def _deviance_over_jvp(primals, tangents):
     mf, yf, ff = (jnp.where(far, v, 1.0) for v in (mu, y, phi))
     hf = jnp.power(mf, -0.5 * (2.0 - a)) / jnp.sqrt(ff)
     q_mu = jnp.where(far, -_barrier((yf - mf) * hf) * hf, near_q)
-    # as _over: (dh - q dphi) / phi, since XLA turns (h/phi)/phi into h/phi^2
-    dh = h_a + _half_deviance_dy(a, mu, y) * dy
-    return q, (dh - q * dphi) / phi + q_mu * dmu
+    # with_y, d/dy is -mu^(a-1)/(a-1) exactly: formed as the difference of the
+    # two y^(a-1)/(a-1) terms it kept y^(a-1) eps (4e-10 at y = 1e-12, jax 0.5.3)
+    if with_y:
+        h_y = _barrier(-jnp.power(mu, a - 1.0) / (a - 1.0))
+    else:
+        h_y = _half_deviance_dy(a, mu, y)
+    # (dh - q dphi) / phi: jax's own d/dphi squares phi, and XLA turns
+    # (h/phi)/phi into h/phi^2, both 0 at phi = 1e-200 and then nan
+    return q, (h_a + h_y * dy - q * dphi) / phi + q_mu * dmu
 
 
 def tweedie_logpdf(p, mu, phi, y):
@@ -264,8 +262,7 @@ def tweedie_logpdf(p, mu, phi, y):
     u = r * jnp.log(yi) + u0
     # -ln y + u as (r - 1) ln y + u0, with the series' own u taken out
     f_in = (
-        -_deviance_over(a, mi, yi, fi)
-        + _over(jnp.power(yi, a) / (a * (a - 1.0)), fi)
+        -_deviance_over(a, mi, yi, fi, True)
         + (r - 1.0) * jnp.log(yi)
         + u0
         + _log_series(r, u, 1)

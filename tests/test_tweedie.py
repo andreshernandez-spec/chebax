@@ -47,7 +47,13 @@ from jax.test_util import check_grads
 import chebax
 from chebax._src.recipes import tweedie_gen
 from chebax._src.recipes import tweedie_table as tt
-from chebax._src.recipes.tweedie import _half_deviance, _log_series, _over, _split
+from chebax._src.recipes.tweedie import (
+    _deviance_over,
+    _half_deviance,
+    _log_series,
+    _numerator,
+    _split,
+)
 
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
@@ -432,16 +438,24 @@ def test_half_deviance_against_mpmath():
 
 
 def test_deviance_partials_match_finite_differences():
-    # the mu and y partials of the half-deviance are written by hand, and so
-    # is _over's in phi: each against central differences to second order,
-    # in each of the deviance's forms (near, mid and far, both sides)
-    hd, over = jax.jit(_half_deviance), jax.jit(_over)
+    # the mu and y partials of the half-deviance are written by hand: against
+    # central differences to second order. So are those of the deviance over
+    # phi (with and without the series branch's y^a term): against plain AD of
+    # its value, exact at these points (measured 7.6e-14 in the Hessian). In
+    # each of the deviance's forms (near, mid and far, both sides)
+    hd = jax.jit(_half_deviance)
     for a in (0.05, 0.5, 0.95):
         for y in (2.3, 1.6, 4.5, 0.9, 30.0, 0.1):
             args = tuple(map(jnp.asarray, (a, 2.0, y)))
             check_grads(hd, args, order=2, modes=("fwd", "rev"))
-    for h, phi in ((0.0, 0.3), (2.5, 0.05), (-1.0, 40.0)):
-        check_grads(over, tuple(map(jnp.asarray, (h, phi))), order=2)
+            for w, phi in ((False, 0.3), (True, 40.0)):
+                v = jnp.asarray((a, 2.0, y, phi))
+                plain = lambda v: _numerator(*v[:3], w) / v[3]
+                for d in (jax.grad, jax.hessian):
+                    got = d(lambda v: _deviance_over(*v, w))(v)
+                    ref = d(plain)(v)
+                    err = jnp.max(jnp.abs(got - ref) / (1.0 + jnp.abs(ref)))
+                    assert err <= 1e-12, (w, a, y, d.__name__, err)
 
 
 def test_tweedie_normalizes_with_its_moments():
@@ -708,6 +722,55 @@ def test_mean_gradient_at_extreme_scales():
         else:
             assert abs(g[1] - ref) <= 1.5e-15 * abs(ref), (c, g[1], float(ref))
     assert n >= 60, n
+
+
+def test_mean_gradient_rescued_by_dispersion():
+    # -mu^(a-1) delta overflowed before the division by phi: inf at
+    # (1.5, 1e-200, 1e200, 1e20) for 1e120 (review, 2026-11-06)
+    for c in [
+        (1.5, 1e-200, 1e200, 1e20),
+        (1.05, 1e-250, 1e250, 1e10),
+        (1.95, 1e-150, 1e150, 1e30),
+        (1.5, 1e-300, 1e290, 1e-10),
+    ]:
+        v, g = jax.jit(jax.value_and_grad(chebax.tweedie_logpdf, argnums=1))(*c)
+        p, mu, phi, y = map(mp.mpf, c)
+        ref = float((y - mu) / (phi * mu**p))
+        assert np.isfinite(float(v)), c
+        assert abs(float(g) / ref - 1) <= 2e-15, (c, float(g), ref)
+
+
+def test_y_gradient_near_zero():
+    # -ln y and the series' leading r ln y cancelled their 1/y slopes, so in
+    # float32 d/dy at y = 1e-7 was 0 for 1 (review, 2026-11-06). At p = 1.5,
+    # mu = 4, phi = 1: lambda = 4, theta = 1, W = sqrt(4y) I1(2 sqrt(4y))
+    def ref(t):
+        f = (
+            lambda s: -4
+            - s
+            + mp.log(2 * mp.sqrt(s) * mp.besseli(1, 4 * mp.sqrt(s)))
+            - mp.log(s)
+        )
+        return float(mp.diff(f, mp.mpf(t)))
+
+    f = jax.jit(jax.grad(lambda t: chebax.tweedie_logpdf(1.5, 4.0, 1.0, t)))
+    for y in (1e-12, 1e-9, 1e-7, 1e-4):
+        assert abs(float(f(y)) - ref(y)) <= 1e-12 * max(1.0, abs(ref(y))), y
+    ys = (1e-7, 1e-5, 1e-3)
+    code = (
+        "import jax, jax.numpy as jnp, chebax\n"
+        "assert jnp.empty(()).dtype == jnp.float32\n"
+        "f = jax.jit(jax.grad(lambda t: chebax.tweedie_logpdf(1.5, 4.0, 1.0, t)))\n"
+        f"for y, r in zip({ys!r}, {[ref(y) for y in ys]!r}):\n"
+        "    g = float(f(jnp.float32(y)))\n"
+        "    assert abs(g - r) <= 3e-5 * max(1.0, abs(r)), (y, g, r)\n"
+    )
+    env = {**os.environ, "JAX_PLATFORMS": "cpu"}
+    env.pop("JAX_ENABLE_X64", None)
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
 
 
 @pytest.mark.slow

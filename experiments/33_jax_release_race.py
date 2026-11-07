@@ -44,26 +44,28 @@ Every chebax function that has a counterpart in jax.scipy:
 4. hyp1f1's value_and_grad on the GPU split by argument at N = 2^16 and
    2^20, to tell a per-element cost from a per-call one.
 
-FINDINGS (2026-11-06, RTX 3080 Laptop, chebax 77ccbd5)
-------------------------------------------------------
+FINDINGS (2026-11-07, RTX 3080 Laptop, chebax 0.5.0 = e112724)
+--------------------------------------------------------------
 results/33_jax_release_race.txt. float64 unless said; speed is value /
 value_and_grad.
 
 jax 0.11.0 -> 0.12.0.1, for these functions:
-- betainc is 4-12x faster: it now stops each element's continued
-  fraction when that element converges (2.6 us -> 0.22-0.43 us per value
-  on one CPU core, 300 -> 24-49 ns on the GPU). numpyro's t CDF, built on
-  it, gains the same.
+- betainc is 6-13x faster: it now stops each element's continued
+  fraction when that element converges (2.6-2.8 us -> 0.21-0.42 us per
+  value on one CPU core, 300 -> 24-49 ns on the GPU). numpyro's t CDF,
+  built on it, gains the same.
 - erfcx: the float32 zeros near x = 9.3 are gone (relative error 1.0 ->
   1.8e-7) and the derivative at large x is right (2.6e-6 -> 3.8e-16;
   float32 2.2e3 -> 2.4e-7). Its value_and_grad got slower (GPU 1.2 -> 2.8
-  ns, CPU 7.3 -> 11.9 ns).
-- i0's derivative near 0: 2.7e-10 -> 7.4e-16.
+  ns, CPU 7.7 -> 12 ns).
+- i0's derivative near 0: 2.7e-10 -> 7.4e-16. The value_and_grad of i0
+  and i1 on one CPU core is 1.6-1.8x faster (33-40 -> 21-22 ns; float32
+  8.2-8.4 -> 4.6-5.0 ns).
 - Nothing else here moved: bessel_jn, hyp1f1, gammainc, gammaincc, dawsn,
-  i1, i0e and i1e keep their accuracy and speed.
+  i0e and i1e keep their accuracy and speed, i1 its accuracy.
 - chebax computes the same on both; under 0.12 a few of its errors drop
   (stdtr 9.2e-14 -> 3.6e-15) and gammainc's CPU gradient is faster
-  (140 -> 90 ns).
+  (128 -> 89 ns at a = 2.5).
 
 jax defects present in both releases:
 - bessel_jn (default n_iter=50): nan for x <= 1e-6, derivative wrong near
@@ -79,18 +81,23 @@ jax defects present in both releases:
   gammainc 292 of the grid; hyp1f1 in float32).
 
 chebax against jax 0.12.0.1, speed:
-- Faster, CPU / GPU: J 4-11x / 6-7x; betainc 6.5-9x / 12-21x; gammainc
-  with one a 10-25x / 3.6-5.3x, a per element 2.5-4.9x / 7-10x; hyp1f1
-  17-24x / 22-33x; t CDF 3.2-3.9x / 4.5-4.8x. float32 on the GPU: J ~90x,
-  betainc 13-59x, gammainc 5.5-58x, t CDF 28-41x.
+- Faster, CPU / GPU: J 4-11x / 6-7x; betainc 4.9-9.6x / 9-21x; gammainc
+  with one a 10-26x / 3.5-5.3x, a per element 2.8-4.5x / 7.3-7.4x; hyp1f1
+  17-24x / 22-33x; t CDF 3.2-3.9x / 4.5-4.8x. float32 on the GPU: J
+  89-99x, betainc 12-59x, gammainc 5.5-59x, hyp1f1 30-200x, t CDF 36-41x.
 - Slower: I0, I1, i0e, i1e ~4x on the CPU and 2.3x on the GPU (float32
-  CPU 7-9x); dawsn 2.7-7x CPU, 1.3-2.7x GPU; erfcx's gradient 1.5x on the
+  CPU 7-9x); dawsn 2.8-7x CPU, 1.3-2.7x GPU; erfcx's gradient 1.5x on the
   CPU (2.2x faster on the GPU).
-- hyp1f1's gradient in (a, b) on the GPU in float32 costs a fixed ~2.6 s
-  per call (~5 s under jax 0.12) whatever N: 40 us per element at 2^16,
-  2.5 us at 2^20, against 11 ns in float64. Values and the x-gradient are
-  fine. experiments/34 traces it to one fused kernel (the derivative of the
-  coefficient reconstruction) and times the fix.
+- Two of 0.5.0's derivative fixes cost speed (experiments/35, each merge
+  against its parent; values unchanged). betainc's x-derivative as the
+  density (#63) at a = 2.5, b = 7: 1.7x on one CPU core (28 -> 47 ns),
+  1.3x on the GPU, though faster at a = 0.5, b = 50. gammainc_array's
+  densities below the normal range (#69): float32 1.9x on the CPU and
+  1.7x on the GPU, float64 1.1x and 1.3x.
+- hyp1f1's float32 gradient on the GPU cost a fixed ~2.6 s per call (~5 s
+  under jax 0.12) whatever N, from one fused kernel (experiments/34). With
+  an optimization barrier (#61) it is 1.6 ns per element at 2^20; the
+  (a, b) part is 4.5-5.2 ns at 2^16 (was 40-76 us).
 
 chebax accuracy:
 - Values: 2e-15 to 4e-13 where jax is 3e-16 to 3e-13. chebax is better
@@ -98,14 +105,19 @@ chebax accuracy:
   (6e-16 vs 3.6e-13), dawsn and I (3-7e-16 vs 2e-15).
 - Derivatives: better than jax wherever jax goes through an identity, and
   it has the ones jax lacks (betainc in a, b: 2.8e-13; t CDF in nu).
+- betainc's x-derivative was 3.3 relative off at (a, b, x) = (100, 0.1,
+  0.7287), float32 1.1e8 at (100, 0.5, 0.7287): it was I times
+  d ln I/dt, which carries I's absolute error. Since #63 it is the
+  density, 2.8e-13 (float32 4.5e-5), as jax.
 - log_betainc does not resolve the lower tail for a >= 20 with small b at
   x ~ 0.7-0.99: ln I(100, 0.1, 0.7287) = -30.23 against -36.90 (I off
   800x, error 0.18 of |ln I|); log_stdtr has the same limit at nu = 200
-  (0.40). Both docstrings say so (above x = 1/2, and between -sqrt(nu)
-  and the median); the README said the log form had no floor.
-- stdtr's nu-gradient is nan in float32 for every nu above ~47, at any t;
-  so is besselk_scalar's (and matern's) above nu ~ 3.3 (found after this
-  run, by a sweep of every traced parameter).
+  (0.40). Both docstrings and the README say so (above x = 1/2, and
+  between -sqrt(nu) and the median). In that band log_stdtr's nu-gradient
+  is off by up to 4.3e-2 (float32 0.1), nan where ln F rounds to -inf.
+- The nu-gradients of stdtr (float32, nu > ~47), besselk_scalar and
+  matern (float32, nu > 3.3) and log_stdtr (large nu, both dtypes) were
+  nan; fixed in #59 and #62. stdtr's float32 d/dnu is now 2-4e-7 absolute.
 - hyp1f1's parameter gradients: ~1e-15 inside the box, up to 1.4e-10 in
   d ln M / db at the a, b = 0.1 corner (test_hyp1f1.py records 2.9e-15
   on its own points).
@@ -117,9 +129,6 @@ chebax accuracy:
   brings the sum back. Forward mode and log_hyp1f1 are finite there.
 - gammaincc with one a is only absolutely accurate below x = 8: 3.5e-11
   relative at Q ~ 1e-5 (float32 8e-2); gammaincc_array keeps 7.6e-14.
-- besselj, bessely, spherical_jn and spherical_yn: a first call inside
-  jit caches tracers, and every later call in the process fails with
-  UnexpectedTracerError. This script builds besselj_frozen outside jit.
 
 WHAT IT DOES NOT ESTABLISH
 --------------------------
@@ -135,12 +144,13 @@ Run (each stage writes into results/33_cache/, not checked in):
 
   python experiments/33_jax_release_race.py refs                (~5 s)
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
-      python experiments/33_jax_release_race.py run f64         (~22 min)
-  ... run f32, runlog f64, runlog f32 (~8 min each), then all four again
-  with jax 0.12.0.1 first on PYTHONPATH (a pip --target install)
+      python experiments/33_jax_release_race.py run f64         (~20 min)
+  ... run f32 (~21 min), runlog f64, runlog f32 (~8 min each), then all
+  four again with jax 0.12.0.1 first on PYTHONPATH (a pip --target install)
   python experiments/33_jax_release_race.py report > results/33_jax_release_race.txt
   JAX_PLATFORMS=cuda,cpu python experiments/33_jax_release_race.py hyp1f1grad
-      (once per jax; ~10 min, mostly compiling)
+      (once per jax; ~2 min, mostly compiling), appended to the results
+      file under a "=== HYP1F1 GRADIENT ON THE GPU" header line
 """
 
 import glob

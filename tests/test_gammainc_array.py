@@ -451,3 +451,18 @@ def test_table_regenerates_bit_for_bit(tmp_path):
     assert (tmp_path / "gammainc_array_table.py").read_text() == pathlib.Path(
         t.__file__
     ).read_text()
+
+
+def test_density_where_the_cdf_underflows():
+    # dP/dx was exp(ln P) d ln P/dx with slope 0 wherever P underflows, which
+    # lost representable densities: 0 for 1e-25 at a = 2, x = 1e-25 in float32
+    # (review, 2026-11-06; float32 in test_x64_off). Below the normal floor it
+    # is the density from its logs: measured 6.3e-15 at a = 2, x = 1e-160
+    a = jnp.asarray(2.0)
+    for f, s in (
+        (chebax.gammainc_array, 1.0),
+        (chebax.gammaincc_array, -1.0),
+        (chebax.log_gammaincc_array, -1.0),
+    ):
+        g = float(jax.grad(lambda x: f(a, x))(jnp.asarray(1e-160)))
+        assert abs(g / (s * 1e-160) - 1) <= 3e-14, (f.__name__, g)

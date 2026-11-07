@@ -148,6 +148,20 @@ def test_gradients_are_finite_under_x64_off():
     )
 
 
+def test_gamma_quantile_second_shape_derivative_at_huge_a_under_x64_off():
+    # the A0/B0 divisions of lanes not taken poisoned d2x/da2 with nan at
+    # a = 1e20. Against x ~ a + z sqrt(a): d2x/da2 = -z / (4 a^1.5), z the
+    # normal quantile of P, next term O(1/a^2)
+    _run(
+        "from statistics import NormalDist\n"
+        "a = jnp.float32(1e20)\n"
+        "for f, pz in [(chebax.gammaincinv_array, 0.3), (chebax.gammainccinv_array, 0.7)]:\n"
+        "    d2 = float(jax.grad(jax.grad(lambda s: f(s, jnp.float32(0.3))))(a))\n"
+        "    ref = -NormalDist().inv_cdf(pz) / (4.0 * 1e30)\n"
+        "    assert abs(d2 / ref - 1.0) <= 1e-3, (f.__name__, d2, ref)\n"
+    )
+
+
 def test_parameter_gradients_across_both_panels_under_x64_off():
     # the panel not taken was evaluated past its range, where its series
     # overflows float32, and reverse mode turned inf * 0 into nan: d/dnu was
@@ -172,6 +186,19 @@ def test_parameter_gradients_across_both_panels_under_x64_off():
         "    fwd = np.asarray(jax.vmap(lambda p: jax.jvp(f, (p,), (1.0,))[1])(ps))\n"
         "    assert np.all(np.isfinite(rev)), (i, ps[~np.isfinite(rev)])\n"
         "    np.testing.assert_allclose(rev, fwd, rtol=1e-4, atol=4e-6, err_msg=str(i))\n"
+    )
+
+
+def test_gamma_cdf_density_below_the_normal_floor_under_x64_off():
+    # P = x^2/2 underflows at a = 2, x = 1e-25, its density x e^-x does not
+    _run(
+        "a = jnp.float32(2.0)\n"
+        "for x in (1e-25, 1e-30, 1e-20):\n"
+        "    for f, s in ((chebax.gammainc_array, 1.0), (chebax.gammaincc_array, -1.0),\n"
+        "                 (chebax.log_gammaincc_array, -1.0)):\n"
+        "        g = float(jax.grad(lambda t: f(a, t))(jnp.float32(x)))\n"
+        "        ref = s * x * np.exp(-x)\n"
+        "        assert abs(g / ref - 1.0) <= 1e-5, (f.__name__, x, g)\n"
     )
 
 

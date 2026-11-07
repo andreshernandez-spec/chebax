@@ -1499,3 +1499,66 @@ The targeted density and higher-derivative checks also pass on JAX 0.5.3
 and 0.12.0.1, including the default-float32 child process.
 Every measured GPU accuracy metric is unchanged. The full CPU suite passes
 818 tests; regeneration passes 15, with the two usual skips.
+
+## 47. Short erf-family panels and analytic gradients (2026-11-07)
+
+Dawson's integral evaluated a 44-term series in x^2 inside |x| = 6, and
+AD evaluated its derivative too. It now uses 64 panels of D(x)/x on
+|x| in [0, 6], nine terms per panel (five in float32). The panel's omitted
+coefficient mass relative to its minimum is below 4e-17 in float64 and
+2.8e-9 in float32 (experiments/37, fits at 60 dps). The value stays odd
+by multiplying by x. Below sqrt(eps)/4, D(x)/x differs from 1 by less than
+eps/24, so D(x) rounds to x. Returning x there also keeps the smallest
+normal float64 input from flushing to zero through a rounded coefficient.
+
+The inner JVP reuses D' = 1 - 2 x D. Beyond 6 that identity cancels:
+at x = 1e4 it subtracts numbers within about 5e-9 of each other. The tail
+D(x) = G(t)/x, t = (6/x)^2, instead has D' = -(G + 2 t G')/x^2. Its
+coefficient transform is done once in NumPy, and the runtime evaluates
+that short series and divides twice, without forming x^2. Float64 reads
+12 terms for the tail value and 14 for its slope, float32 seven for each.
+
+For erfcx, the negative-side JVP uses 2 x erfcx(x) - 2/sqrt(pi). With
+erfcx(x) = 2 exp(x^2) - t h(t), it evaluates the expanded identity
+4 x exp(x^2) - 2 x t h(t) - 2/sqrt(pi). For positive x the original
+identity cancels, so with Y = t h(t), t = 3/(3+x), the slope is
+-t^2 (h + t h')/3. The h and h + t h' coefficients share one table;
+the sign selects the row before one Clenshaw evaluation. Gradient-only
+calls can discard the primal evaluation, and value_and_grad shares the
+exponential. Float64 keeps the nine value terms and eight slope terms;
+float32 uses five of each. The
+negative reflection retains the exact x^2 split; its expm1 correction
+now keeps five terms in float32, whose low part is too large for three
+terms to give rounding-level accuracy.
+
+Both public functions normalize inputs before their custom JVPs. The
+cached value and slope tables are keyed by compute dtype and constructed
+outside tracing, including the first use under gammainc's conditional.
+Tests cover every panel seam, the tail seam, forward and reverse AD,
+vmap, second derivatives, signed zero, infinities, NaN, dtype promotion,
+and the smallest normal inputs. The changed erf table regenerates bit
+for bit; experiment 24's audit now reads the Dawson panels.
+
+Experiment 37 compares main at 353ea37, this change and standard JAX,
+excluding compilation, on one CPU core at N = 2^16 and the RTX 3080
+Laptop GPU at N = 2^20. The results include JAX 0.11 and 0.12.0.1.
+In 0.11, value_and_grad takes 32.51 -> 8.60 ns per element for Dawson
+float64 on CPU (3.8x), 16.28 -> 3.88 in float32 (4.2x); GPU 4.134 ->
+1.199 (3.4x) and 0.0649 -> 0.0541 (1.2x). Erfcx takes 17.34 -> 12.52
+and 11.38 -> 6.19 on CPU (1.4x and 1.8x), 1.301 -> 0.904 and 0.0729 ->
+0.0358 on GPU (1.4x and 2.0x). Gradient-only calls improve in all eight
+cases too. Standard JAX remains faster on CPU; GPU float64 Dawson
+value_and_grad is close to JAX, erfcx faster. The tradeoff is Dawson's
+float32 GPU value-only call: 0.0310 -> 0.0337 ns, about 9% slower.
+These ratios depend on batch size and input distribution.
+
+The 60-dps reference sweep includes every panel seam, both signs and
+normal-range limits. Worst float64 Dawson relative value error improves
+from 2.8e-15 to 4.5e-16; first-derivative absolute error inside |x| <= 6
+is below 6.2e-16. Float32 Dawson relative value error improves from
+3.4e-6 to 2.6e-7. Erfcx float64 value and first-derivative relative
+errors stay below 5.6e-16 and 9e-16; its second derivative moves from
+1.4e-14 to 2.3e-14. No existing tolerance was relaxed. Standard JAX's
+0.12.0.1 vector second derivative of erfcx raises a shape error, so the
+experiment records that error and uses vmapped scalar AD for that
+comparison only. Chebax's vector derivatives run directly.

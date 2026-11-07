@@ -155,14 +155,14 @@ stdtr_table.TABLE_A_HI: shape (68, 44), n = 68, max |c| = 33.5
    1e-10 |      40      55      66      43
    1e-07 |      27      41      55      31
 
-stdtr_table.TABLE_B_LO: shape (68, 66), n = 68, max |c| = 0.323
+stdtr_table.TABLE_B_LO: shape (25, 66), n = 25, max |c| = 0.323
      tol |   value    d/dt  d2/dt2   d/dp1
    1e-15 |      19      22      25      18
    1e-13 |      16      19      22      16
    1e-10 |      12      15      18      12
    1e-07 |       9      11      14       9
 
-stdtr_table.TABLE_B_HI: shape (68, 56), n = 68, max |c| = 0.341
+stdtr_table.TABLE_B_HI: shape (25, 56), n = 25, max |c| = 0.341
      tol |   value    d/dt  d2/dt2   d/dp1
    1e-15 |      19      22      25      18
    1e-13 |      16      20      23      16
@@ -183,12 +183,12 @@ tweedie_table.TABLE_TAIL: shape (32, 64), n = 32, max |c| = 1.8
    1e-10 |      15      21      31      19
    1e-07 |      10      14      19      12
 
-erf_table.DAWSN_E: shape (44,), n = 44, max |c| = 0.24
+erf_table.DAWSN_P: shape (64, 9), n = 9, max |c| = 0.998
      tol |   value    d/dt  d2/dt2
-   1e-15 |      37      42      44
-   1e-13 |      34      39      43
-   1e-10 |      29      34      39
-   1e-07 |      23      29      34
+   1e-15 |       9       9       9
+   1e-13 |       8       9       9
+   1e-10 |       6       7       8
+   1e-07 |       5       5       6
 
 erf_table.DAWSN_G: shape (16,), n = 16, max |c| = 0.504
      tol |   value    d/dt  d2/dt2

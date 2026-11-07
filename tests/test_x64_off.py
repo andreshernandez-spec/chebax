@@ -279,10 +279,10 @@ def test_tables_materialize_in_float32():
     # cache is the one that used to miss this
     _run(
         "assert np.asarray(chebax.besselk(1.5).ltil.coef).dtype == np.float32\n"
-        "from chebax._src.recipes.erf_family import _series\n"
+        "from chebax._src.recipes.erf_family import _tables\n"
         "chebax.dawsn(1.0)\n"
-        "assert np.asarray(_series()[0].coef).dtype == np.float32\n"
+        "assert np.asarray(_tables().dawsn).dtype == np.float32\n"
         "jax.config.update('jax_enable_x64', True)\n"
-        "assert np.asarray(_series()[0].coef).dtype == np.float64\n"
+        "assert np.asarray(_tables().dawsn).dtype == np.float64\n"
         "assert abs(float(chebax.dawsn(1.0)) - 0.53807950691276842) <= 1e-15\n"
     )

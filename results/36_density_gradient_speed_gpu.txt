@@ -1,0 +1,41 @@
+density-gradient speed, 0.5.0 and optimized
+{
+  "date": "2026-11-07 15:54",
+  "jax": "0.11.0",
+  "baseline": "353ea37",
+  "cpu affinity": [
+    3
+  ],
+  "load start": 4.45947265625,
+  "optimized sha256": {
+    "betainc_kernel.py": "49345c70c0ec863b59400b0b7eab36a026545c81ddc3081301030cc9af6e7396",
+    "gammainc_array.py": "109ddc133a4b1fe4bd13c5afb5e40ca4c5b6597b6a6a4e319d23b7d1a51806ef"
+  },
+  "load end": 1.46142578125
+}
+
+f64 gpu, N=1048576, NVIDIA GeForce RTX 3080 Laptop GPU
+cell                            0.5.0 value/grad     optimized value/grad    grad speedup
+beta(2.5,7) x                        1.38 / 2.65              1.38 / 1.58           1.68x
+beta(2.5,7) all                         - / 3.87                 - / 2.77           1.40x
+beta(0.5,50) x                        2.3 / 3.24                2.3 / 2.5           1.29x
+beta(0.5,50) all                        - / 6.71                 - / 6.01           1.12x
+gamma bulk                           12.9 / 28.7              12.8 / 22.6           1.27x
+gamma one deep                          - / 28.7                 - / 29.1           0.99x
+gamma all deep                          - / 27.8                 - / 28.5           0.98x
+
+f32 gpu, N=1048576, NVIDIA GeForce RTX 3080 Laptop GPU
+cell                            0.5.0 value/grad     optimized value/grad    grad speedup
+beta(2.5,7) x                      0.103 / 0.182           0.0972 / 0.178           1.02x
+beta(2.5,7) all                        - / 0.497                 - / 0.48           1.03x
+beta(0.5,50) x                     0.119 / 0.183            0.118 / 0.179           1.02x
+beta(0.5,50) all                       - / 0.629                - / 0.652           0.96x
+gamma bulk                             0.953 / 3              0.95 / 2.21           1.35x
+gamma one deep                             - / 3                 - / 2.38           1.26x
+gamma all deep                             - / 3                 - / 2.38           1.26x
+
+Accuracy against mpmath 60 dps (worst errors on the grid):
+0.5.0 f64 {"beta da/db scaled": 7.216449660063518e-16, "beta dx rel": 2.391420395042587e-13, "beta points": 275, "beta value abs": 1.7841906495533159e-13, "gamma da scaled": 1.5487611193520934e-13, "gamma dx rel": 3.2529534621517087e-14, "gamma points": 148, "gamma value abs": 5.551115123125783e-16}
+0.5.0 f32 {"beta da/db scaled": 7.273132245400676e-07, "beta dx rel": 4.9495983273084576e-05, "beta points": 272, "beta value abs": 1.8170618397428395e-05, "gamma da scaled": 9.409190958042934e-07, "gamma dx rel": 3.917454394986031e-06, "gamma points": 148, "gamma value abs": 1.9677984741672816e-07}
+optimized f64 {"beta da/db scaled": 7.216449660063518e-16, "beta dx rel": 2.391420395042587e-13, "beta points": 275, "beta value abs": 1.7841906495533159e-13, "gamma da scaled": 1.5487611193520934e-13, "gamma dx rel": 3.2529534621517087e-14, "gamma points": 148, "gamma value abs": 5.551115123125783e-16}
+optimized f32 {"beta da/db scaled": 7.273132245400676e-07, "beta dx rel": 4.9495983273084576e-05, "beta points": 272, "beta value abs": 1.8170618397428395e-05, "gamma da scaled": 9.409190958042934e-07, "gamma dx rel": 3.917454394986031e-06, "gamma points": 148, "gamma value abs": 1.9677984741672816e-07}

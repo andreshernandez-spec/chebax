@@ -107,9 +107,12 @@ def eval_betainc_parts(a, b, x, cab, cba, dcab, dcba, need):
     dens = None
     if nx:
         _, xd, yd = _split(x)
-        lx = jnp.where(lower, jnp.log(xd), jnp.log1p(-yd))
-        l1x = jnp.where(lower, jnp.log1p(-xd), jnp.log(yd))
-        dens = jnp.exp((a - 1.0) * lx + (b - 1.0) * l1x - ln_beta(a, b))
+        t = jnp.where(lower, xd, yd)
+        p, q = jnp.where(lower, a, b), jnp.where(lower, b, a)
+        # Reuse the CDF's logs in its own orientation; t = 1 - x is exact above 1/2.
+        dens = jnp.exp(
+            (p - 1.0) * jnp.log(t) + (q - 1.0) * jnp.log1p(-t) - ln_beta(a, b)
+        )
     return _pack(
         x,
         a,

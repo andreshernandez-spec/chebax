@@ -212,6 +212,18 @@ def test_gamma_cdf_density_below_the_normal_floor_under_x64_off():
         "        g = float(jax.grad(lambda t: f(a, t))(jnp.float32(x)))\n"
         "        ref = s * x * np.exp(-x)\n"
         "        assert abs(g / ref - 1.0) <= 1e-5, (f.__name__, x, g)\n"
+        "xs = jnp.asarray([0.0, 1e-25, 0.7, 3.0], jnp.float32)\n"
+        "for f, s in ((chebax.gammainc_array, 1.0), (chebax.gammaincc_array, -1.0),\n"
+        "             (chebax.log_gammaincc_array, -1.0)):\n"
+        "    ref = s * np.asarray(xs) * np.exp(-np.asarray(xs))\n"
+        "    if f is chebax.log_gammaincc_array:\n"
+        "        ref = -np.asarray(xs) / (1.0 + np.asarray(xs))\n"
+        "    rev = jax.jit(jax.grad(lambda x: f(a, x).sum()))(xs)\n"
+        "    fwd = jax.jit(lambda x: jax.jvp(lambda x: f(a, x), (x,),\n"
+        "                                  (jnp.ones_like(x),))[1])(xs)\n"
+        "    batched = jax.jit(jax.vmap(jax.grad(lambda x: f(a, x))))(xs)\n"
+        "    for got in (rev, fwd, batched):\n"
+        "        np.testing.assert_allclose(got, ref, rtol=1e-5, atol=0)\n"
     )
 
 

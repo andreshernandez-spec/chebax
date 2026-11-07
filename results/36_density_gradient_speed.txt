@@ -1,0 +1,41 @@
+density-gradient speed, 0.5.0 and optimized
+{
+  "date": "2026-11-07 15:15",
+  "jax": "0.11.0",
+  "baseline": "353ea37",
+  "cpu affinity": [
+    3
+  ],
+  "load start": 2.76806640625,
+  "optimized sha256": {
+    "betainc_kernel.py": "49345c70c0ec863b59400b0b7eab36a026545c81ddc3081301030cc9af6e7396",
+    "gammainc_array.py": "109ddc133a4b1fe4bd13c5afb5e40ca4c5b6597b6a6a4e319d23b7d1a51806ef"
+  },
+  "load end": 1.57763671875
+}
+
+f64 cpu, N=65536, cpu
+cell                            0.5.0 value/grad     optimized value/grad    grad speedup
+beta(2.5,7) x                        23.2 / 47.8              21.7 / 24.9           1.92x
+beta(2.5,7) all                         - / 63.3                 - / 39.7           1.59x
+beta(0.5,50) x                       48.9 / 70.3              44.2 / 44.5           1.58x
+beta(0.5,50) all                         - / 121                 - / 91.3           1.33x
+gamma bulk                        709 / 1.27e+03                664 / 952           1.34x
+gamma one deep                      - / 1.11e+03             - / 1.03e+03           1.08x
+gamma all deep                      - / 1.15e+03             - / 1.06e+03           1.09x
+
+f32 cpu, N=65536, cpu
+cell                            0.5.0 value/grad     optimized value/grad    grad speedup
+beta(2.5,7) x                        7.95 / 14.3              7.81 / 8.79           1.62x
+beta(2.5,7) all                         - / 23.5                 - / 17.6           1.34x
+beta(0.5,50) x                         18.7 / 24              18.7 / 18.1           1.33x
+beta(0.5,50) all                        - / 48.4                 - / 43.6           1.11x
+gamma bulk                             187 / 349                181 / 190           1.83x
+gamma one deep                           - / 342                  - / 214           1.60x
+gamma all deep                           - / 353                  - / 207           1.71x
+
+Accuracy against mpmath 60 dps (worst errors on the grid):
+0.5.0 f64 {"beta da/db scaled": 6.661338147750939e-16, "beta dx rel": 4.889422200449189e-13, "beta points": 275, "beta value abs": 4.973799704988213e-13, "gamma da scaled": 1.5487611193520934e-13, "gamma dx rel": 2.4424906541753444e-14, "gamma points": 148, "gamma value abs": 5.551115123125783e-16}
+0.5.0 f32 {"beta da/db scaled": 7.273132245400676e-07, "beta dx rel": 4.396541377771346e-05, "beta points": 272, "beta value abs": 2.288818359375e-05, "gamma da scaled": 9.343374508530289e-07, "gamma dx rel": 5.295663846660581e-06, "gamma points": 148, "gamma value abs": 1.3717520264133753e-07}
+optimized f64 {"beta da/db scaled": 6.661338147750939e-16, "beta dx rel": 4.818367926873179e-13, "beta points": 275, "beta value abs": 4.973799704988213e-13, "gamma da scaled": 1.5487611193520934e-13, "gamma dx rel": 2.4424906541753444e-14, "gamma points": 148, "gamma value abs": 5.551115123125783e-16}
+optimized f32 {"beta da/db scaled": 7.273132245400676e-07, "beta dx rel": 4.396541377771346e-05, "beta points": 272, "beta value abs": 2.288818359375e-05, "gamma da scaled": 9.343374508530289e-07, "gamma dx rel": 5.295663846660581e-06, "gamma points": 148, "gamma value abs": 1.3717520264133753e-07}

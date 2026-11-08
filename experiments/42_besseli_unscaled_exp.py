@@ -32,7 +32,24 @@ WHAT THIS MEASURES
 
 FINDINGS
 --------
-(filled in from results/42_besseli_unscaled_exp.txt)
+(results/42_besseli_unscaled_exp.txt, jax 0.12.0.1, RTX 3080 Laptop GPU)
+
+Above the switch main is off by up to 8.3e-6 in float32 (1.5e-13 in
+float64), every order and derivative. Both fixes bring that to 3.2e-7 to
+6.9e-7 (7.9e-16 to 1.5e-15), with the same errors. At or below the switch
+the two-branch fix has main's errors; the single formula's grow by up to
+1.35x in float32 (I1 values 2.3e-7 to 3.1e-7) and 1.8x in float64 (I0
+values 5.3e-16 to 9.4e-16), while the largest stay where they were
+(float32 1.6e-6, order 9.97's second derivative; float64 5.1e-15 to
+4.4e-15, order 10's). The non-finite counts, second derivatives near the
+top of the range, are the same for all three.
+
+The two-branch fix's value_and_grad costs 1.05-1.30x main's on the CPU and
+the float32 GPU (1.01-1.02x on the float64 GPU). The single formula is
+faster than main in every cell: I0 and I1 values 0.73x on the float32 CPU,
+0.81-0.87x float64 CPU, 0.88x float64 GPU, 0.97-0.98x float32 GPU;
+value_and_grad 0.88-0.90x, 0.95-0.96x, 0.84-0.85x, 0.94-0.96x; order 2.5
+0.93-0.99x and 0.81-0.98x.
 
 WHAT IT DOES NOT ESTABLISH
 --------------------------
@@ -40,7 +57,7 @@ Orders between the six above, x below 8 (the tail starts there; the inner
 series is unchanged), order derivatives, the scaled tail (unchanged), or
 other hardware.
 
-Run, with jax 0.12.0.1 first on PYTHONPATH and an idle machine (~25 min):
+Run, with jax 0.12.0.1 first on PYTHONPATH and an idle machine (~15 min):
 
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
       python experiments/42_besseli_unscaled_exp.py > results/42_besseli_unscaled_exp.txt

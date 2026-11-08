@@ -47,30 +47,34 @@ Every chebax function that has a counterpart in jax.scipy:
 4. hyp1f1's value_and_grad on the GPU split by argument at N = 2^16 and
    2^20, to tell a per-element cost from a per-call one.
 
-FINDINGS (2026-11-07, RTX 3080 Laptop, chebax main at 1aab896)
---------------------------------------------------------------
+FINDINGS (2026-11-08, RTX 3080 Laptop, chebax 0.6.0: 349579b, src/ as 3ba95e2)
+-------------------------------------------------------------------------------
 results/33_jax_release_race.txt. float64 unless said; speed is value /
-value_and_grad.
+value_and_grad. In 7 cells the two timing passes differ by more than
+1.25x, at most 1.40x; the faster is kept.
 
 jax 0.11.0 -> 0.12.0.1, for these functions:
-- betainc is 5.5-13x faster: it now stops each element's continued
-  fraction when that element converges (2.5-2.6 us -> 0.23-0.46 us per
-  value on one CPU core, 300 -> 24-48 ns on the GPU). numpyro's t CDF,
-  built on it, gains the same.
+- betainc is 5.7-13x faster: it now stops each element's continued
+  fraction when that element converges (2.5 us -> 0.21-0.43 us per value
+  on one CPU core, 300 -> 24-49 ns on the GPU). numpyro's t CDF, built on
+  it, gains the same.
 - erfcx: the float32 zeros near x = 9.3 are gone (relative error 1.0 ->
   1.8e-7) and the derivative at large x is right (2.6e-6 -> 3.8e-16;
-  float32 2.2e3 -> 2.4e-7). Its value_and_grad got slower (GPU 1.3 -> 2.8
-  ns, CPU 7.0 -> 12 ns).
+  float32 2.2e3 -> 2.4e-7). Its value_and_grad got slower (GPU 1.2 -> 2.8
+  ns, CPU 7.1 -> 12 ns).
 - i0's derivative near 0: 2.7e-10 -> 7.4e-16. The value_and_grad of i0
-  and i1 on one CPU core is 1.4-1.7x faster (32-33 -> 22-24 ns; float32
-  8.2-8.4 -> 4.8-5.2 ns).
-- bessel_jn is 1.2x faster on the GPU (19 -> 15.5 ns per value), hyp1f1's
-  values 1.3x on one CPU core (1.7 -> 1.35 us); both keep their accuracy.
-- Nothing else here moved: gammainc, gammaincc, dawsn, i0e and i1e keep
-  their accuracy and speed, i1 its accuracy.
-- chebax computes the same on both; under 0.12 a few of its errors drop
-  (stdtr 9.2e-14 -> 3.6e-15) and gammainc's CPU gradient is faster
-  (130 -> 92 ns at a = 2.5).
+  and i1 on one CPU core is 1.5-1.6x faster (32-34 -> 20-22 ns), 1.7x in
+  float32 (8.0-8.4 -> 4.6-5.0 ns), where i0e's gains 1.5x (5.7 -> 3.9 ns).
+- bessel_jn is 1.2x faster on the GPU (19 -> 15.6 ns per value), hyp1f1's
+  values 1.3x on one CPU core (1.7 -> 1.3 us); both keep their accuracy.
+- Nothing else here moved by more than 1.15x, within the spread between
+  this run and the one at 1aab896: gammainc, gammaincc, dawsn, i0e and
+  i1e keep their accuracy and speed, i1 its accuracy.
+- chebax computes nearly the same on both. Under 0.12 a few of its errors
+  drop (stdtr 9.2e-14 -> 3.6e-15; float32 I0 and I1 5.9e-7-7.0e-7 ->
+  2.1e-7-3.4e-7), gammainc's CPU gradient is faster (127 -> 89 ns at
+  a = 2.5) and so are gammainc_array's values (1.3x on the GPU, 1.5x in
+  float32), in both runs.
 
 jax defects present in both releases:
 - bessel_jn (default n_iter=50): nan for x <= 1e-6, derivative wrong near
@@ -86,20 +90,21 @@ jax defects present in both releases:
   gammainc 292 of the grid; hyp1f1 in float32).
 
 chebax against jax 0.12.0.1, speed:
-- Faster, CPU / GPU: J 4-11x / 6-7x; betainc 9-9.6x / 16-21x; gammainc
-  with one a 10-26x / 3.5-5.3x, a per element 2.6-4.8x / 7.3-10x; hyp1f1
-  16-24x / 22-33x; t CDF 3.2-3.9x / 4.6-4.9x; erfcx on the GPU 2.4-3.2x
-  (on par on the CPU in float64, 1.7-2x slower in float32). float32 on
-  the GPU: J 89-99x, betainc 12-59x, gammainc 5.5-58x, hyp1f1 30-190x,
-  t CDF 35-41x.
-- Slower: I0, I1, i0e, i1e 1.9-2.7x on the CPU and 1.4-1.6x on the GPU
-  (float32 CPU 2.2-2.9x; float32 GPU values on par, gradients 1.2-1.5x);
-  dawsn 1.4-1.8x on the CPU (on the GPU its gradient is on par and its
-  value 1.5x faster).
+- Faster, CPU / GPU: J 4-11x / 5.9-7.2x; betainc 8.7-9.5x / 16-21x;
+  gammainc with one a 10-26x / 3.5-5.4x, a per element 2.7-5.1x /
+  7.4-10x; hyp1f1 16-24x / 22-33x; t CDF 3.3-3.9x / 4.5-4.9x; erfcx on
+  the GPU 2.4-3.2x (on par on the CPU in float64, 1.7-2x slower in
+  float32). float32 on the GPU: J 88-99x, betainc 11-59x, gammainc
+  5.8-62x, hyp1f1 30-200x, t CDF 34-41x.
+- Slower: I0, I1, i0e, i1e 1.1-2.1x on the CPU and 1.03-1.2x on the GPU
+  (float32 CPU 1.1-1.9x; float32 GPU within 10% of jax, except I0's
+  gradient, 1.45x). At 1aab896, before #78 and #82, they were 1.9-2.7x
+  and 1.4-1.6x slower. dawsn is 1.4-1.9x slower on the CPU (on the GPU
+  its gradient is on par and its value 1.5x faster).
 - The gradient cost of 0.5.0's two density fixes (experiments/35) is
-  taken back (#74, experiments/36): betainc's x-gradient here is 9x
-  jax's on one CPU core, where it was 4.9x on 0.5.0 (this experiment at
-  353ea37).
+  taken back (#74, experiments/36): betainc's x-gradient here is
+  8.7-9.5x jax's on one CPU core, where it was 4.9x on 0.5.0 (this
+  experiment at 353ea37).
 - hyp1f1's float32 gradient on the GPU cost a fixed ~2.6 s per call (~5 s
   under jax 0.12) whatever N, from one fused kernel (experiments/34). With
   an optimization barrier (#61) it is 1.6 ns per element at 2^20; the
@@ -111,10 +116,9 @@ chebax accuracy:
   (3.6e-15 vs 3.7e-12), jax on hyp1f1 (6e-16 vs 3.6e-13); dawsn and I
   are close (4e-16 to 1.3e-15 against jax's 4e-16 to 8e-16).
 - float32 I0 and I1 are finite up to x = 91.9, where jax (its 2 nan)
-  and 0.5.0 overflow above x = 88.7. But from x = 80 they go through one
-  exponential of the whole argument: 3.2e-6 and 5.0e-6 relative at
-  x = 86.3 and 82.4, against jax's worst of 3.6e-7 and 7.1e-7. i0e and
-  i1e are not affected (2.3e-7, 2.6e-7).
+  and 0.5.0 overflow above x = 88.7. Values and derivatives are within
+  2.1e-7 to 3.4e-7 (5.9e-7 to 7.0e-7 under jax 0.11), against jax's
+  3.6e-7 to 8.4e-7; i0e and i1e within 3.1e-7 and 2.9e-7.
 - Derivatives: better than jax wherever jax goes through an identity, and
   it has the ones jax lacks (betainc in a, b: 2.8e-13; t CDF in nu).
 - betainc's x-derivative was 3.3 relative off at (a, b, x) = (100, 0.1,

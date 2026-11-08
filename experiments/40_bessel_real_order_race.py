@@ -50,7 +50,7 @@ _frozen forms (iv, ive, kv) are timed beside it.
 
 FINDINGS
 --------
-(results/39_bessel_real_order_race.txt, jax 0.12.0.1, RTX 3080 Laptop GPU)
+(results/40_bessel_real_order_race.txt, jax 0.12.0.1, RTX 3080 Laptop GPU)
 
 Speed, chebax against TFP, value / value_and_grad in x:
 
@@ -112,17 +112,17 @@ raise there, traced orders are not checked), per-element orders, or whole
 models. TFP's and scipy's loops cost what their slowest lane costs,
 so their times move with the input distribution.
 
-Run (each stage writes into results/39_cache/, not checked in), with jax
+Run (each stage writes into results/40_cache/, not checked in), with jax
 0.12.0.1 and tfp-nightly first on PYTHONPATH (pip --target installs):
 
-  python experiments/39_bessel_real_order_race.py refs              (~10 s)
+  python experiments/40_bessel_real_order_race.py refs              (~10 s)
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
-      python experiments/39_bessel_real_order_race.py run f64       (~20 min)
+      python experiments/40_bessel_real_order_race.py run f64       (~20 min)
   ... run f32                                                       (~21 min)
-  taskset -c 3 python experiments/39_bessel_real_order_race.py scipy     (~1 min)
+  taskset -c 3 python experiments/40_bessel_real_order_race.py scipy     (~1 min)
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
-      python experiments/39_bessel_real_order_race.py compile       (~12 min)
-  python experiments/39_bessel_real_order_race.py report > results/39_bessel_real_order_race.txt
+      python experiments/40_bessel_real_order_race.py compile       (~12 min)
+  python experiments/40_bessel_real_order_race.py report > results/40_bessel_real_order_race.txt
 """
 
 import json
@@ -134,7 +134,7 @@ import time
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(HERE, "..", "results", "39_cache")
+CACHE = os.path.join(HERE, "..", "results", "40_cache")
 SIZES = {"cpu": 2**16, "gpu": 2**20}
 FAMILIES = ("jv", "yv", "iv", "ive", "kv", "kve", "logkv", "iratio")
 TRACED = ("iv", "ive", "kv", "kve", "logkv", "iratio")

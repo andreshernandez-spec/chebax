@@ -1727,3 +1727,24 @@ test_float32_overflow_window now covers x = 80.5 to 91.5 for I0 and I1,
 values and slopes: worst 2.6e-7 / 3.1e-7 (7.2e-6 before), bar 1.2e-6.
 test_unscaled_tail_gradients_near_overflow: 3.7e-16 (1.1e-13 before), bar
 1.5e-15.
+
+## 51. One mask in besseli_ratio (2026-11-08)
+
+value_and_grad of besseli_ratio in nu and x together never finished
+compiling on the CPU, in either dtype (experiments/40; nu alone 9 s, x
+alone 2 s; the GPU compiled it in under a minute). The trigger was the
+second predicate that sent inf and nan to the quotient's dummy argument,
+near | ~isfinite(x): written as x < inf or x <= max it stalls the same,
+and an optimization barrier on the series or on both branches does not
+help. fmin(x, 1e30)
+gives inf and nan a finite argument without a predicate. The ratio is 1 to
+the last bit long before x = 1e30, so no value changes. Values and both
+gradients are bit for bit main's below x = 1e30 and at inf and nan (33
+points, three orders, both dtypes). Past 1e30 the x-gradient is 0, where
+the true value is below 1e-59 and main returns rounding noise (nan at the
+largest float); the nu-gradient keeps main's noise floor there.
+
+The joint gradient now compiles in 10 s at 2^16 points, the cost of the
+nu-gradient alone. At 8 points both take ~43 s, on main too; that is the
+nu-gradient path's, not this change's. test_besseli_ratio_joint_gradient
+compiles it at 64 points (~11 s) in a subprocess stopped at 300 s.

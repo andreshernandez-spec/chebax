@@ -818,6 +818,12 @@ def report():
             print("  ".join(str(c).ljust(w) for c, w in zip(ln, widths)))
         print(f"\n  worst points (device, nu, x), {dtn}:")
         print("\n".join(where))
+        acc = runs[dtn]["acc"]
+        ks = [k for k in acc.files if "|tfp|" in k and k.endswith("|d_nu")]
+        zero = all(np.all(acc[k] == 0) for k in ks)
+        print(
+            f"\n  tfp d/dnu exactly 0 at every point, {dtn}: {zero} ({len(ks)} arrays)"
+        )
 
     print(
         "\n=== SPEED, ns per element (median): value / value_and_grad in x; "

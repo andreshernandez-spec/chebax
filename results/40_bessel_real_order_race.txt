@@ -95,6 +95,8 @@ iratio  d_nu         rel     1.2e-12  -              1.0e+00  -
   iratio d_nu rel chebax: 1.2e-12 at ('cpu', 6.300000190734863, 10000.0)
   iratio d_nu rel tfp: 1.0e+00 at ('cpu', 0.30000001192092896, 1.0000001111620804e-06)
 
+  tfp d/dnu exactly 0 at every point, f64: True (12 arrays)
+
 === ACCURACY f32 (worst over CPU and GPU; scipy CPU, values only; '(k nan)' = k points nan/inf where the reference is finite)
 family  quantity     metric  chebax           chebax_frozen    tfp      scipy           
 jv      v [x<=50]    sup     5.7e-07          -                -        4.1e-08         
@@ -185,6 +187,8 @@ iratio  d_nu         rel     4.3e-04          -                1.0e+00  -
   iratio d_x rel tfp: 1.4e+01 at ('cpu', 0.30000001192092896, 10000.0)
   iratio d_nu rel chebax: 4.3e-04 at ('cpu', 8.899999618530273, 8407.8134765625)
   iratio d_nu rel tfp: 1.0e+00 at ('cpu', 0.30000001192092896, 1.0000001111620804e-06)
+
+  tfp d/dnu exactly 0 at every point, f32: True (12 arrays)
 
 === SPEED, ns per element (median): value / value_and_grad in x; compile s value + grad; scipy values only, one core, same draws
 

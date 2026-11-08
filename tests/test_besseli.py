@@ -236,6 +236,38 @@ def test_besseli_ratio_endpoints():
     assert np.isnan(float(chebax.besseli_ratio(np.nan, 3.0)))
 
 
+def test_besseli_ratio_joint_gradient():
+    """value_and_grad in nu and x together never finished compiling on the
+    CPU while inf and nan had their own mask (nu or x alone: seconds). At
+    64 points it takes ~11 s now; a subprocess fails a stall at 300 s. The
+    joint gradient equals the two single ones, and is 0 in x at inf."""
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import jax, jax.numpy as jnp, numpy as np, chebax
+x=jnp.concatenate([jnp.linspace(0.0,50.0,62),jnp.asarray([1e35,jnp.inf])])
+f=lambda n,x:jnp.sum(chebax.besseli_ratio(n,x))
+_,(gn,gx)=jax.jit(jax.value_and_grad(f,(0,1)))(2.0,x)
+assert float(gn)==float(jax.jit(jax.grad(f,0))(2.0,x))
+assert np.array_equal(np.asarray(gx),np.asarray(jax.jit(jax.grad(f,1))(2.0,x)))
+assert np.all(np.isfinite(np.asarray(gx))) and float(gx[-1])==0.0
+"""
+    env = {**os.environ, "JAX_PLATFORMS": "cpu", "JAX_ENABLE_X64": "true"}
+    try:
+        run = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the joint gradient did not compile in 300 s")
+    assert run.returncode == 0, run.stdout + run.stderr
+
+
 def test_dnu_small_order():
     # the generic I * dlogI/dnu route cannot resolve dlnI/dnu just above
     # nu = 0: the tables' first nu-derivative carries ~3e-16 of ABSOLUTE
@@ -489,33 +521,40 @@ def test_value_order_and_argument_tangents():
 
 
 def test_float32_overflow_window(tmp_path):
-    """I_0/I_1 at x=90 fit in float32 although exp(90) overflows.
-    Check values and slopes at 60 dps; measured 3.4e-6, relative bar 2e-5.
+    """I_0/I_1 from x = 80, where exp(x) is split off, to x = 91.5, past
+    exp's overflow at 88.7. Values and slopes at 60 dps; measured 2.6e-7 /
+    3.1e-7 (7.2e-6 before the compensated exponential), relative bar 1.2e-6.
     """
     import os
     import subprocess
     import sys
 
+    xs = np.array([80.5, 82.4, 84.9, 86.3, 88.0, 88.9, 90.0, 91.5], np.float32)
     with mp.workdps(60):
         ref = np.array(
             [
                 [
-                    float(mp.besseli(n, 90)),
-                    float(mp.besseli(n + 1, 90) + mp.mpf(n) * mp.besseli(n, 90) / 90),
+                    [
+                        float(mp.besseli(n, x)),
+                        float(mp.besseli(n + 1, x) + n * mp.besseli(n, x) / x),
+                    ]
+                    for x in (mp.mpf(float(t)) for t in xs)
                 ]
                 for n in (0, 1)
             ]
         )
-    path = tmp_path / "refs.npy"
-    np.save(path, ref)
+    path = tmp_path / "refs.npz"
+    np.savez(path, xs=xs, ref=ref)
     code = f"""
 import jax, jax.numpy as jnp, numpy as np, chebax
-ref=np.load({str(path)!r})
+data=np.load({str(path)!r})
+x=jnp.asarray(data['xs'])
 for n in (0,1):
     for f in (chebax.besseli_frozen(n),lambda x:chebax.besseli_scalar(float(n),x)):
-        val,grad=jax.jit(jax.value_and_grad(f))(jnp.float32(90))
-        assert np.isfinite(val) and np.isfinite(grad)
-        np.testing.assert_allclose([val,grad],ref[n],rtol=2e-5,atol=0)
+        val=np.asarray(jax.jit(f)(x))
+        grad=np.asarray(jax.jit(jax.vmap(jax.grad(f)))(x))
+        assert np.all(np.isfinite(val)) and np.all(np.isfinite(grad))
+        np.testing.assert_allclose(np.stack([val,grad],1),data['ref'][n],rtol=1.2e-6,atol=0)
         second=jax.jit(jax.grad(jax.grad(f)))(jnp.float32(0))
         assert np.isfinite(second)
         assert abs(float(second)-(0.5 if n==0 else 0.0)) <= 2e-6
@@ -579,7 +618,8 @@ for n,ref in zip(data['orders'],data['refs']):
 @pytest.mark.parametrize("nu", [0.0, 1.0])
 def test_unscaled_tail_gradients_near_overflow(nu):
     """Keep finite I0/I1 slopes near the overflow limit, with 60-dps refs.
-    Combined logarithmic reconstruction has a ~1e-13 floor; bar 5e-13.
+    Measured 3.7e-16 (1.1e-13 before the compensated exponential); bar
+    1.5e-15.
     """
     xs = np.array([710.0, 713.0, 713.9, 713.95])
     with mp.workdps(60):
@@ -600,4 +640,4 @@ def test_unscaled_tail_gradients_near_overflow(nu):
         for fun, ref in zip((f, first), refs):
             got = np.asarray(jax.jit(fun)(jnp.asarray(xs)))
             assert np.all(np.isfinite(got))
-            np.testing.assert_allclose(got, ref, rtol=5e-13, atol=0)
+            np.testing.assert_allclose(got, ref, rtol=1.5e-15, atol=0)

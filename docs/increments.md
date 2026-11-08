@@ -1689,3 +1689,62 @@ but the scaled value gap is much smaller: float64 CPU I0e/I1e now take
 Acceptance: 839 non-slow tests pass; regeneration passes 15 with the two
 usual skips. The family passes 35 tests on JAX 0.12.0.1; JAX 0.5.3 passes
 the same 35 plus five JAX/C++ baking checks. Formatting and diff checks pass.
+
+## 50. One compensated exponential for the unscaled I tail (2026-11-08)
+
+e^x overflows before I_v does (x = 88.7 in float32, 709.8 in float64). The
+unscaled tail, x > 8, was A / sqrt(2 pi x) times e^x up to x = 80 (700)
+and one exponential of x + s, s = ln(A / sqrt(2 pi x)), past it. Rounding
+x + s costs up to half an ulp of x, relative: I0 and I1 were off by up to
+8.5e-6 between x = 80 and 88.7 in float32 (0.5.0: 2.3e-7).
+
+TwoSum gives hi + lo = x + s exactly, and the whole unscaled tail is now
+exp(hi) (1 + lo): one exponential per element, where the two branches,
+both evaluated under the select, took three. The factors stay near I or
+near 1, so reverse-mode intermediates are finite wherever I is, which is
+what ruled out splitting e^x into exp(x/2)^2 (entry 49). lo is dropped
+once ulp(x) >= 1, where I has long overflowed.
+
+Keeping the old branch below the switch and compensating only above it
+kept that branch's accuracy but cost every gradient the reverse pass of
+both. With one formula, ln x rounds inside the exponent instead of sqrt(x)
+outside it, so below the switch the error grows slightly.
+[Experiment 42](../experiments/42_besseli_unscaled_exp.py) measures main,
+the two-branch fix and this one
+([results](../results/42_besseli_unscaled_exp.txt)).
+
+Above the switch main was off by up to 8.3e-6 in float32 and 1.5e-13 in
+float64, at every order and derivative; both fixes give 3.2e-7 to 6.9e-7
+and 7.9e-16 to 1.5e-15. Below it the single formula's worst errors grow by
+up to 1.35x in float32 (I1 values 2.3e-7 to 3.1e-7) and 1.8x in float64 (I0
+values 5.3e-16 to 9.4e-16); the largest stay at 1.6e-6 and drop from
+5.1e-15 to 4.4e-15. The two-branch fix's value_and_grad costs 1.05-1.30x
+main's on the CPU and the float32 GPU. The single formula is faster than
+main in every cell, I0 and I1 values 0.73x on the float32 CPU and
+value_and_grad 0.84-0.96x.
+
+test_float32_overflow_window now covers x = 80.5 to 91.5 for I0 and I1,
+values and slopes: worst 2.6e-7 / 3.1e-7 (7.2e-6 before), bar 1.2e-6.
+test_unscaled_tail_gradients_near_overflow: 3.7e-16 (1.1e-13 before), bar
+1.5e-15.
+
+## 51. One mask in besseli_ratio (2026-11-08)
+
+value_and_grad of besseli_ratio in nu and x together never finished
+compiling on the CPU, in either dtype (experiments/40; nu alone 9 s, x
+alone 2 s; the GPU compiled it in under a minute). The trigger was the
+second predicate that sent inf and nan to the quotient's dummy argument,
+near | ~isfinite(x): written as x < inf or x <= max it stalls the same,
+and an optimization barrier on the series or on both branches does not
+help. fmin(x, 1e30)
+gives inf and nan a finite argument without a predicate. The ratio is 1 to
+the last bit long before x = 1e30, so no value changes. Values and both
+gradients are bit for bit main's below x = 1e30 and at inf and nan (33
+points, three orders, both dtypes). Past 1e30 the x-gradient is 0, where
+the true value is below 1e-59 and main returns rounding noise (nan at the
+largest float); the nu-gradient keeps main's noise floor there.
+
+The joint gradient now compiles in 10 s at 2^16 points, the cost of the
+nu-gradient alone. At 8 points both take ~43 s, on main too; that is the
+nu-gradient path's, not this change's. test_besseli_ratio_joint_gradient
+compiles it at 64 points (~11 s) in a subprocess stopped at 300 s.

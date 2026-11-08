@@ -43,48 +43,52 @@ _frozen forms (iv, ive, kv) are timed beside it.
    apart, and the faster pass is kept: other jobs on the laptop slowed single
    cells by up to 20x in a one-pass run. Cells whose passes differ by more
    than 1.25x are listed in the results.
-3. Compile check: the ratio's value_and_grad in nu and x together does not
-   finish compiling on the CPU in 300 s, so the speed run skips that cell.
-   Mode "compile" times the ratio's gradient compiles by argument and device,
-   each in a child process stopped at 300 s.
+3. Compile check: mode "compile" times the ratio's value_and_grad compiles
+   by argument and device, each in a child process stopped at 300 s. Before
+   docs/increments.md entry 51 the gradient in nu and x together did not
+   finish compiling on the CPU.
 
 FINDINGS
 --------
-(results/40_bessel_real_order_race.txt, jax 0.12.0.1, RTX 3080 Laptop GPU)
+(results/40_bessel_real_order_race.txt, jax 0.12.0.1, RTX 3080 Laptop GPU,
+chebax 8cf5d7c, whose src/ is 0.6.0's 3ba95e2)
 
 Speed, chebax against TFP, value / value_and_grad in x:
 
                  float64 CPU     float64 GPU     float32 CPU     float32 GPU
-    I            15x / 15x       15x / 15x       5.6-5.8x /      140-160x /
-                                                 5.8-6x          110x
-    I scaled     17x / 18x       16x / 16-17x    6.3-6.4x /      150-170x /
-                                                 6.2-6.4x        130x
-    K, K scaled  11x / 12x       10-11x / 11x    2.7-2.8x /      50-54x /
-                                                 3-3.3x          58-61x
-    log K        13-14x /        13-14x /        4-4.6x /        72-78x /
-                 26-29x          20-21x          7.7-9x          100-110x
-    I ratio      1.1-1.2x /      0.89-0.96x /    0.64-0.68x /    23-24x /
-                 0.76-0.86x      0.88-0.97x      0.52-0.56x      6.4-6.8x
+    I            19x / 18x       18x / 18-19x    6.8-6.9x /      150-160x /
+                                                 6.7x            160-170x
+    I scaled     21x / 21x       18-19x /        7.3-7.5x /      160-170x /
+                                 18-19x          6.7-7x          140-150x
+    K, K scaled  10-11x / 12x    11x / 11x       2.6-2.8x /      50-54x /
+                                                 3-3.2x          58-61x
+    log K        13-14x /        13-14x /        4-4.5x /        74-77x /
+                 26-29x          20-21x          7.3-8.8x        100-110x
+    I ratio      1.3-1.4x /      0.98-1x /       0.69-0.76x /    24-25x /
+                 0.78-0.92x      0.97-1x         0.55-0.58x      7.6-8.1x
 
-TFP's ratio is faster than chebax's except on the float32 GPU and for
-float64 CPU values; on the CPU chebax's ratio gradient costs 2.4-2.9x its
-value. Against scipy's values on one core, chebax's values are 3.7-16x
-faster in float64 (J 9.7-10x, Y 8.7-16x, I 5.6-8.2x, K 3.7-5.4x, log K
-4.4-6.3x, ratio 10-11x) and 7.9-34x in float32, where scipy takes as long
-as in float64. The _frozen forms cost the same as the traced ones within
-10%, except on the float32 GPU, where the frozen I is 1.3-1.6x faster and
-the frozen K 1.1-1.15x. The gradient in nu and x together costs,
-against the x-gradient alone, 4.9-6.1x for I on the CPU, 3.3-3.8x on the
-float64 GPU and 15x on the float32 GPU; for K and log K 1.5-1.9x, and 5-5.4x
-on the float32 GPU.
+TFP's ratio is faster than chebax's on the CPU, except for float64 values,
+on par on the float64 GPU and slower on the float32 GPU; on the CPU
+chebax's ratio gradient costs 2.6-3.3x its value. Against scipy's values
+on one core, chebax's values are 3.5-15x faster in float64 (J 9.4-11x, Y
+8.3-15x, I 6.7-9.7x, K 3.5-5.4x, log K 4.2-6x, ratio 11-12x) and 7.9-34x
+in float32, where scipy takes as long as in float64. The _frozen forms
+cost the same as the traced ones within 10%, except the frozen I on the
+float64 CPU, 1.08-1.11x slower, and on the float32 GPU, where the frozen
+I is 1.2-1.6x faster and the frozen K 1.1-1.16x. The gradient in nu and x
+together costs, against the x-gradient alone, 5.8-6.7x for I on the CPU,
+4.1-4.3x on the float64 GPU and 20-21x on the float32 GPU; for K and log K
+1.5-1.9x, and 5.1-5.5x on the float32 GPU; for the ratio 5.9-6.9x on the
+CPU, 2.6x on the float64 GPU and 14x on the float32 GPU.
 
-Compiling the ratio's value_and_grad in nu and x does not finish in 300 s on
-the CPU in either dtype, where x alone takes 2 s and nu alone 9 s; the GPU
-compiles it in 41 s (float64) and 56 s (float32).
+Compiling the ratio's value_and_grad in nu and x takes 9.6-9.9 s on the
+CPU, where x alone takes 2.1-3.0 s and nu alone 8.8-8.9 s, and 44-47 s on
+the GPU. Before docs/increments.md entry 51 the CPU compile did not finish
+in 300 s.
 
 Accuracy, float64: chebax's values are within 1.4e-15 (J, sup), 1.2e-14 (Y,
-modulus), 5.7e-15 (I; 1.1e-15 frozen), 1.2e-14 (K), 3.7e-15 (log K) and
-6.1e-15 (ratio). x-derivatives are within 4.8e-14 (ratio 1.9e-12). The
+modulus), 5.7e-15 (I; 1.7e-15 frozen), 1.2e-14 (K), 3.7e-15 (log K) and
+6.1e-15 (ratio). x-derivatives are within 4.7e-14 (ratio 2.1e-12). The
 nu-derivatives are within 1.8e-13 for I, 6.4e-12 for K scaled and log K and
 1.2e-12 for the ratio, the last three at x near 1e4; K's is within 3.5e-13
 below x = 600, and 2.1e-9 on the CPU at x = 680, where dK/dnu is 9e-301.
@@ -92,10 +96,10 @@ TFP's values are within 4e-15 and its x-derivatives within 3.4e-11 (ratio
 2.1e-8); its nu-derivative is 0 everywhere, for every function. scipy's
 values are within 4.5e-14.
 
-Accuracy, float32: chebax's values are within 5.7e-7 (J), 3.2e-6 (Y, and I
-at x = 84.9), 6.6e-7 (I scaled), 6.5e-6 (K, K scaled), 2.9e-6 (log K) and
-1.2e-6 (ratio). K' is inf at 2 points where |K'| is 2e38 or more, near the
-top of the range, and off by 1.1e-2 at x = 84.9, v = 8.9, where K is 3e-38
+Accuracy, float32: chebax's values are within 5.7e-7 (J), 3.2e-6 (Y),
+8.7e-7 (I, I scaled), 6.5e-6 (K, K scaled), 2.9e-6 (log K) and 1.1e-6
+(ratio). K' is inf at 2 points where |K'| is 2e38 or more, near the top of
+the range, and off by 1.1e-2 at x = 84.9, v = 8.9, where K is 3e-38
 (chebax returns -K there); K scaled' is within 9.9e-6 apart from the same
 2 points. nu-derivatives lose accuracy where they are a small part of the
 value: 3.6e-4 to 4.3e-4 at x near 1e4 for K scaled, log K and the ratio.
@@ -117,11 +121,11 @@ Run (each stage writes into results/40_cache/, not checked in), with jax
 
   python experiments/40_bessel_real_order_race.py refs              (~10 s)
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
-      python experiments/40_bessel_real_order_race.py run f64       (~20 min)
+      python experiments/40_bessel_real_order_race.py run f64       (~23 min)
   ... run f32                                                       (~21 min)
   taskset -c 3 python experiments/40_bessel_real_order_race.py scipy     (~1 min)
   JAX_PLATFORMS=cuda,cpu taskset -c 3 \\
-      python experiments/40_bessel_real_order_race.py compile       (~12 min)
+      python experiments/40_bessel_real_order_race.py compile       (~3 min)
   python experiments/40_bessel_real_order_race.py report > results/40_bessel_real_order_race.txt
 """
 
@@ -138,9 +142,6 @@ CACHE = os.path.join(HERE, "..", "results", "40_cache")
 SIZES = {"cpu": 2**16, "gpu": 2**20}
 FAMILIES = ("jv", "yv", "iv", "ive", "kv", "kve", "logkv", "iratio")
 TRACED = ("iv", "ive", "kv", "kve", "logkv", "iratio")
-# the ratio's value_and_grad in nu and x together does not finish compiling on
-# the CPU (mode "compile"), so the speed run skips it there
-SKIP = {("iratio", "chebax_all", "cpu")}
 COMPILE_LIMIT = 300.0
 # every speed cell is timed in this many passes over all cells, the fastest kept
 PASSES = 2
@@ -493,9 +494,6 @@ def run(dname_dtype):
                     args = (nu, x)
                 rec = {"setting": label, "impl": iname, "device": dname, "n": n}
                 rows.append(rec)
-                if (fam, iname, dname) in SKIP:
-                    rec["skipped"] = "compile does not finish, see compile check"
-                    continue
                 try:
                     t0 = time.perf_counter()
                     cv = jax.jit(total).lower(*args).compile()
@@ -818,6 +816,12 @@ def report():
             print("  ".join(str(c).ljust(w) for c, w in zip(ln, widths)))
         print(f"\n  worst points (device, nu, x), {dtn}:")
         print("\n".join(where))
+        acc = runs[dtn]["acc"]
+        ks = [k for k in acc.files if "|tfp|" in k and k.endswith("|d_nu")]
+        zero = all(np.all(acc[k] == 0) for k in ks)
+        print(
+            f"\n  tfp d/dnu exactly 0 at every point, {dtn}: {zero} ({len(ks)} arrays)"
+        )
 
     print(
         "\n=== SPEED, ns per element (median): value / value_and_grad in x; "
@@ -849,8 +853,6 @@ def report():
                         return "-"
                     if "error" in rec:
                         return "ERR " + rec["error"][:40]
-                    if "skipped" in rec:
-                        return "skipped (compile check)"
                     tv = f"{rec['t_v']:.3g}" if "t_v" in rec else "-"
                     if rec["impl"] == "scipy":
                         return tv

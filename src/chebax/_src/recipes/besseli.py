@@ -96,7 +96,16 @@ def _tail_i(x, log_value, scaled):
     cap = _X_SPLIT_EXP if log_value.dtype == jnp.float64 else 80.0
     xc = jnp.where(x > cap, cap, x)
     split = jnp.exp(log_value) / jnp.sqrt(2 * jnp.pi * xc) * jnp.exp(xc)
-    combined = jnp.exp(log_value + x - _LOG_SQRT_2PI - 0.5 * jnp.log(x))
+    # Past the cap e^x overflows before I_v does, so one exponential of x + s.
+    # Rounding x + s costs up to ulp(x)/2 relative (4e-6 at x = 85 in
+    # float32); Fast2Sum (x > |s|) recovers that error as lo. Every factor
+    # here is near 1 or near I, so reverse-mode intermediates stay finite.
+    # Once ulp(x) >= 1, lo is not small, but I_v overflowed long before.
+    s = log_value - _LOG_SQRT_2PI - 0.5 * jnp.log(x)
+    hi = x + s
+    lo = s - (hi - x)
+    lo = jnp.where(jnp.abs(lo) < 1.0, lo, 0.0)
+    combined = jnp.exp(hi) * (1.0 + lo)
     return jnp.where(x > cap, combined, split)
 
 

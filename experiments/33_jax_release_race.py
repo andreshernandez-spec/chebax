@@ -37,7 +37,10 @@ Every chebax function that has a counterpart in jax.scipy:
    arguments, where that is more), ns per element (median), one pinned CPU
    core at N = 2^16 and the GPU at N = 2^20. Parameters are traced 0-d
    arrays (a latent parameter), orders are constants. Compile time of
-   each program is recorded.
+   each program is recorded. Every cell is timed in two passes over all
+   cells, minutes apart, and the faster is kept (other jobs on the laptop
+   slowed single cells by up to 20x in a one-pass run of experiments/40);
+   cells whose passes differ by more than 1.25x are listed in the results.
 3. The log forms (log_betainc, log_gammainc, log_gammaincc, log_hyp1f1,
    log_stdtr) against the log of jax's function, which is what a jax user
    writes: ln F and d ln F / dq, error / max(1, |ref|). Accuracy only.
@@ -527,6 +530,12 @@ def timing_settings():
     ]
 
 
+# every speed cell is timed in this many passes over all cells, the fastest
+# kept; cells whose passes differ by more than DISAGREE are listed
+PASSES = 2
+DISAGREE = 1.25
+
+
 def timed(call, n, reps=5, budget=1.0):
     """Median ns per element; a warm-up spin first (the GPU clock drops
     while compiling). Same as experiment 22."""
@@ -628,11 +637,12 @@ def run(dname_dtype, logs=False):
             json.dump({"meta": meta, "notes": notes}, fh, indent=1)
         return
 
-    # 2. speed
+    # 2. speed: compile every cell, then time all of them PASSES times
     rows = []
     rng = np.random.default_rng(33)
     for dname, dev in devs.items():
         n = SIZES[dname]
+        progs = []
         for label, fam, params, sampler in timing_settings():
             if params == "spread":
                 mu = np.clip(np.exp(rng.normal(1.0, 0.5, n)), 0.6, 20.0)
@@ -646,6 +656,7 @@ def run(dname_dtype, logs=False):
                 f, argnums, _ = imp[fam][iname]
                 total = lambda *a, f=f: jnp.sum(f(*a))  # noqa: E731
                 rec = {"setting": label, "impl": iname, "device": dname, "n": n}
+                rows.append(rec)
                 try:
                     t0 = time.perf_counter()
                     cv = jax.jit(total).lower(*args).compile()
@@ -657,13 +668,30 @@ def run(dname_dtype, logs=False):
                         .compile()
                     )
                     rec["compile_g"] = time.perf_counter() - t0
+                    calls = {"t_g": cg}
                     if iname != "chebax_all":
-                        rec["t_v"] = timed(lambda: cv(*args), n)
-                    rec["t_g"] = timed(lambda: cg(*args), n)
+                        calls = {"t_v": cv, "t_g": cg}
+                    progs.append((rec, calls, args))
                 except Exception as e:
                     rec["error"] = f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
-                rows.append(rec)
-                print("time", json.dumps(rec), flush=True)
+        for _ in range(PASSES):
+            for rec, calls, args in progs:
+                if "error" in rec:
+                    continue
+                try:
+                    for k, c in calls.items():
+                        rec.setdefault(k + "_passes", []).append(
+                            timed(lambda c=c, args=args: c(*args), n)
+                        )
+                except Exception as e:
+                    rec["error"] = f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
+        for rec in rows:
+            if rec["device"] != dname:
+                continue
+            for k in ("t_v", "t_g"):
+                if k + "_passes" in rec:
+                    rec[k] = min(rec[k + "_passes"])
+            print("time", json.dumps(rec), flush=True)
     meta["load_end"] = os.getloadavg()
     tag = f"{jax.__version__}_{dname_dtype}"
     os.makedirs(CACHE, exist_ok=True)
@@ -1031,6 +1059,27 @@ def report():
             widths = [max(len(str(l[i])) for l in lines) for i in range(len(hdr))]
             for l in lines:
                 print("  ".join(str(c).ljust(w) for c, w in zip(l, widths)))
+
+    print(
+        f"\n=== TIMING PASSES: cells whose {PASSES} passes differ by more than "
+        f"{DISAGREE:.2f}x (the faster is shown above)"
+    )
+    worst, listed = 1.0, 0
+    for tag in sorted(runs):
+        for rec in runs[tag]["timing"]:
+            for k in ("t_v", "t_g"):
+                ps = rec.get(k + "_passes")
+                if not ps:
+                    continue
+                r = max(ps) / min(ps)
+                worst = max(worst, r)
+                if r > DISAGREE:
+                    listed += 1
+                    print(
+                        f"  {tag} {rec['device']} {rec['setting']} {rec['impl']} {k}: "
+                        + " / ".join(f"{t:.3g}" for t in ps)
+                    )
+    print(f"  {listed} listed; largest ratio over all cells {worst:.2f}x")
 
 
 if __name__ == "__main__":

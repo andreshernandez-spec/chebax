@@ -1,0 +1,425 @@
+Bessel I tail speed: ns per element, mean of round medians
+{
+  "mode": "speed",
+  "date": "2026-11-08 06:13 CET",
+  "jax": "0.12.0.1",
+  "jaxlib": "0.12.0.1",
+  "baseline": "10a82f8",
+  "affinity": [
+    3
+  ],
+  "rounds": 4,
+  "budget": 0.1,
+  "load_start": 3.53369140625,
+  "candidate sha256": {
+    "besseli.py": "1c0e368c2f59db3c71b8ba5ca23ebe6e17918ed3864a119f20f6a558cdb2e7f5",
+    "besseli_gen.py": "a3fa6ba3e5a55cd8fef56a4eefa099c347182367750162ad8c53b1e7196039fd",
+    "besseli_table.py": "4d625fb52146ab81e7b808b8fdd62105d035421af12d69b42316b436cbff5fff"
+  },
+  "load_end": 2.5087890625,
+  "hardware": {
+    "cpu": "cpu",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU"
+  },
+  "cpu": "11th Gen Intel(R) Core(TM) i9-11980HK @ 2.60GHz"
+}
+
+cpu f64, N=65536
+function/source                    value        grad    value_grad
+i0 baseline                        31.69       34.72       59.38
+i0 candidate                        24.2       27.71       52.78
+i0 jax                             12.12       11.77       22.46
+i1 baseline                        31.84       36.38       63.95
+i1 candidate                       24.41       26.84       43.96
+i1 jax                             11.85       21.26       23.46
+i0e baseline                       21.74       28.19       40.63
+i0e candidate                      11.54        21.3       28.58
+i0e jax                            10.96       19.93       21.17
+i1e baseline                        21.3       28.26        40.5
+i1e candidate                      11.84       20.52       28.82
+i1e jax                            10.02       18.87       20.46
+i2.5 baseline                      56.82        79.6       118.2
+i2.5 candidate                     49.03        71.6       103.6
+i2.5e baseline                     49.96       77.59        97.6
+i2.5e candidate                    41.34       64.13       85.86
+
+cpu f32, N=65536
+function/source                    value        grad    value_grad
+i0 baseline                        6.901       10.52       14.54
+i0 candidate                       5.056       6.555       10.41
+i0 jax                             2.757       2.525       4.855
+i1 baseline                        6.947         9.4        14.4
+i1 candidate                       5.271       6.651       10.25
+i1 jax                             2.902       4.672       5.427
+i0e baseline                       5.765       7.231       10.48
+i0e candidate                      2.604        4.81       6.826
+i0e jax                            2.083       3.558       4.125
+i1e baseline                        5.17       7.112       10.11
+i1e candidate                      2.495       4.735       6.783
+i1e jax                            2.237       3.874       4.199
+i2.5 baseline                      20.18       34.61       49.18
+i2.5 candidate                     17.55       32.08       37.81
+i2.5e baseline                     19.67       34.72       40.26
+i2.5e candidate                    15.94       31.13       33.62
+
+gpu f64, N=1048576
+function/source                    value        grad    value_grad
+i0 baseline                        2.489       4.249       4.595
+i0 candidate                       2.045       3.547       3.886
+i0 jax                             1.601       1.433       2.896
+i1 baseline                         2.41       4.188       4.583
+i1 candidate                       2.015       3.492       3.821
+i1 jax                             1.606       2.904       3.067
+i0e baseline                       2.055       3.653           4
+i0e candidate                      1.586        2.93        3.25
+i0e jax                            1.475         2.5       2.729
+i1e baseline                       2.075       3.602       3.934
+i1e candidate                       1.61       2.857       3.176
+i1e jax                            1.475       2.717        2.92
+i2.5 baseline                      3.695        6.57       7.012
+i2.5 candidate                     3.325       5.809       6.315
+i2.5e baseline                     3.427       5.916       6.428
+i2.5e candidate                    2.912       5.189       5.666
+
+gpu f32, N=1048576
+function/source                    value        grad    value_grad
+i0 baseline                      0.03871     0.05137     0.06917
+i0 candidate                     0.03617     0.03952     0.06739
+i0 jax                           0.03738     0.03386      0.0395
+i1 baseline                      0.03776     0.04634     0.06867
+i1 candidate                     0.03666     0.03605     0.06582
+i1 jax                           0.03841     0.03576     0.05661
+i0e baseline                     0.03932     0.03883     0.06153
+i0e candidate                    0.04166     0.03583      0.0592
+i0e jax                          0.04346     0.03491     0.05827
+i1e baseline                     0.04104     0.03761     0.06104
+i1e candidate                    0.04013     0.03564     0.04032
+i1e jax                           0.0381     0.04013     0.05439
+i2.5 baseline                    0.04435     0.07388      0.1008
+i2.5 candidate                      0.04     0.06298      0.0998
+i2.5e baseline                   0.03743     0.05824     0.08138
+i2.5e candidate                  0.03589     0.04938     0.07689
+
+Compile seconds (first round, value / grad / value_grad):
+cpu f64 i0 baseline 0.267 0.401 0.476
+cpu f64 i1 baseline 0.164 0.387 0.489
+cpu f64 i0e baseline 0.16 0.381 0.441
+cpu f64 i1e baseline 0.164 0.361 0.445
+cpu f64 i2.5 baseline 0.168 0.365 0.499
+cpu f64 i2.5e baseline 0.168 0.368 0.474
+gpu f64 i0 baseline 0.371 1.135 1.133
+gpu f64 i1 baseline 0.327 1.082 1.124
+gpu f64 i0e baseline 0.519 1.167 1.217
+gpu f64 i1e baseline 0.529 1.181 1.22
+gpu f64 i2.5 baseline 0.345 1.206 1.3
+gpu f64 i2.5e baseline 0.568 1.322 1.468
+cpu f32 i0 baseline 0.245 0.357 0.425
+cpu f32 i1 baseline 0.177 0.31 0.436
+cpu f32 i0e baseline 0.163 0.333 0.401
+cpu f32 i1e baseline 0.179 0.369 0.401
+cpu f32 i2.5 baseline 0.177 0.322 0.456
+cpu f32 i2.5e baseline 0.168 0.32 0.442
+gpu f32 i0 baseline 0.112 1.033 0.814
+gpu f32 i1 baseline 0.098 0.951 0.828
+gpu f32 i0e baseline 0.094 0.797 0.699
+gpu f32 i1e baseline 0.094 0.814 0.716
+gpu f32 i2.5 baseline 0.096 0.207 0.908
+gpu f32 i2.5e baseline 0.092 0.201 0.839
+cpu f64 i0 candidate 0.207 0.356 0.452
+cpu f64 i0 jax 0.08 0.052 0.129
+cpu f64 i1 candidate 0.151 0.347 0.428
+cpu f64 i1 jax 0.059 0.11 0.127
+cpu f64 i0e candidate 0.192 0.409 0.487
+cpu f64 i0e jax 0.068 0.094 0.118
+cpu f64 i1e candidate 0.184 0.382 0.467
+cpu f64 i1e jax 0.048 0.101 0.11
+cpu f64 i2.5 candidate 0.154 0.329 0.455
+cpu f64 i2.5e candidate 0.183 0.391 0.525
+gpu f64 i0 candidate 0.098 0.827 0.859
+gpu f64 i0 jax 0.023 0.151 0.291
+gpu f64 i1 candidate 0.079 0.203 0.214
+gpu f64 i1 jax 0.158 0.339 0.358
+gpu f64 i0e candidate 0.114 0.796 0.827
+gpu f64 i0e jax 0.019 0.4 0.421
+gpu f64 i1e candidate 0.105 0.745 0.811
+gpu f64 i1e jax 0.179 0.361 0.376
+gpu f64 i2.5 candidate 0.08 0.902 0.912
+gpu f64 i2.5e candidate 0.105 0.811 0.865
+cpu f32 i0 candidate 0.223 0.313 0.38
+cpu f32 i0 jax 0.056 0.037 0.093
+cpu f32 i1 candidate 0.186 0.295 0.482
+cpu f32 i1 jax 0.046 0.079 0.099
+cpu f32 i0e candidate 0.222 0.373 0.426
+cpu f32 i0e jax 0.043 0.057 0.081
+cpu f32 i1e candidate 0.183 0.337 0.43
+cpu f32 i1e jax 0.036 0.061 0.073
+cpu f32 i2.5 candidate 0.163 0.283 0.404
+cpu f32 i2.5e candidate 0.19 0.353 0.449
+gpu f32 i0 candidate 0.099 0.713 0.642
+gpu f32 i0 jax 0.015 0.108 0.192
+gpu f32 i1 candidate 0.092 0.691 0.632
+gpu f32 i1 jax 0.12 0.329 0.298
+gpu f32 i0e candidate 0.124 0.625 0.646
+gpu f32 i0e jax 0.147 0.224 0.255
+gpu f32 i1e candidate 0.121 0.686 0.635
+gpu f32 i1e jax 0.133 0.299 0.256
+gpu f32 i2.5 candidate 0.094 0.976 0.734
+gpu f32 i2.5e candidate 0.118 0.897 0.823
+
+Round medians: round device dtype function source value grad value_grad
+1 cpu f64 i0 baseline 32.4009 34.6317 59.4776
+1 cpu f64 i1 baseline 31.4567 37.891 58.9164
+1 cpu f64 i0e baseline 21.305 27.5671 39.6133
+1 cpu f64 i1e baseline 21.3411 27.6626 39.1097
+1 cpu f64 i2.5 baseline 56.4452 77.6163 117.547
+1 cpu f64 i2.5e baseline 49.6635 88.4902 97.153
+1 gpu f64 i0 baseline 2.47849 4.22039 4.5726
+1 gpu f64 i1 baseline 2.37435 4.16511 4.49373
+1 gpu f64 i0e baseline 2.05159 3.63845 3.97528
+1 gpu f64 i1e baseline 2.06613 3.58405 3.9151
+1 gpu f64 i2.5 baseline 3.67604 6.53286 6.9537
+1 gpu f64 i2.5e baseline 3.36628 5.88236 6.38436
+1 cpu f32 i0 baseline 7.14455 11.047 14.7424
+1 cpu f32 i1 baseline 6.99029 8.78591 14.4982
+1 cpu f32 i0e baseline 6.36065 7.67925 10.8061
+1 cpu f32 i1e baseline 5.97489 7.30691 10.1618
+1 cpu f32 i2.5 baseline 20.4785 36.2901 42.7025
+1 cpu f32 i2.5e baseline 18.7732 33.4468 40.7392
+1 gpu f32 i0 baseline 0.0410603 0.0462236 0.0692083
+1 gpu f32 i1 baseline 0.0366801 0.0567775 0.0674118
+1 gpu f32 i0e baseline 0.0376733 0.0382035 0.0606856
+1 gpu f32 i1e baseline 0.0375892 0.0362293 0.0612398
+1 gpu f32 i2.5 baseline 0.0410235 0.0773985 0.100821
+1 gpu f32 i2.5e baseline 0.0383584 0.0561751 0.0816301
+1 cpu f64 i0 candidate 24.0445 28.2805 43.3119
+1 cpu f64 i0 jax 12.3052 11.6185 22.123
+1 cpu f64 i1 candidate 23.9336 27.1097 43.3062
+1 cpu f64 i1 jax 11.7961 21.0815 23.4859
+1 cpu f64 i0e candidate 11.7367 21.337 28.0869
+1 cpu f64 i0e jax 10.0627 18.5497 20.7353
+1 cpu f64 i1e candidate 11.6407 22.969 29.1485
+1 cpu f64 i1e jax 9.9677 18.9633 20.6181
+1 cpu f64 i2.5 candidate 49.3029 70.3818 102.525
+1 cpu f64 i2.5e candidate 41.1385 64.2123 83.2216
+1 gpu f64 i0 candidate 1.99084 3.5455 3.88861
+1 gpu f64 i0 jax 1.5986 1.42873 2.89219
+1 gpu f64 i1 candidate 2.01825 3.48664 3.82579
+1 gpu f64 i1 jax 1.61198 2.90581 3.06543
+1 gpu f64 i0e candidate 1.57793 2.91464 3.25452
+1 gpu f64 i0e jax 1.47409 2.49897 2.73162
+1 gpu f64 i1e candidate 1.61311 2.85406 3.1844
+1 gpu f64 i1e jax 1.47763 2.71739 2.875
+1 gpu f64 i2.5 candidate 3.31589 5.81955 6.31764
+1 gpu f64 i2.5e candidate 2.91301 5.19075 5.65992
+1 cpu f32 i0 candidate 5.03121 6.66217 10.4487
+1 cpu f32 i0 jax 2.76746 2.52365 4.77518
+1 cpu f32 i1 candidate 5.55022 8.00842 10.4497
+1 cpu f32 i1 jax 3.02631 5.00776 5.72039
+1 cpu f32 i0e candidate 2.6968 4.79035 6.70994
+1 cpu f32 i0e jax 2.04639 3.51097 4.1444
+1 cpu f32 i1e candidate 2.4895 4.66081 6.95543
+1 cpu f32 i1e jax 2.18871 3.90166 4.15953
+1 cpu f32 i2.5 candidate 17.4381 32.2334 37.54
+1 cpu f32 i2.5e candidate 15.9395 30.8694 33.9306
+1 gpu f32 i0 candidate 0.0364736 0.0384969 0.0672787
+1 gpu f32 i0 jax 0.0382547 0.0323477 0.0372231
+1 gpu f32 i1 candidate 0.0362101 0.0352687 0.0659164
+1 gpu f32 i1 jax 0.0409451 0.0322944 0.0544017
+1 gpu f32 i0e candidate 0.0370211 0.0324778 0.0582646
+1 gpu f32 i0e jax 0.0374019 0.0299952 0.051101
+1 gpu f32 i1e candidate 0.0359581 0.0324868 0.0399364
+1 gpu f32 i1e jax 0.0396786 0.0328585 0.050186
+1 gpu f32 i2.5 candidate 0.0357573 0.0627635 0.0998265
+1 gpu f32 i2.5e candidate 0.0358482 0.0486108 0.073665
+2 cpu f64 i0 candidate 23.5329 27.215 43.9152
+2 cpu f64 i0 jax 11.8669 11.4684 21.8189
+2 cpu f64 i1 candidate 25.6419 26.4799 45.1089
+2 cpu f64 i1 jax 11.7964 21.1206 23.448
+2 cpu f64 i0e candidate 11.4031 21.2253 28.3083
+2 cpu f64 i0e jax 10.2377 18.4724 20.7658
+2 cpu f64 i1e candidate 11.6754 20.1273 28.5745
+2 cpu f64 i1e jax 10.134 18.9531 21.0194
+2 cpu f64 i2.5 candidate 48.84 70.9784 99.9131
+2 cpu f64 i2.5e candidate 41.4637 64.3147 94.1195
+2 gpu f64 i0 candidate 2.04464 3.5482 3.89772
+2 gpu f64 i0 jax 1.60298 1.43404 2.89713
+2 gpu f64 i1 candidate 2.0158 3.49752 3.83173
+2 gpu f64 i1 jax 1.60894 2.90037 3.07358
+2 gpu f64 i0e candidate 1.58723 2.98175 3.25211
+2 gpu f64 i0e jax 1.47456 2.5036 2.73605
+2 gpu f64 i1e candidate 1.61456 2.86105 3.17256
+2 gpu f64 i1e jax 1.47449 2.72056 2.87918
+2 gpu f64 i2.5 candidate 3.32914 5.7966 6.33833
+2 gpu f64 i2.5e candidate 2.91546 5.18276 5.66046
+2 cpu f32 i0 candidate 5.09538 6.61354 10.6563
+2 cpu f32 i0 jax 2.74547 2.52207 4.87257
+2 cpu f32 i1 candidate 5.11881 6.1069 10.2095
+2 cpu f32 i1 jax 2.88085 4.61241 5.23984
+2 cpu f32 i0e candidate 2.46551 4.86631 6.81749
+2 cpu f32 i0e jax 2.04246 3.52002 4.10928
+2 cpu f32 i1e candidate 2.52807 4.75868 6.80375
+2 cpu f32 i1e jax 2.18998 3.87185 4.16312
+2 cpu f32 i2.5 candidate 17.7572 32.111 38.0704
+2 cpu f32 i2.5e candidate 16.2282 31.7046 33.3846
+2 gpu f32 i0 candidate 0.0351498 0.042634 0.0676422
+2 gpu f32 i0 jax 0.0375356 0.0357786 0.0393727
+2 gpu f32 i1 candidate 0.0372415 0.0356137 0.0656909
+2 gpu f32 i1 jax 0.0375169 0.0301635 0.0544562
+2 gpu f32 i0e candidate 0.0388864 0.0324876 0.0591657
+2 gpu f32 i0e jax 0.0363707 0.0322327 0.0684728
+2 gpu f32 i1e candidate 0.0352374 0.0331204 0.0407365
+2 gpu f32 i1e jax 0.0382014 0.030623 0.050983
+2 gpu f32 i2.5 candidate 0.0362258 0.0621964 0.0997677
+2 gpu f32 i2.5e candidate 0.0367927 0.0485468 0.0735651
+2 cpu f64 i0 baseline 31.4516 34.8853 59.1272
+2 cpu f64 i1 baseline 32.4608 38.5532 60.8978
+2 cpu f64 i0e baseline 21.5377 29.2891 39.5875
+2 cpu f64 i1e baseline 21.1914 30.1977 39.3007
+2 cpu f64 i2.5 baseline 56.992 84.6014 118.266
+2 cpu f64 i2.5e baseline 50.0862 77.9946 97.2397
+2 gpu f64 i0 baseline 2.47374 4.23906 4.60164
+2 gpu f64 i1 baseline 2.47674 4.1886 4.76718
+2 gpu f64 i0e baseline 2.06082 3.66076 4.01817
+2 gpu f64 i1e baseline 2.08318 3.60817 3.93311
+2 gpu f64 i2.5 baseline 3.69738 6.54513 7.03137
+2 gpu f64 i2.5e baseline 3.38252 5.92721 6.42931
+2 cpu f32 i0 baseline 6.81155 10.4322 14.2472
+2 cpu f32 i1 baseline 6.94007 8.70081 14.5078
+2 cpu f32 i0e baseline 6.93617 7.18344 10.1459
+2 cpu f32 i1e baseline 4.91689 6.99333 9.98113
+2 cpu f32 i2.5 baseline 20.1625 34.6319 42.5213
+2 cpu f32 i2.5e baseline 18.8617 37.8544 43.6219
+2 gpu f32 i0 baseline 0.044035 0.0465588 0.0692273
+2 gpu f32 i1 baseline 0.040648 0.0434091 0.0681792
+2 gpu f32 i0e baseline 0.0370541 0.038383 0.0622314
+2 gpu f32 i1e baseline 0.0436216 0.0377273 0.061055
+2 gpu f32 i2.5 baseline 0.0399372 0.0699491 0.0999382
+2 gpu f32 i2.5e baseline 0.0374616 0.0566071 0.0816972
+3 cpu f64 i0 baseline 31.608 34.701 59.9762
+3 cpu f64 i1 baseline 31.9449 34.8069 77.658
+3 cpu f64 i0e baseline 22.7006 27.9563 43.8773
+3 cpu f64 i1e baseline 21.3526 27.7012 44.2969
+3 cpu f64 i2.5 baseline 56.9886 77.5859 121.949
+3 cpu f64 i2.5e baseline 50.3814 72.7765 98.4113
+3 gpu f64 i0 baseline 2.54304 4.24676 4.60692
+3 gpu f64 i1 baseline 2.3976 4.20276 4.53489
+3 gpu f64 i0e baseline 2.05123 3.64842 4.00637
+3 gpu f64 i1e baseline 2.07146 3.61591 3.9439
+3 gpu f64 i2.5 baseline 3.71554 6.67497 7.03612
+3 gpu f64 i2.5e baseline 3.57507 5.92838 6.43546
+3 cpu f32 i0 baseline 6.83215 10.3671 14.4039
+3 cpu f32 i1 baseline 6.95136 11.3838 14.3545
+3 cpu f32 i0e baseline 4.90001 7.08315 10.2462
+3 cpu f32 i1e baseline 4.85827 7.09065 9.91588
+3 cpu f32 i2.5 baseline 20.1285 33.7922 42.0874
+3 cpu f32 i2.5e baseline 18.4238 32.9864 39.7143
+3 gpu f32 i0 baseline 0.0352601 0.0522832 0.0691386
+3 gpu f32 i1 baseline 0.034803 0.0427054 0.0698432
+3 gpu f32 i0e baseline 0.0447307 0.0393799 0.0610813
+3 gpu f32 i1e baseline 0.0383467 0.037822 0.0604912
+3 gpu f32 i2.5 baseline 0.0400314 0.0709527 0.100432
+3 gpu f32 i2.5e baseline 0.0368307 0.0553078 0.081095
+3 cpu f64 i0 candidate 24.1479 27.7055 80.3954
+3 cpu f64 i0 jax 12.5038 12.6293 23.6919
+3 cpu f64 i1 candidate 24.143 26.4678 43.7242
+3 cpu f64 i1 jax 11.7226 21.4597 23.4973
+3 cpu f64 i0e candidate 11.4556 21.6488 28.5969
+3 cpu f64 i0e jax 10.3567 18.299 20.4269
+3 cpu f64 i1e candidate 11.522 19.6051 28.7569
+3 cpu f64 i1e jax 9.85237 18.682 19.9778
+3 cpu f64 i2.5 candidate 48.949 72.3112 99.4045
+3 cpu f64 i2.5e candidate 40.825 63.7308 82.1332
+3 gpu f64 i0 candidate 2.07617 3.54856 3.89543
+3 gpu f64 i0 jax 1.59995 1.43458 2.89764
+3 gpu f64 i1 candidate 2.01151 3.49736 3.80652
+3 gpu f64 i1 jax 1.60039 2.90885 3.06793
+3 gpu f64 i0e candidate 1.58847 2.91353 3.24647
+3 gpu f64 i0e jax 1.46989 2.48943 2.72328
+3 gpu f64 i1e candidate 1.60397 2.85653 3.18097
+3 gpu f64 i1e jax 1.47568 2.71301 2.88074
+3 gpu f64 i2.5 candidate 3.33686 5.81879 6.2938
+3 gpu f64 i2.5e candidate 2.9054 5.19327 5.67451
+3 cpu f32 i0 candidate 5.01241 6.50359 10.2097
+3 cpu f32 i0 jax 2.81117 2.54995 4.9029
+3 cpu f32 i1 candidate 5.33612 6.26366 10.1554
+3 cpu f32 i1 jax 2.84771 4.55345 5.23337
+3 cpu f32 i0e candidate 2.50065 4.86628 6.89695
+3 cpu f32 i0e jax 2.07613 3.60882 4.1575
+3 cpu f32 i1e candidate 2.48187 4.72732 6.69593
+3 cpu f32 i1e jax 2.30351 3.87047 4.17748
+3 cpu f32 i2.5 candidate 17.648 32.299 38.2013
+3 cpu f32 i2.5e candidate 15.813 31.2067 33.3185
+3 gpu f32 i0 candidate 0.0375265 0.0384795 0.0674284
+3 gpu f32 i0 jax 0.037407 0.0343747 0.0389912
+3 gpu f32 i1 candidate 0.0355313 0.0363081 0.0657994
+3 gpu f32 i1 jax 0.0384342 0.0325672 0.0544627
+3 gpu f32 i0e candidate 0.0357141 0.0316349 0.059022
+3 gpu f32 i0e jax 0.0369159 0.0321634 0.0510502
+3 gpu f32 i1e candidate 0.0367396 0.0319185 0.0386072
+3 gpu f32 i1e jax 0.0379609 0.0302019 0.0582274
+3 gpu f32 i2.5 candidate 0.0361042 0.0622857 0.100026
+3 gpu f32 i2.5e candidate 0.0353319 0.0479019 0.0842829
+4 cpu f64 i0 candidate 25.0937 27.6494 43.5137
+4 cpu f64 i0 jax 11.8112 11.3817 22.2177
+4 cpu f64 i1 candidate 23.9079 27.3075 43.6911
+4 cpu f64 i1 jax 12.0692 21.3635 23.3951
+4 cpu f64 i0e candidate 11.5445 20.9783 29.3189
+4 cpu f64 i0e jax 13.1853 24.4079 22.7683
+4 cpu f64 i1e candidate 12.5219 19.3739 28.8163
+4 cpu f64 i1e jax 10.1456 18.8943 20.2189
+4 cpu f64 i2.5 candidate 49.015 72.7325 112.655
+4 cpu f64 i2.5e candidate 41.9161 64.2466 83.9757
+4 gpu f64 i0 candidate 2.06655 3.54717 3.86151
+4 gpu f64 i0 jax 1.60244 1.43343 2.89515
+4 gpu f64 i1 candidate 2.01274 3.4864 3.81823
+4 gpu f64 i1 jax 1.60287 2.89941 3.06019
+4 gpu f64 i0e candidate 1.59129 2.90927 3.24795
+4 gpu f64 i0e jax 1.47981 2.50606 2.72678
+4 gpu f64 i1e candidate 1.6088 2.85788 3.16551
+4 gpu f64 i1e jax 1.47354 2.71577 3.04455
+4 gpu f64 i2.5 candidate 3.31837 5.80163 6.31039
+4 gpu f64 i2.5e candidate 2.9128 5.19017 5.67054
+4 cpu f32 i0 candidate 5.08476 6.44087 10.3428
+4 cpu f32 i0 jax 2.70296 2.50248 4.86991
+4 cpu f32 i1 candidate 5.07881 6.22582 10.1939
+4 cpu f32 i1 jax 2.85456 4.5124 5.51595
+4 cpu f32 i0e candidate 2.75273 4.71577 6.88099
+4 cpu f32 i0e jax 2.16557 3.5932 4.09065
+4 cpu f32 i1e candidate 2.48215 4.79226 6.6759
+4 cpu f32 i1e jax 2.26395 3.85069 4.29648
+4 cpu f32 i2.5 candidate 17.3564 31.6832 37.4264
+4 cpu f32 i2.5e candidate 15.799 30.7514 33.8347
+4 gpu f32 i0 candidate 0.0355208 0.0384604 0.0671974
+4 gpu f32 i0 jax 0.0363296 0.0329418 0.0423997
+4 gpu f32 i1 candidate 0.037655 0.0370014 0.0658668
+4 gpu f32 i1 jax 0.0367456 0.0480251 0.0631123
+4 gpu f32 i0e candidate 0.0550383 0.0467049 0.0603306
+4 gpu f32 i0e jax 0.0631536 0.0452593 0.0624378
+4 gpu f32 i1e candidate 0.0525989 0.045023 0.041986
+4 gpu f32 i1e jax 0.0365607 0.0668393 0.0581823
+4 gpu f32 i2.5 candidate 0.0519069 0.0646736 0.0995867
+4 gpu f32 i2.5e candidate 0.035598 0.0524552 0.0760496
+4 cpu f64 i0 baseline 31.3114 34.667 58.9518
+4 cpu f64 i1 baseline 31.5119 34.2626 58.336
+4 cpu f64 i0e baseline 21.4176 27.9568 39.4368
+4 cpu f64 i1e baseline 21.3306 27.481 39.2912
+4 cpu f64 i2.5 baseline 56.8594 78.5863 115.138
+4 cpu f64 i2.5e baseline 49.7204 71.1185 97.6044
+4 gpu f64 i0 baseline 2.45994 4.29138 4.598
+4 gpu f64 i1 baseline 2.39272 4.19463 4.53525
+4 gpu f64 i0e baseline 2.05665 3.66471 4.00063
+4 gpu f64 i1e baseline 2.08026 3.60168 3.94311
+4 gpu f64 i2.5 baseline 3.69291 6.52531 7.02675
+4 gpu f64 i2.5e baseline 3.38241 5.92475 6.46404
+4 cpu f32 i0 baseline 6.81545 10.2358 14.7482
+4 cpu f32 i1 baseline 6.90768 8.72808 14.2279
+4 cpu f32 i0e baseline 4.86334 6.97616 10.705
+4 cpu f32 i1e baseline 4.9281 7.05908 10.3818
+4 cpu f32 i2.5 baseline 19.9466 33.7139 69.3998
+4 cpu f32 i2.5e baseline 22.6259 34.5921 36.9689
+4 gpu f32 i0 baseline 0.0345025 0.0604163 0.069097
+4 gpu f32 i1 baseline 0.0389089 0.0424661 0.0692504
+4 gpu f32 i0e baseline 0.0378116 0.0393389 0.0621326
+4 gpu f32 i1e baseline 0.0445994 0.0386485 0.0613577
+4 gpu f32 i2.5 baseline 0.0564078 0.0772252 0.102068
+4 gpu f32 i2.5e baseline 0.0370835 0.0648692 0.0810927

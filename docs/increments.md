@@ -1635,3 +1635,57 @@ Acceptance on main including #75: 834 non-slow tests pass, regeneration
 15 with the two usual skips. The family passes 30 tests each on JAX
 0.5.3 and 0.12.0.1; stricter relative tail checks pass on those and
 0.11. Formatting and diff checks pass.
+
+## 49. Direct scaled Bessel I tails (2026-11-08)
+
+Scaled I now fits A = sqrt(2 pi x) exp(-x) I_nu(x) directly in t = 8/x,
+instead of fitting its logarithm and exponentiating per element. A plain
+fit loses relative accuracy near x=8 at large orders, where A is small.
+Use A(nu,1) + (1-t) B(nu,t), fitting B and log A(nu,1) separately. The
+endpoint exponential is scalar, shared across the call, and constant-folds
+for fixed orders. Both the scalar and frozen APIs use the same formula.
+
+The new table samples 64 argument nodes and 40 order nodes at 40 dps,
+retaining 32 argument coefficients. Values use 32 terms in float64 and
+12 in float32, versus 48 and 24 before. Unscaled I uses the same shorter
+lengths of the original log table. It retains logarithmic reconstruction
+near overflow: splitting exp(x) into two exp(x/2) factors gives finite
+values but can overflow intermediates in reverse AD. The full original
+log tables still serve order derivatives and the correction near nu=0.
+
+[Experiment 39](../experiments/39_besseli_tail.py) measures speed against
+main after #77 and standard JAX, and separately checks values and two x
+derivatives against 60-dps references. The grids include both sides of
+x=8, orders through 10, derivative zeros, extreme scaled arguments, and
+the unscaled overflow windows. Relative errors exclude 1% windows around
+derivative zeros; absolute errors and unexpected nonfinites are recorded
+separately. Source hashes match between the
+[speed](../results/39_besseli_tail_speed_012.txt) and
+[accuracy](../results/39_besseli_tail_accuracy_012.txt) captures.
+
+For scaled I0/I1 tails across CPU and GPU, float64 relative value / first /
+second errors change from 4.4e-16 / 1.2e-15 / 2.1e-15 to
+4.4e-16 / 7.8e-16 / 1.0e-15. The full-grid worsts stay at
+1.4e-15 / 9.1e-15 / 3.0e-14, set by the unchanged inner approximation.
+Float32 tail values go from 2.1e-7 to 3.2e-7, while first and second
+derivatives stay below 5.6e-7. No original test bar is relaxed. Counts of
+unexpected nonfinites match the baseline, including the existing unscaled
+derivative limitations near overflow.
+
+Timing uses JAX 0.12.0.1, one i9-11980HK core at N=2^16 and the RTX 3080
+Laptop at N=2^20, x in [0,50], compilation excluded. Four rounds alternate
+source order; individual round medians are captured alongside their mean.
+Scaled I0/I1 values improve 1.8-1.9x in float64 and about 2x in float32 on
+CPU; value_and_grad improves 1.4x and 1.5x. Unscaled I0/I1 values improve
+1.3-1.4x. On float64 GPU, scaled values improve 1.3x and value_and_grad
+1.2x; unscaled values and value_and_grad improve about 1.2x. Float32 GPU
+values stay roughly at the baseline/native cost, with visible round-to-round
+variation. I1e's value_and_grad improves 1.5x there; I0e changes little.
+The order-2.5 control improves too. Standard JAX still leads most calls,
+but the scaled value gap is much smaller: float64 CPU I0e/I1e now take
+11.54/11.84 ns against JAX's 10.96/10.02; on GPU, 1.586/1.610 against
+1.475 for both JAX functions.
+
+Acceptance: 839 non-slow tests pass; regeneration passes 15 with the two
+usual skips. The family passes 35 tests on JAX 0.12.0.1; JAX 0.5.3 passes
+the same 35 plus five JAX/C++ baking checks. Formatting and diff checks pass.

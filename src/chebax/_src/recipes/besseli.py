@@ -5,7 +5,10 @@
 
 R is an entire 16-term series (10 in float32), avoiding the logarithm's
 nearby complex singularities and preserving the first two terms at zero.
-Lt = ln[sqrt(2 pi x) e^-x I_v]. The original inner log table is used for
+Lt = ln[sqrt(2 pi x) e^-x I_v]. Scaled tails use A(v,1) + (1-t) B(v,t),
+t = 8/x and A = exp(Lt), instead of exponentiating a log series per x.
+The endpoint anchor preserves relative accuracy near x=8 at large orders.
+Both tails have 32 terms (12 in float32). Full log tables retain stable
 order derivatives, whose near-zero correction needs that representation.
 
 sqrt(2 pi) and sqrt(x) stay separate, since 2 pi x overflows at x ~ 2.9e307.
@@ -122,7 +125,7 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 
-def _eval_value(v, inv_gamma, x, r, lt, scaled):
+def _eval_value(v, inv_gamma, x, r, tail_series, tail_edge, scaled):
     inner = x <= _it.XS
     xi = jnp.where(inner, x, _it.XS)
     xo = jnp.where(inner, _it.XS, x)
@@ -138,21 +141,33 @@ def _eval_value(v, inv_gamma, x, r, lt, scaled):
     z = xi * xi
     entire = 1.0 + (z / (4.0 * (v + 1.0))) * (1.0 + z * r(z))
     small = pref * inv_gamma * entire
-    tail = _tail_i(xo, lt(_it.XS / xo), scaled)
+    t = _it.XS / xo
     if scaled:
+        amplitude = tail_edge(0.0) + (1.0 - t) * tail_series(t)
+        tail = amplitude / (_SQRT_2PI * jnp.sqrt(xo))
         small = small * jnp.exp(-xi)
+    else:
+        # The logarithm keeps reverse AD finite near unscaled overflow.
+        tail = _tail_i(xo, tail_series(t), False)
     value = jnp.where(inner, small, tail)
     if not scaled:
         value = jnp.where(jnp.isinf(x), jnp.inf, value)
     return jnp.where(jnp.isnan(x), jnp.nan, value)
 
 
-def _value_series(v, reconstruct):
+def _value_series(v, reconstruct, scaled):
     f32 = canon_tag() == "float32"
-    n, nt = (10, 24) if f32 else (16, 48)
+    n, nt = (10, 12) if f32 else (16, 32)
+    table = _it.VALUE_TAIL if scaled else _it.TABLE_TAIL
+    edge = (
+        jnp.exp(reconstruct(_it.VALUE_EDGE_LOG, 0.0, _it.VMAX, v))
+        if scaled
+        else np.ones(1)
+    )
     return (
         ChebSeries(reconstruct(_it.VALUE_IN[:n], 0.0, _it.VMAX, v), (0.0, _it.ZMAX)),
-        ChebSeries(reconstruct(_it.TABLE_TAIL[:nt], 0.0, _it.VMAX, v), (0.0, 1.0)),
+        ChebSeries(reconstruct(table[:nt], 0.0, _it.VMAX, v), (0.0, 1.0)),
+        ChebSeries(edge),
     )
 
 
@@ -196,7 +211,7 @@ class BesselI(Recipe):
     """Callable I_v (or e^-x I_v if scaled) on x >= 0. Build with besseli_frozen()."""
 
     _static_fields = ("v", "scaled")
-    _series_fields = ("r", "lt")
+    _series_fields = ("r", "tail", "tail_edge")
 
     def _post_init(self):
         self.v = float(self.v)
@@ -205,7 +220,13 @@ class BesselI(Recipe):
 
     def __call__(self, x):
         return _eval_value(
-            self.v, self._inv_gamma, jnp.asarray(x), self.r, self.lt, self.scaled
+            self.v,
+            self._inv_gamma,
+            jnp.asarray(x),
+            self.r,
+            self.tail,
+            self.tail_edge,
+            self.scaled,
         )
 
 
@@ -272,7 +293,7 @@ def _besseli_cached(v, scaled, _tag):
     return BesselI(
         v,
         scaled,
-        *_value_series(v, param_coefs),
+        *_value_series(v, param_coefs, scaled),
     )
 
 
@@ -307,8 +328,8 @@ def _besseli_dnu_cached(v, scaled, _tag):
 
 def _besseli_impl(nu, x, scaled):
     inv_gamma = jnp.exp(-jax.scipy.special.gammaln(nu + 1.0))
-    r, lt = _value_series(nu, traced_coefs)
-    return _eval_value(nu, inv_gamma, x, r, lt, scaled)
+    r, tail, tail_edge = _value_series(nu, traced_coefs, scaled)
+    return _eval_value(nu, inv_gamma, x, r, tail, tail_edge, scaled)
 
 
 def _besseli_log_impl(nu, x, scaled):

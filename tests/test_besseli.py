@@ -372,17 +372,26 @@ def test_fractional_order_just_above_tiny():
             assert abs(float(g) / r - 1.0) <= bar, (v, x, k, float(g), r)
 
 
-@pytest.mark.parametrize("v", [0.0, 0.5, 1.0, 2.5, 10.0])
+@pytest.mark.parametrize("v", [0.0, 0.5, 1.0, 2.5, 9.97, 10.0])
 @pytest.mark.parametrize("scaled", [False, True])
 def test_factored_values_and_derivatives(v, scaled):
     """The x=8 seam, both sides; 60-dps refs, relative value bar 2e-14,
     first and second x-derivative bars 8e-14 and 4e-13 away from zeros.
-    Near derivative zeros use absolute bars 1e-16 and 2e-15. Experiment 38
-    records the measured floors; every result must be finite.
+    Near derivative zeros use absolute bars 1e-16 and 2e-15. Experiments 38/39
+    record the measured floors; every result must be finite.
     """
     seams = np.r_[np.sqrt(np.arange(1, 5) * 16), 8 / (np.arange(1, 5) / 4)]
     xs = np.unique(
-        np.r_[0.01, 0.5, 1.0, seams, seams * (1 - 1e-7), seams * (1 + 1e-7), 1e4]
+        np.r_[
+            0.01,
+            0.5,
+            1.0,
+            seams,
+            seams * (1 - 1e-7),
+            seams * (1 + 1e-7),
+            [8.08, 8.32, 9.04, 9.68, 10.32, 13.2],
+            1e4,
+        ]
     )
     with mp.workdps(60):
         refs = []
@@ -516,3 +525,79 @@ for n in (0,1):
         [sys.executable, "-c", code], env=env, capture_output=True, text=True
     )
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+def test_float32_tail_anchor(tmp_path):
+    """The direct tail must preserve small values near x=8 at large orders.
+    References at 60 dps and rounded inputs; worst 3.3e-6/3.4e-6/7.2e-6
+    for values and two x derivatives, bars 5e-6/1e-5/4e-5 for both paths.
+    """
+    import os
+    import subprocess
+    import sys
+
+    xs = np.array([8, 8.08, 8.32, 9.04, 9.68, 10.32, 13.2, 16, 32, 1e4], np.float32)
+    orders = np.array([0, 1, 9.97, 10], np.float32)
+    with mp.workdps(60):
+        refs = []
+        for n in orders:
+            nu = mp.mpf(float(n))
+            row = []
+            for t in xs:
+                x = mp.mpf(float(t))
+                y = mp.besseli(nu, x)
+                d1 = mp.besseli(nu + 1, x) + nu * y / x
+                d2 = (1 + nu * nu / (x * x)) * y - d1 / x
+                e = mp.exp(-x)
+                row.append(
+                    [float(y * e), float((d1 - y) * e), float((d2 - 2 * d1 + y) * e)]
+                )
+            refs.append(np.array(row).T)
+    path = tmp_path / "tail_refs.npz"
+    np.savez(path, xs=xs, orders=orders, refs=refs)
+    code = f"""
+import jax, jax.numpy as jnp, numpy as np, chebax
+data=np.load({str(path)!r})
+x=jnp.asarray(data['xs'])
+for n,ref in zip(data['orders'],data['refs']):
+    for f in (chebax.besseli_frozen(float(n),True),
+              lambda x:chebax.besseli_scalar(n,x,True)):
+        first=jax.grad(lambda x:f(x).sum())
+        second=jax.grad(lambda x:first(x).sum())
+        for fun,r,tol in zip((f,first,second),ref,(5e-6,1e-5,4e-5)):
+            got=np.asarray(jax.jit(fun)(x))
+            assert np.all(np.isfinite(got)), (n,got)
+            np.testing.assert_allclose(got,r,rtol=tol,atol=0)
+"""
+    env = {**os.environ, "JAX_PLATFORMS": "cpu", "JAX_ENABLE_X64": "false"}
+    run = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+
+
+@pytest.mark.parametrize("nu", [0.0, 1.0])
+def test_unscaled_tail_gradients_near_overflow(nu):
+    """Keep finite I0/I1 slopes near the overflow limit, with 60-dps refs.
+    Combined logarithmic reconstruction has a ~1e-13 floor; bar 5e-13.
+    """
+    xs = np.array([710.0, 713.0, 713.9, 713.95])
+    with mp.workdps(60):
+        refs = np.array(
+            [
+                [
+                    float(mp.besseli(nu, x)),
+                    float(mp.besseli(nu + 1, x) + nu * mp.besseli(nu, x) / x),
+                ]
+                for x in xs
+            ]
+        ).T
+    for f in (
+        chebax.besseli_frozen(nu),
+        lambda x: chebax.besseli_scalar(nu, x),
+    ):
+        first = jax.grad(lambda x: f(x).sum())
+        for fun, ref in zip((f, first), refs):
+            got = np.asarray(jax.jit(fun)(jnp.asarray(xs)))
+            assert np.all(np.isfinite(got))
+            np.testing.assert_allclose(got, ref, rtol=5e-13, atol=0)

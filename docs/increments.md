@@ -1690,24 +1690,32 @@ Acceptance: 839 non-slow tests pass; regeneration passes 15 with the two
 usual skips. The family passes 35 tests on JAX 0.12.0.1; JAX 0.5.3 passes
 the same 35 plus five JAX/C++ baking checks. Formatting and diff checks pass.
 
-## 50. Compensated exponential for unscaled I near overflow (2026-11-08)
+## 50. One compensated exponential for the unscaled I tail (2026-11-08)
 
-e^x overflows before I_v does (x = 88.7 in float32, 709.8 in float64), so
-past x = 80 (700) the unscaled tail is one exponential of x + s,
-s = ln(A / sqrt(2 pi x)).
-Rounding that sum costs up to half an ulp of x, relative: I0 and I1 were
-off by up to 8.5e-6 between x = 80 and 88.7 in float32 (0.5.0: 2.3e-7),
-and orders 0-10 by up to 1.5e-13 past x = 700 in float64.
-Fast2Sum recovers the rounding error lo of hi = x + s, and the tail is
-exp(hi) (1 + lo). The factors stay near I or near 1, so reverse-mode
-intermediates are finite wherever I is, which is what ruled out splitting
-e^x into exp(x/2)^2 (entry 49). lo is dropped once ulp(x) >= 1, where I
-has long overflowed.
+e^x overflows before I_v does (x = 88.7 in float32, 709.8 in float64). The
+unscaled tail, x > 8, was A / sqrt(2 pi x) times e^x up to x = 80 (700)
+and one exponential of x + s, s = ln(A / sqrt(2 pi x)), past it. Rounding
+x + s costs up to half an ulp of x, relative: I0 and I1 were off by up to
+8.5e-6 between x = 80 and 88.7 in float32 (0.5.0: 2.3e-7).
+
+TwoSum gives hi + lo = x + s exactly, and the whole unscaled tail is now
+exp(hi) (1 + lo): one exponential per element, where the two branches,
+both evaluated under the select, took three. The factors stay near I or
+near 1, so reverse-mode intermediates are finite wherever I is, which is
+what ruled out splitting e^x into exp(x/2)^2 (entry 49). lo is dropped
+once ulp(x) >= 1, where I has long overflowed.
+
+Keeping the old branch below the switch and compensating only above it
+kept that branch's accuracy but cost every gradient the reverse pass of
+both. With one formula, ln x rounds inside the exponent instead of sqrt(x)
+outside it, so below the switch the error grows by up to 2x at the level
+of float32 rounding. [Experiment 42](../experiments/42_besseli_unscaled_exp.py)
+measures main, the two-branch fix and this one:
+[results](../results/42_besseli_unscaled_exp.txt).
+
+RESULTS_PLACEHOLDER
 
 test_float32_overflow_window now covers x = 80.5 to 91.5 for I0 and I1,
 values and slopes: worst 2.6e-7 / 3.1e-7 (7.2e-6 before), bar 1.2e-6.
 test_unscaled_tail_gradients_near_overflow: 3.7e-16 (1.1e-13 before), bar
-1.5e-15. On a 1500-point float32 grid from 78 to 92.5, orders 0, 1, 2.5
-and 10, values and x-derivatives are within 7.7e-7 on CPU and GPU; the
-non-finite derivative counts near the top of the range are main's.
-Float64 from x = 690 to 714, same orders: 1.4e-15 (main 1.5e-13).
+1.5e-15.

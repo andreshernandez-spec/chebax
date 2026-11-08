@@ -491,7 +491,7 @@ def test_value_order_and_argument_tangents():
 def test_float32_overflow_window(tmp_path):
     """I_0/I_1 from x = 80, where exp(x) is split off, to x = 91.5, past
     exp's overflow at 88.7. Values and slopes at 60 dps; measured 2.6e-7 /
-    3.1e-7 (7.2e-6 before Fast2Sum), relative bar 1.2e-6.
+    3.1e-7 (7.2e-6 before the compensated exponential), relative bar 1.2e-6.
     """
     import os
     import subprocess
@@ -586,7 +586,8 @@ for n,ref in zip(data['orders'],data['refs']):
 @pytest.mark.parametrize("nu", [0.0, 1.0])
 def test_unscaled_tail_gradients_near_overflow(nu):
     """Keep finite I0/I1 slopes near the overflow limit, with 60-dps refs.
-    Measured 3.7e-16 (1.1e-13 before Fast2Sum); bar 1.5e-15.
+    Measured 3.7e-16 (1.1e-13 before the compensated exponential); bar
+    1.5e-15.
     """
     xs = np.array([710.0, 713.0, 713.9, 713.95])
     with mp.workdps(60):

@@ -49,9 +49,6 @@ from chebax._src.recipes._common import (
 from chebax._src.recipes.besselk import besselk_frozen, besselk_scalar
 from chebax._src.series import ChebSeries
 
-# e^x overflows at x ~ 709.78, I_v(x) only at x ~ 713
-_X_SPLIT_EXP = 700.0
-
 _SQRT_2PI = math.sqrt(2.0 * math.pi)
 _LOG_SQRT_2PI = 0.5 * math.log(2.0 * math.pi)
 
@@ -93,20 +90,18 @@ def _tail_i(x, log_value, scaled):
     if scaled:
         # Two square roots keep the denominator finite at the dtype's upper end.
         return jnp.exp(log_value) / (_SQRT_2PI * jnp.sqrt(x))
-    cap = _X_SPLIT_EXP if log_value.dtype == jnp.float64 else 80.0
-    xc = jnp.where(x > cap, cap, x)
-    split = jnp.exp(log_value) / jnp.sqrt(2 * jnp.pi * xc) * jnp.exp(xc)
-    # Past the cap e^x overflows before I_v does, so one exponential of x + s.
-    # Rounding x + s costs up to ulp(x)/2 relative (4e-6 at x = 85 in
-    # float32); Fast2Sum (x > |s|) recovers that error as lo. Every factor
-    # here is near 1 or near I, so reverse-mode intermediates stay finite.
-    # Once ulp(x) >= 1, lo is not small, but I_v overflowed long before.
+    # One exponential of x + s, s = ln(A / sqrt(2 pi x)), since e^x alone
+    # overflows before I_v does. Rounding x + s costs up to ulp(x)/2
+    # relative (4e-6 at x = 85 in float32); TwoSum recovers that error as
+    # lo. Every factor is near I or near 1, so reverse mode stays finite
+    # wherever I is. Once ulp(x) >= 1, lo is not small, but I_v overflowed
+    # long before.
     s = log_value - _LOG_SQRT_2PI - 0.5 * jnp.log(x)
     hi = x + s
-    lo = s - (hi - x)
+    sb = hi - x
+    lo = (x - (hi - sb)) + (s - sb)
     lo = jnp.where(jnp.abs(lo) < 1.0, lo, 0.0)
-    combined = jnp.exp(hi) * (1.0 + lo)
-    return jnp.where(x > cap, combined, split)
+    return jnp.exp(hi) * (1.0 + lo)
 
 
 def _eval_i(v, inv_gamma, x, lh, lt, scaled):

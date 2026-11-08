@@ -236,6 +236,38 @@ def test_besseli_ratio_endpoints():
     assert np.isnan(float(chebax.besseli_ratio(np.nan, 3.0)))
 
 
+def test_besseli_ratio_joint_gradient():
+    """value_and_grad in nu and x together never finished compiling on the
+    CPU while inf and nan had their own mask (nu or x alone: seconds). At
+    64 points it takes ~11 s now; a subprocess fails a stall at 300 s. The
+    joint gradient equals the two single ones, and is 0 in x at inf."""
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import jax, jax.numpy as jnp, numpy as np, chebax
+x=jnp.concatenate([jnp.linspace(0.0,50.0,62),jnp.asarray([1e35,jnp.inf])])
+f=lambda n,x:jnp.sum(chebax.besseli_ratio(n,x))
+_,(gn,gx)=jax.jit(jax.value_and_grad(f,(0,1)))(2.0,x)
+assert float(gn)==float(jax.jit(jax.grad(f,0))(2.0,x))
+assert np.array_equal(np.asarray(gx),np.asarray(jax.jit(jax.grad(f,1))(2.0,x)))
+assert np.all(np.isfinite(np.asarray(gx))) and float(gx[-1])==0.0
+"""
+    env = {**os.environ, "JAX_PLATFORMS": "cpu", "JAX_ENABLE_X64": "true"}
+    try:
+        run = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the joint gradient did not compile in 300 s")
+    assert run.returncode == 0, run.stdout + run.stderr
+
+
 def test_dnu_small_order():
     # the generic I * dlogI/dnu route cannot resolve dlnI/dnu just above
     # nu = 0: the tables' first nu-derivative carries ~3e-16 of ABSOLUTE

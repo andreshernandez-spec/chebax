@@ -458,8 +458,11 @@ def besseli_ratio(nu, x):
     x = jnp.asarray(x)
     near = x <= _RATIO_XS
     xs = jnp.where(near, x, 0.0)
-    # inf and nan take the dummy too, or their gradients come back nan
-    xt = jnp.where(near | ~jnp.isfinite(x), 2.0 * _RATIO_XS, x)
+    # The ratio is 1 to the last bit long before x = 1e30, so clamping there
+    # changes no value; inf and nan land there too, or their gradients come
+    # back nan. A second mask on x for them instead stalls the CPU compile of
+    # value_and_grad in nu and x (experiments/40); fmin does not.
+    xt = jnp.where(near, 2.0 * _RATIO_XS, jnp.fmin(x, 1e30))
     r = jnp.where(
         near,
         _ratio_series(nu, xs),

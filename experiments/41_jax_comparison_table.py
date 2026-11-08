@@ -17,8 +17,8 @@ family's own metric (defined in the two experiments and in the legend).
 WHAT IT DOES NOT ESTABLISH
 --------------------------
 Anything the two experiments do not: see their docstrings. The two runs are
-only comparable if they ran on the same chebax commit; the output names both
-commits and says so when they differ.
+only comparable if they ran on the same library code; the output names both
+commits and says whether their src/ trees differ.
 
 Run:
 
@@ -27,6 +27,7 @@ Run:
 
 import os
 import re
+import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 R33 = os.path.join(HERE, "..", "results", "33_jax_release_race.txt")
@@ -234,6 +235,19 @@ def commit_of(lines, tag):
     return sorted({re.search(r"chebax (\w+)", ln).group(1) for ln in runs})
 
 
+def same_src(commits):
+    """True when every commit holds the same src/ tree."""
+    trees = {
+        subprocess.run(
+            ["git", "-C", HERE, "rev-parse", f"{c}:src"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        for c in commits
+    }
+    return len(trees) == 1 and "" not in trees
+
+
 def main():
     l33 = open(R33).read().splitlines()
     l40 = open(R40).read().splitlines()
@@ -246,7 +260,10 @@ def main():
         "made by experiments/41_jax_comparison_table.py."
     )
     if c33 != c40 or len(c33) != 1:
-        print("\n**The two runs are on different chebax commits.**")
+        if same_src(c33 + c40):
+            print("\nThe two commits hold the same src/.")
+        else:
+            print("\n**The two runs are on different chebax code (src/ differs).**")
 
     print("\n## Speed\n")
     print(

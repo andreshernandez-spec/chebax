@@ -43,10 +43,10 @@ _frozen forms (iv, ive, kv) are timed beside it.
    apart, and the faster pass is kept: other jobs on the laptop slowed single
    cells by up to 20x in a one-pass run. Cells whose passes differ by more
    than 1.25x are listed in the results.
-3. Compile check: the ratio's value_and_grad in nu and x together does not
-   finish compiling on the CPU in 300 s, so the speed run skips that cell.
-   Mode "compile" times the ratio's gradient compiles by argument and device,
-   each in a child process stopped at 300 s.
+3. Compile check: mode "compile" times the ratio's value_and_grad compiles
+   by argument and device, each in a child process stopped at 300 s. Before
+   docs/increments.md entry 51 the gradient in nu and x together did not
+   finish compiling on the CPU.
 
 FINDINGS
 --------
@@ -138,9 +138,6 @@ CACHE = os.path.join(HERE, "..", "results", "40_cache")
 SIZES = {"cpu": 2**16, "gpu": 2**20}
 FAMILIES = ("jv", "yv", "iv", "ive", "kv", "kve", "logkv", "iratio")
 TRACED = ("iv", "ive", "kv", "kve", "logkv", "iratio")
-# the ratio's value_and_grad in nu and x together does not finish compiling on
-# the CPU (mode "compile"), so the speed run skips it there
-SKIP = {("iratio", "chebax_all", "cpu")}
 COMPILE_LIMIT = 300.0
 # every speed cell is timed in this many passes over all cells, the fastest kept
 PASSES = 2
@@ -493,9 +490,6 @@ def run(dname_dtype):
                     args = (nu, x)
                 rec = {"setting": label, "impl": iname, "device": dname, "n": n}
                 rows.append(rec)
-                if (fam, iname, dname) in SKIP:
-                    rec["skipped"] = "compile does not finish, see compile check"
-                    continue
                 try:
                     t0 = time.perf_counter()
                     cv = jax.jit(total).lower(*args).compile()
@@ -855,8 +849,6 @@ def report():
                         return "-"
                     if "error" in rec:
                         return "ERR " + rec["error"][:40]
-                    if "skipped" in rec:
-                        return "skipped (compile check)"
                     tv = f"{rec['t_v']:.3g}" if "t_v" in rec else "-"
                     if rec["impl"] == "scipy":
                         return tv

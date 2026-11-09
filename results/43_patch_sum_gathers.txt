@@ -1,0 +1,75 @@
+# 2026-11-09. before: chebax ff445c0 (main, 0.6.0); after: branch patch-sum-gathers. jax 0.11.0.
+# CPU: one core, taskset CPU 4 (SMT sibling 12 idle when chosen), 5 alternations. GPU: RTX 3080 Laptop, 3 alternations.
+
+N = 262144; ns per element = median over 5 alternated runs of the per-run median of 7 calls; devices ['cpu'], CPU core 4
+case                   device dtype version                ns vs before compile s  temp MiB block
+gammainc P             cpu    f32   before              309.1     1.00x       0.9        93     3
+gammainc P             cpu    f32   after               127.0     2.43x       1.0        42     0
+gammainc P             cpu    f32   other packing       126.5     2.44x       1.0        42     0
+gammainc P             cpu    f32   start patch_sum     129.1     2.39x       1.1        42     0
+gammainc P + grad      cpu    f32   before              377.6     1.00x       2.0       123     3
+gammainc P + grad      cpu    f32   after               366.5     1.03x       2.7       104     0
+gammainc P + grad      cpu    f32   other packing       432.9     0.87x       2.0        62     0
+gammainc P + grad      cpu    f32   start patch_sum     375.7     1.00x       2.7       104     0
+gammaincinv x          cpu    f32   before              332.4     1.00x       0.9       148     3
+gammaincinv x          cpu    f32   after               325.4     1.02x       0.8       148     3
+gammaincinv x          cpu    f32   other packing       334.7     0.99x       0.8       148     3
+gammaincinv x          cpu    f32   start patch_sum     179.3     1.85x       1.3        33     0
+gammaincinv x + grad   cpu    f32   before             1273.7     1.00x       5.5       220    18
+gammaincinv x + grad   cpu    f32   after               612.2     2.08x       6.3       165     3
+gammaincinv x + grad   cpu    f32   other packing       719.7     1.77x       6.2       165     3
+gammaincinv x + grad   cpu    f32   start patch_sum     575.1     2.21x       7.5       126     0
+gammainc P             cpu    f64   before              811.0     1.00x       0.9       382     3
+gammainc P             cpu    f64   after               360.9     2.25x       1.5        84     0
+gammainc P             cpu    f64   other packing       367.3     2.21x       1.6        84     0
+gammainc P             cpu    f64   start patch_sum     371.8     2.18x       1.6        84     0
+gammainc P + grad      cpu    f64   before             1235.5     1.00x       2.2       490     3
+gammainc P + grad      cpu    f64   after              1109.1     1.11x       2.6       128     0
+gammainc P + grad      cpu    f64   other packing      1758.3     0.70x       5.4       402     0
+gammainc P + grad      cpu    f64   start patch_sum    1153.3     1.07x       2.8       128     0
+gammaincinv x          cpu    f64   before             1756.9     1.00x       1.9       416     9
+gammaincinv x          cpu    f64   after              1445.1     1.22x       4.1       310     3
+gammaincinv x          cpu    f64   other packing      1495.6     1.17x       4.3       310     3
+gammaincinv x          cpu    f64   start patch_sum    1221.0     1.44x       4.5       118     0
+gammaincinv x + grad   cpu    f64   before             3502.1     1.00x       7.5       925    28
+gammaincinv x + grad   cpu    f64   after              2621.3     1.34x      15.0       418     3
+gammaincinv x + grad   cpu    f64   other packing      3087.0     1.13x      14.6       449     3
+gammaincinv x + grad   cpu    f64   start patch_sum    2310.2     1.52x      15.3       418     0
+
+N = 262144; ns per element = median over 3 alternated runs of the per-run median of 7 calls; devices ['gpu'], CPU core 6
+case                   device dtype version                ns vs before compile s  temp MiB block
+gammainc P             gpu    f64   before               14.0     1.00x       0.8        49     1
+gammainc P             gpu    f64   after                11.8     1.18x       3.1       117     0
+gammainc P             gpu    f64   other packing        11.5     1.22x       2.9       117     0
+gammainc P             gpu    f64   start patch_sum      11.8     1.19x       3.0       117     0
+gammainc P + grad      gpu    f64   before               33.6     1.00x       2.4       120     2
+gammainc P + grad      gpu    f64   after                29.6     1.14x       4.8       153     0
+gammainc P + grad      gpu    f64   other packing        34.1     0.98x       5.7       173     0
+gammainc P + grad      gpu    f64   start patch_sum      29.7     1.13x       4.8       153     0
+gammaincinv x          gpu    f64   before               49.0     1.00x       2.2        78     3
+gammaincinv x          gpu    f64   after                45.3     1.08x       5.6       141     1
+gammaincinv x          gpu    f64   other packing        44.7     1.10x       5.7       141     1
+gammaincinv x          gpu    f64   start patch_sum      44.9     1.09x       6.5       141     0
+gammaincinv x + grad   gpu    f64   before              116.2     1.00x       7.3       531    12
+gammaincinv x + grad   gpu    f64   after                81.1     1.43x      24.5       288     1
+gammaincinv x + grad   gpu    f64   other packing        83.8     1.39x      24.6       257     1
+gammaincinv x + grad   gpu    f64   start patch_sum      71.7     1.62x      17.7       288     0
+
+N = 4194304; ns per element = median over 3 alternated runs of the per-run median of 7 calls; devices ['gpu'], CPU core 6
+case                   device dtype version                ns vs before compile s  temp MiB block
+gammainc P             gpu    f32   before                1.1     1.00x       0.7       228     1
+gammainc P             gpu    f32   after                 1.0     1.14x       1.5       484     0
+gammainc P             gpu    f32   other packing         1.0     1.14x       1.5       484     0
+gammainc P             gpu    f32   start patch_sum       1.0     1.16x       1.6       484     0
+gammainc P + grad      gpu    f32   before                2.4     1.00x       2.2       620     2
+gammainc P + grad      gpu    f32   after                 2.6     0.93x       3.2      1208     0
+gammainc P + grad      gpu    f32   other packing         1.9     1.26x       2.7       684     0
+gammainc P + grad      gpu    f32   start patch_sum       2.6     0.92x       3.4      1208     0
+gammaincinv x          gpu    f32   before                1.2     1.00x       0.9       264     1
+gammaincinv x          gpu    f32   after                 1.2     0.97x       0.8       264     1
+gammaincinv x          gpu    f32   other packing         1.2     0.99x       0.9       264     1
+gammaincinv x          gpu    f32   start patch_sum       2.3     0.52x       2.3      1440     0
+gammaincinv x + grad   gpu    f32   before                8.7     1.00x       5.2      1900    14
+gammaincinv x + grad   gpu    f32   after                 3.1     2.82x       7.9       940     1
+gammaincinv x + grad   gpu    f32   other packing         3.7     2.38x       7.9      1152     1
+gammaincinv x + grad   gpu    f32   start patch_sum       3.8     2.30x       8.1      1444     0

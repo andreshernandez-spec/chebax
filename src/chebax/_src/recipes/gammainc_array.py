@@ -1,8 +1,9 @@
 """Per-element gammainc: P, Q and their logs with a different a >= 0.1 on every
 element (chebax.gammainc_array; inputs normalized in gammainc.py). Per element:
 pick the zone, locate one 2-D Chebyshev patch of gammainc_array_gen's table
-(zones and formulas in its docstring), sum its KY x KP block, add the zone's
-prefactor. No lgamma, no loop. float32 uses the leading KY32 x KP32 block.
+(zones and formulas in its docstring), sum its KY x KP block (_common.patch_sum),
+add the zone's prefactor. No lgamma, no loop. float32 uses the leading KY32 x KP32
+block.
 
 Each zone forms its small probability directly as a log and the other as
 log1p(-exp(direct)). That loses only in A0, where Q falls to 0.024 (a = 0.1,
@@ -25,7 +26,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_array_table as _t
-from chebax._src.recipes._common import cheb_basis, edge_slope, locate_patch
+from chebax._src.recipes._common import edge_slope, locate_patch, patch_sum
 from chebax._src.recipes.erf_family import erfcx
 from chebax._src.recipes.gammaincinv_kernel import log_xpdf
 
@@ -44,7 +45,7 @@ def _tables(dtype):
     return np.ascontiguousarray(tab, dt), _t.PCUTS.astype(dt), _t.YCUTS.astype(dt)
 
 
-_basis, _locate = cheb_basis, locate_patch
+_locate = locate_patch
 
 
 def _log1p(x):
@@ -155,7 +156,6 @@ def _log_pq(a, x, d=None):
     held exactly, read instead of x for a >= 1 (gammaincinv_array's derivative
     needs it where one float step of x spans the distribution, a ~ 1e35)."""
     tab, pcuts, ycuts = (jnp.asarray(v) for v in _tables(a.dtype.name))
-    ky, kp = tab.shape[1:]
     npar, narg, offset = (jnp.asarray(v) for v in (_t.NPAR, _t.NARG, _t.OFFSET))
 
     good_a = (a >= _t.ALO) & (a < jnp.inf)
@@ -211,8 +211,7 @@ def _log_pq(a, x, d=None):
     )
     i, sp = _locate(par, pcuts[zone], npar[zone])
     j, sy = _locate(arg, ycuts[zone], narg[zone])
-    block = tab[offset[zone] + i * narg[zone] + j]
-    f = jnp.einsum("...kj,...k,...j->...", block, _basis(sy, ky), _basis(sp, kp))
+    f = patch_sum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
 
     ln_a = jnp.log(a)
     half_ln_2pi_a = 0.5 * (ln_a + _LN2PI)

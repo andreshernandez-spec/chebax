@@ -1748,3 +1748,49 @@ The joint gradient now compiles in 10 s at 2^16 points, the cost of the
 nu-gradient alone. At 8 points both take ~43 s, on main too; that is the
 nu-gradient path's, not this change's. test_besseli_ratio_joint_gradient
 compiles it at 64 points (~11 s) in a subprocess stopped at 300 s.
+
+## 52. One gather per coefficient in gammainc_array's patch sum (2026-11-09)
+
+gammainc_array summed each element's patch by gathering its [k, j] coefficient
+block and contracting it with an einsum. XLA lowers that einsum to a batched
+dot, which cannot fuse with the gather, so the block is written to memory for
+every element and read back: three [N, 12, 12] results in the compiled
+float64 program, 382 MiB of temporaries at N = 2^18 on the CPU
+(experiments/43). `_common.patch_sum` gathers each coefficient on its own
+from the flat table, which XLA fuses with the basis recurrences into one
+loop: no block, 84 MiB.
+
+Its custom JVP returns the value and both coordinate derivatives from the
+same pass. As three results XLA keeps the gathered coefficients for the
+reverse pass (402 MiB, value_and_grad 0.70x main on the float64 CPU);
+stacked as one [..., 3] array behind an optimization barrier it does not
+(128 MiB, 1.11x). On the CPU that pays for the 12 x 12 float64 block and not
+for the 7 x 7 float32 one (1.03x unpacked, 0.87x packed), so blocks over 512
+bytes are packed. The float32 GPU prefers the other choice (0.93x unpacked,
+1.26x packed); the CPU decides here.
+
+gammaincinv's start table keeps its block and einsum. On patch_sum it is
+1.85x faster on the float32 CPU, but 0.52x on the float32 GPU at N = 2^22,
+where XLA's GPU fusion holds 1,440 MiB of temporaries for it (264 before).
+gammaincinv_array still gains through gammainc_array's _log_pq, which its
+Newton steps and derivative evaluate.
+
+Speed against main, experiments/43 (one CPU core, 5 alternations; GPU at
+2^18 in float64, 2^22 in float32, 3 alternations):
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| gammainc_array value | 2.25x | 2.43x | 1.18x | 1.14x |
+| gammainc_array value_and_grad | 1.11x | 1.03x | 1.14x | 0.93x |
+| gammaincinv_array value | 1.22x | 1.02x | 1.08x | 0.97x |
+| gammaincinv_array value_and_grad | 1.34x | 2.08x | 1.43x | 2.82x |
+
+Compilation takes longer: gammainc_array's value 0.9 -> 1.5 s on the float64
+CPU and 0.8 -> 3.1 s on the GPU; gammaincinv_array's value_and_grad 7.5 ->
+15.0 s on the CPU and 7.3 -> 24.5 s on the GPU.
+
+Values and derivatives move by rounding only; the family tests pass with
+their bars unchanged. test_patch_sum_against_chebval2d checks the sum, its
+coordinate derivatives in both modes and a table tangent against numpy's
+chebval2d for both branches: 2.2e-16 (bar 1e-15), table 6.4e-15 (bar
+2.5e-14).

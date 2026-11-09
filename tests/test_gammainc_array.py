@@ -25,6 +25,13 @@ x/a underflowing): float64 2.2e-16, bar 1e-15; float32 1.0e-7, bar 4e-7,
 in forward and reverse mode. The ends of each dtype's range are checked
 for nan in both modes. The IEEE endpoints and the x = 0 slopes are exact,
 so those tests assert equality.
+
+_common.patch_sum, the per-element patch sum, against numpy's chebval2d and
+chebder on 300 random patches and points, for the table's 12 x 12 blocks (its
+derivatives packed) and their leading 7 x 7 (not packed), |err| / max(1, |ref|):
+values and coordinate derivatives, forward and reverse, 2.2e-16, bar 1e-15; a
+random table tangent forward 6.4e-15, bar 2.5e-14; the table gradient in reverse
+against its exact scatter 7.8e-16, bar 2.5e-14 (one bar for both table checks).
 """
 
 import os
@@ -504,3 +511,64 @@ def test_density_in_mixed_underflow_lanes():
                 rtol=5e-13,
                 atol=0,
             )
+
+
+@pytest.mark.parametrize("ky", [12, 7])
+def test_patch_sum_against_chebval2d(ky):
+    from numpy.polynomial import chebyshev
+
+    from chebax._src.recipes._common import patch_sum
+
+    rng = np.random.default_rng(ky)
+    tab = np.ascontiguousarray(t.TABLE[:, :ky, :ky])
+    m = 300
+    n, sy, sp = (
+        rng.integers(0, len(tab), m),
+        rng.uniform(-1, 1, m),
+        rng.uniform(-1, 1, m),
+    )
+    dtab, w = rng.normal(size=tab.shape), rng.normal(size=m)
+
+    def ref(c, dk=0, dj=0):
+        c = chebyshev.chebder(chebyshev.chebder(c, dk, axis=0), dj, axis=1)
+        return chebyshev.chebval2d(sy_i, sp_i, c)
+
+    refs = {key: [] for key in ("f", "fy", "fp", "ft")}
+    for i in range(m):
+        sy_i, sp_i = sy[i], sp[i]
+        refs["f"].append(ref(tab[n[i]]))
+        refs["fy"].append(ref(tab[n[i]], dk=1))
+        refs["fp"].append(ref(tab[n[i]], dj=1))
+        refs["ft"].append(ref(dtab[n[i]]))
+    refs = {key: np.array(v) for key, v in refs.items()}
+    t_ref = np.zeros_like(tab)
+    basis = chebyshev.chebvander2d(sy, sp, [ky - 1, ky - 1]).reshape(m, ky, ky)
+    np.add.at(t_ref, n, w[:, None, None] * basis)
+
+    T, N, Y, P = (jnp.asarray(v) for v in (tab, n, sy, sp))
+    one = jnp.ones_like(Y)
+
+    def err(v, r):
+        v = np.asarray(v)
+        assert np.all(np.isfinite(v))
+        return np.max(np.abs(v - r) / np.maximum(1.0, np.abs(r)))
+
+    assert err(jax.jit(patch_sum)(T, N, Y, P), refs["f"]) < 1e-15
+    assert (
+        err(jax.jvp(lambda y: patch_sum(T, N, y, P), (Y,), (one,))[1], refs["fy"])
+        < 1e-15
+    )
+    assert (
+        err(jax.jvp(lambda p: patch_sum(T, N, Y, p), (P,), (one,))[1], refs["fp"])
+        < 1e-15
+    )
+    gy, gp = jax.grad(lambda y, p: patch_sum(T, N, y, p).sum(), argnums=(0, 1))(Y, P)
+    assert err(gy, refs["fy"]) < 1e-15
+    assert err(gp, refs["fp"]) < 1e-15
+    dT = jnp.asarray(dtab)
+    assert (
+        err(jax.jvp(lambda tb: patch_sum(tb, N, Y, P), (T,), (dT,))[1], refs["ft"])
+        < 2.5e-14
+    )
+    gt = jax.grad(lambda tb: (patch_sum(tb, N, Y, P) * w).sum())(T)
+    assert err(gt, t_ref) < 2.5e-14

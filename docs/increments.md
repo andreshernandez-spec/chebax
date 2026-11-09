@@ -1794,3 +1794,59 @@ their bars unchanged. test_patch_sum_against_chebval2d checks the sum, its
 coordinate derivatives in both modes and a table tangent against numpy's
 chebval2d for both branches: 2.2e-16 (bar 1e-15), table 6.4e-15 (bar
 2.5e-14).
+
+## 53. gammaln from octave panels (2026-11-10)
+
+`chebax.gammaln(x)`, log Gamma for x >= 0, with digamma as its derivative.
+Below 64, each octave of [1, 64) is cut into 32 equal panels of 8 Chebyshev
+terms: g = lgamma / ((x - 1)(x - 2)) on [1, 4), smooth through the zeros at 1
+and 2 so the product keeps relative accuracy next to them, and lgamma on
+[4, 64). Below 1, lgamma(x + 1) - log x. From 64 up, four terms of Stirling's
+series. The octave and the panel come from the exponent bits.
+
+Panels are octave fractions because a panel's series converges at a rate set
+by its width over x, and the derivative shows it first: equal panels of 1/4 on
+[3, 13) and of 1 on [13, 64) held lgamma to 3.5e-16 but its derivative only to
+9.0e-14 at x = 3 (experiments/44, layouts).
+
+XLA evaluates every branch of a select for every element, so the value's
+branches share one log (below 1 and Stirling's) and one division (Stirling's).
+The compiled program has one log and one divide per element; jax's gammaln has
+two logs, a log1p, a sine and nine divides.
+
+The derivative comes from its own table, PSI: digamma on the same panels, nine
+terms (the ninth keeps trigamma, its derivative by AD, at 7.1e-16 instead of
+6.2e-14). Taken from the value's series instead, a program returning value and
+gradient reads the gathered coefficients twice, and XLA writes them to memory
+(80 MiB at N = 2^20) instead of fusing them into either consumer: 39 ns per
+element against 16 on one float64 CPU core. With its own table, each path has
+its own log and division and fuses alone. value_and_grad compiles to two logs
+and two divides; jax's to two logs, a log1p, two sines, a cosine and twenty
+divides.
+
+The coefficients are gathered one at a time on the CPU and as one row per
+element elsewhere, picked by `lax.platform_dependent` when the program is
+lowered. On the GPU, the per-coefficient gathers have XLA write their shared
+index to memory first, and float32 values ran at 0.56x jax's. On the CPU the
+row gather is 1.6-5.3x slower. CI runs on the CPU only, so
+test_row_gather_matches_per_coefficient runs the row form there.
+
+Accuracy against mpmath (tests/test_gammaln.py): float64 value 3.5e-16
+relative, 1 +- 10^-k and 2 +- 10^-k included; digamma 3.9e-16 (absolute near
+its zero at 1.4616); trigamma 7.2e-16. Float32 (4 and 5 terms): 1.7e-7,
+1.2e-7, 1.8e-7. jax's gammaln is only absolutely accurate next to 1 and 2,
+with relative errors of 10 and 13 one ulp from them, and its digamma reaches
+2.0e-14 (experiments/44). Below 0 the result is nan, where jax's gives
+log|Gamma(x)|. Subnormal x is 0 to XLA, so gammaln is inf there, as jax's is.
+
+Speed against jax.scipy.special.gammaln, experiments/44 (log-uniform x in
+[1e-3, 1e4); N = 2^20 on one CPU core, 2^22 on the GPU):
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| value | 3.66x | 2.77x | 2.39x | 1.12x |
+| value_and_grad | 4.36x | 4.95x | 2.28x | 1.71x |
+
+Float32 values on the GPU take 0.03 ns per element for both, about 270 GB/s
+for the 8 bytes each element reads and writes. Compiling takes under 0.25 s
+for both, on either device.

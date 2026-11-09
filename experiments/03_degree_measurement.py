@@ -14,7 +14,7 @@ project's own regenerability rule — this script fixes that.
 Run everything:      python experiments/03_degree_measurement.py
 One family:          python experiments/03_degree_measurement.py besselk
 Families: besselj besselk besseli bessely betainc gammainc gammainc_array
-stdtr vonmises erf
+stdtr vonmises erf gammaln
 
 WHAT THIS DOES NOT ESTABLISH
 ----------------------------
@@ -204,10 +204,19 @@ def erf():
         report(f"erfcx panel {j} t-dir", fit_axis(h, 24, j / 32, (j + 1) / 32), [7, 8, 9])
 
 
+def gammaln():
+    # the series error those terms leave, and the layout they replaced, are experiments/44
+    print("gammaln (claims: 1/32-octave panels, 8 terms for lgamma and 9 for digamma)")
+    g = lambda x: mp.loggamma(x) / ((x - 1) * (x - 2))
+    for name, f, lo in (("g", g, 1), ("lgamma", mp.loggamma, 4), ("digamma", mp.digamma, 1)):
+        hi = lo * (1 + mp.mpf(1) / 32)  # the first panel of an octave is the widest relative to x
+        report(f"{name} panel [{lo}, {float(hi):g}]", fit_axis(f, 24, lo, hi), [6, 7, 8])
+
+
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
             "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
             "gammainc_array": gammainc_array, "stdtr": stdtr,
-            "vonmises": vonmises, "erf": erf}
+            "vonmises": vonmises, "erf": erf, "gammaln": gammaln}
 
 if __name__ == "__main__":
     picks = sys.argv[1:] or list(FAMILIES)

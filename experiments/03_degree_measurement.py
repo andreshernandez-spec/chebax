@@ -208,7 +208,9 @@ def gammaln():
     # the series error those terms leave, and the layout they replaced, are experiments/44
     print("gammaln (claims: 1/32-octave panels, 8 terms for lgamma and 9 for digamma)")
     g = lambda x: mp.loggamma(x) / ((x - 1) * (x - 2))
-    for name, f, lo in (("g", g, 1), ("lgamma", mp.loggamma, 4), ("digamma", mp.digamma, 1)):
+    x0 = mp.findroot(mp.digamma, mp.mpf("1.4616"))
+    r = lambda x: mp.digamma(x) / (x - x0)  # PSI on [1, 2)
+    for name, f, lo in (("g", g, 1), ("lgamma", mp.loggamma, 4), ("psi/(x-x0)", r, 1), ("digamma", mp.digamma, 2)):
         hi = lo * (1 + mp.mpf(1) / 32)  # the first panel of an octave is the widest relative to x
         report(f"{name} panel [{lo}, {float(hi):g}]", fit_axis(f, 24, lo, hi), [6, 7, 8])
 

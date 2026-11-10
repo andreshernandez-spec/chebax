@@ -1,16 +1,16 @@
-"""gammaln acceptance: values, digamma (its derivative) and trigamma (the
-second), against mpmath at 40 dps.
+"""gammaln and digamma acceptance: lgamma, digamma (gammaln's derivative)
+and trigamma (digamma's), against mpmath at 40 dps.
 
-Values are pointwise-relative everywhere, next to the zeros at 1 and 2
-included (1 +- 10^-k), and exact zeros there. Digamma is relative except
-within 0.05 of its zero at 1.4616, where it is absolute; trigamma is
-relative. The grid holds every panel edge and its neighbours, the points
-below 1 whose x + 1 is a first-octave edge, both sides of the Stirling
-seam at 64, and log-spaced points from 1e-300 to 1e300.
+All three are pointwise-relative everywhere: lgamma next to its zeros at 1
+and 2 (1 +- 10^-k, exact zeros there), digamma next to its zero X0 = 1.4616
+(X0 +- 10^-k and the floats around it). The grid holds every panel edge
+and its neighbours, the points below 1 whose x + 1 is a first-octave edge,
+both sides of the Stirling seam at 64, and log-spaced points from 1e-300
+to 1e300.
 
-Worst on this grid, the same on jax 0.11 and 0.5.3: float64 value 3.5e-16,
-digamma 3.9e-16, trigamma 7.2e-16 (bars 1.4e-15, 1.6e-15, 3e-15); float32
-1.7e-7, 1.2e-7, 1.8e-7 (bars 7e-7, 5e-7, 7e-7). The grid stops at the
+Worst on this grid, the same on jax 0.11 and 0.5.3: float64 lgamma 3.5e-16,
+digamma 5.8e-16, trigamma 7.2e-16 (bars 1.4e-15, 2.4e-15, 3e-15); float32
+1.7e-7, 1.4e-7, 1.8e-7 (bars 7e-7, 6e-7, 7e-7). The grid stops at the
 smallest normal (XLA flushes subnormal x to 0, where lgamma is inf), and
 trigamma is checked only where x^2 is normal.
 """
@@ -32,7 +32,7 @@ from chebax._src.recipes import gammaln_table as gt
 mp = pytest.importorskip("mpmath")
 mp.mp.dps = 40
 
-X0 = 1.4616321449683623  # digamma's positive zero
+X0 = 1.4616321449683622  # digamma's positive zero, rounded
 
 
 def _grid(dtype):
@@ -43,8 +43,10 @@ def _grid(dtype):
     pts += [np.nextafter(below, -1), np.nextafter(below, 2)]
     eps_k = range(1, 16) if dtype == np.float64 else range(1, 8)
     pts += [
-        np.array([c + d * 10.0**-k]) for c in (1, 2) for d in (-1, 1) for k in eps_k
+        np.array([c + d * 10.0**-k]) for c in (1, 2, X0) for d in (-1, 1) for k in eps_k
     ]
+    x0 = np.asarray(X0, dtype)
+    pts += [np.array([x0, np.nextafter(x0, 0), np.nextafter(x0, 2)])]
     pts += [np.geomspace(1e-300 if dtype == np.float64 else 1e-37, 1, 40)]
     pts += [np.geomspace(64, 1e300 if dtype == np.float64 else 1e36, 40)]
     x = np.unique(np.concatenate(pts).astype(dtype))
@@ -68,26 +70,40 @@ def _errors(x, got, ref, tiny):
     zero = ref[0] == 0
     assert np.all(got[0][zero] == 0), x[zero & (got[0] != 0)]
     e = [np.abs(got[0] - ref[0])[~zero] / np.abs(ref[0][~zero])]
-    near = np.abs(x - X0) < 0.05
-    e.append(np.abs(got[1] - ref[1]) / np.where(near, 1.0, np.abs(ref[1])))
+    e.append(np.abs(got[1] - ref[1]) / np.abs(ref[1]))
     t = x >= tiny
     e.append(np.abs(got[2][t] - ref[2][t]) / ref[2][t])
     return [float(v.max()) for v in e]
 
 
-def _evaluate(f, x):
-    d1 = jax.vmap(jax.grad(f))
-    d2 = jax.vmap(jax.grad(jax.grad(f)))
-    return [np.asarray(jax.jit(g)(jnp.asarray(x))) for g in (f, d1, d2)]
+def _evaluate(x):
+    funs = (chebax.gammaln, chebax.digamma, jax.vmap(jax.grad(chebax.digamma)))
+    return [np.asarray(jax.jit(f)(jnp.asarray(x))) for f in funs]
 
 
 def test_values_and_derivatives():
-    got = _evaluate(chebax.gammaln, X)
+    got = _evaluate(X)
     for k, g in enumerate(got):
         fine = X >= 1e-150 if k == 2 else np.ones(X.shape, bool)
         assert np.all(np.isfinite(g[fine])), (k, X[fine & ~np.isfinite(g)])
     errs = _errors(X, got, _refs(X), 1e-150)
-    assert np.all(np.array(errs) <= [1.4e-15, 1.6e-15, 3e-15]), errs
+    assert np.all(np.array(errs) <= [1.4e-15, 2.4e-15, 3e-15]), errs
+
+
+def test_gammaln_derivatives_are_digammas():
+    x = jnp.asarray(X[X >= 1e-150])
+    pairs = (
+        (jax.vmap(jax.grad(chebax.gammaln)), chebax.digamma),
+        (
+            jax.vmap(jax.grad(jax.grad(chebax.gammaln))),
+            jax.vmap(jax.grad(chebax.digamma)),
+        ),
+    )
+    # one program each: 1 ulp apart at a few points
+    for f, g in pairs:
+        np.testing.assert_allclose(
+            np.asarray(jax.jit(f)(x)), np.asarray(jax.jit(g)(x)), rtol=5e-16, atol=0
+        )
 
 
 def test_eager_matches_jit():
@@ -118,15 +134,15 @@ def test_row_gather_matches_per_coefficient():
 
 
 def test_edges_of_the_domain():
-    f = chebax.gammaln
-    df = jax.grad(f)
+    f, df, d2f = chebax.gammaln, chebax.digamma, jax.grad(chebax.digamma)
     assert float(f(1.0)) == 0.0 and float(f(2.0)) == 0.0
     for x in (0.0, -0.0, np.inf):
         assert float(f(x)) == np.inf
-    assert float(df(0.0)) == -np.inf
-    assert float(df(np.inf)) == np.inf
+    assert float(df(0.0)) == -np.inf and float(d2f(0.0)) == np.inf
+    assert float(df(np.inf)) == np.inf and float(jax.grad(f)(np.inf)) == np.inf
     for x in (-0.5, -1.0, -np.inf, np.nan):
-        assert np.isnan(float(f(x))) and np.isnan(float(df(x)))
+        for g in (f, df, d2f, jax.grad(f)):
+            assert np.isnan(float(g(x)))
     # past the largest float: lgamma(2.5e305) = 1.76e308, lgamma(2.6e305) overflows
     assert float(f(2.6e305)) == np.inf
     want = float(mp.loggamma(mp.mpf(2.5e305)))
@@ -144,8 +160,7 @@ _F32 = """
 import numpy as np, jax, jax.numpy as jnp, chebax, json, sys
 assert jnp.empty(()).dtype == jnp.float32
 x = jnp.asarray(np.array(json.loads(sys.stdin.read()), np.float32))
-f = chebax.gammaln
-outs = [f(x), jax.vmap(jax.grad(f))(x), jax.vmap(jax.grad(jax.grad(f)))(x)]
+outs = [chebax.gammaln(x), chebax.digamma(x), jax.vmap(jax.grad(chebax.digamma))(x)]
 assert all(o.dtype == jnp.float32 for o in outs)
 print(json.dumps([np.asarray(o, float).tolist() for o in outs]))
 """
@@ -168,7 +183,7 @@ def test_float32():
     got = [np.array(v) for v in json.loads(out.stdout)]
     tiny = 2 * np.sqrt(np.finfo(np.float32).tiny)  # x^2 stays normal
     errs = _errors(x.astype(float), got, _refs(x), tiny)
-    assert np.all(np.array(errs) <= [7e-7, 5e-7, 7e-7]), errs
+    assert np.all(np.array(errs) <= [7e-7, 6e-7, 7e-7]), errs
 
 
 @pytest.mark.slow

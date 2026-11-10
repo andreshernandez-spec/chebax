@@ -88,4 +88,5 @@ erf family (claims: dawsn E 37 / G 10, seam 6; erfcx 32 t-panels in t = 3/(3+x),
 gammaln (claims: 1/32-octave panels, 8 terms for lgamma and 9 for digamma)
   g panel [1, 1.03125]: last>1e-15 at k=6  a[6]=4.8e-14  a[7]=3.3e-16  a[8]=2.2e-18
   lgamma panel [4, 4.125]: last>1e-15 at k=6  a[6]=5.3e-14  a[7]=3.2e-16  a[8]=2.0e-18
-  digamma panel [1, 1.03125]: last>1e-15 at k=7  a[6]=7.5e-13  a[7]=5.7e-15  a[8]=4.4e-17
+  psi/(x-x0) panel [1, 1.03125]: last>1e-15 at k=7  a[6]=2.3e-13  a[7]=1.7e-15  a[8]=1.3e-17
+  digamma panel [2, 2.0625]: last>1e-15 at k=7  a[6]=4.9e-13  a[7]=3.7e-15  a[8]=2.8e-17

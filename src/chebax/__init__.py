@@ -31,7 +31,7 @@ _LAZY = {
         "besseli_scalar",
     ),
     "chebax._src.recipes.erf_family": ("dawsn", "erfcx"),
-    "chebax._src.recipes.gammaln": ("gammaln",),
+    "chebax._src.recipes.gammaln": ("digamma", "gammaln"),
     "chebax._src.recipes.lambertw": ("lambertw",),
     "chebax._src.recipes.matern": ("matern",),
     "chebax._src.recipes.spherical": (
@@ -142,6 +142,7 @@ __all__ = [
     "chi2inv_array",
     "chi2inv_scalar",
     "dawsn",
+    "digamma",
     "erfcx",
     "fit",
     "gammainc",
@@ -250,7 +251,7 @@ if TYPE_CHECKING:
         besseli_scalar,
     )
     from chebax._src.recipes.erf_family import dawsn, erfcx
-    from chebax._src.recipes.gammaln import gammaln
+    from chebax._src.recipes.gammaln import digamma, gammaln
     from chebax._src.recipes.lambertw import lambertw
     from chebax._src.recipes.matern import matern
     from chebax._src.recipes.spherical import (

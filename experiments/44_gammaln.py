@@ -1,11 +1,14 @@
-"""gammaln from Chebyshev panels against jax's gammaln (XLA's Lanczos lgamma): the
-panel layout, the operations each compiles to, accuracy against mpmath, and speed of
-the value and of value_and_grad on one CPU core and on the GPU, float64 and float32.
+"""gammaln and digamma from Chebyshev panels against jax's (XLA's Lanczos lgamma and
+its digamma): the panel layout, the operations each compiles to, accuracy against
+mpmath, and speed of the value and of value_and_grad on one CPU core and on the GPU,
+float64 and float32.
 
 chebax.gammaln reads lgamma from panels of 1/32 octave on [1, 64) (below 1 through
 lgamma(x + 1) - log x) and uses Stirling's series from 64 up. XLA computes every
 branch for every element, so the branches share one log and one division. The
-derivative, digamma, comes from its own panel table (PSI): read from the derivative of
+derivative, digamma (also public), comes from its own panel table (PSI), whose first
+octave holds digamma / (x - X0) to keep relative accuracy next to the zero X0. Read
+from the derivative of
 the value's series instead ("value-series derivative" below), the program returning
 value and gradient reads the gathered coefficients twice, and XLA writes them to
 memory instead of fusing them. The coefficients are gathered one at a time on the CPU
@@ -20,13 +23,15 @@ Sections:
             series, and that series' derivative against trigamma. Nine points a panel,
             both edges included. Digamma's error is relative, except absolute within
             0.05 of its zero at 1.4616 (relative there measures nothing).
-  ops       transcendental and divide instructions in the compiled CPU programs.
+  ops       transcendental and divide instructions in the compiled CPU programs, for
+            gammaln and for chebax.digamma against jax's digamma.
   accuracy  the runtime against mpmath (50 digits) on ~4,400 points in float64:
-            bands of (0, 64) and log-uniform above, 1 +- 10^-k and 2 +- 10^-k, the
-            panel edges. jax's gammaln, digamma and trigamma (its second
-            derivative) beside it.
+            bands of (0, 64) and log-uniform above, 1 +- 10^-k, 2 +- 10^-k and
+            X0 +- 10^-k (digamma's zero), the panel edges; all relative. chebax's
+            and jax's gammaln, digamma and digamma's derivative (trigamma).
   speed     ns per element at N = 2^20 (CPU) or 2^22 (GPU), median over E44_REPS
-            alternations of the best of 7 calls; value_and_grad of sum(gammaln(x)).
+            alternations of the best of 7 calls; value_and_grad of sum(f(x)), for
+            gammaln and for digamma.
             "temp" is the compiled program's temporary memory from XLA, "compile"
             the time to trace, lower and compile it.
 
@@ -49,7 +54,7 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 SRC = HERE.parent / "src"
-X0 = 1.4616321449683623  # digamma's positive zero
+X0 = 1.4616321449683622  # digamma's positive zero, rounded
 
 
 def layouts():
@@ -248,17 +253,22 @@ def run(device, dtype):
 
     assert pathlib.Path(chebax.__file__).resolve().is_relative_to(SRC)
     dt = np.float64 if dtype == "f64" else np.float32
-    funs = {
-        "chebax": chebax.gammaln,
-        "other gather": _other_gather(device),
-        "value-series derivative": _value_series_derivative(),
-        "jax": jax.scipy.special.gammaln,
+    families = {
+        "gammaln": {
+            "chebax": chebax.gammaln,
+            "other gather": _other_gather(device),
+            "value-series derivative": _value_series_derivative(),
+            "jax": jax.scipy.special.gammaln,
+        },
+        "digamma": {"chebax": chebax.digamma, "jax": jax.scipy.special.digamma},
     }
     tag = f"[{device} {dtype}]"
     if device == "cpu":
-        _ops(tag, funs, jax, jnp)
-        _accuracy(tag, funs, dt, jax, jnp, np)
-    _speed(tag, device, funs, dt, jax, jnp, np)
+        for family, funs in families.items():
+            _ops(f"{tag} {family}", funs, jax, jnp)
+        _accuracy(tag, families, dt, jax, jnp, np)
+    for family, funs in families.items():
+        _speed(f"{tag} {family}", device, funs, dt, jax, jnp, np)
 
 
 def _vg(f, jax, jnp):
@@ -287,7 +297,7 @@ def _ops(tag, funs, jax, jnp):
             print(f"  {name:24s} {mode:15s} {dict(sorted(c.items()))}")
 
 
-def _accuracy(tag, funs, dt, jax, jnp, np):
+def _accuracy(tag, families, dt, jax, jnp, np):
     import mpmath as mp
 
     mp.mp.dps = 50
@@ -302,9 +312,11 @@ def _accuracy(tag, funs, dt, jax, jnp, np):
         np.geomspace(64, 1e30, 400),
         rng.uniform(60, 70, 200),
     ]
-    for c in (1.0, 2.0):
+    for c in (1.0, 2.0, X0):
         for k in range(1, 16 if f64 else 8):
             pts.append(np.array([c - 10.0**-k, c + 10.0**-k]))
+    x0 = np.asarray(X0, dt)
+    pts.append(np.array([x0, np.nextafter(x0, 0), np.nextafter(x0, 2)]))
     edges = np.concatenate([2.0**e * (1 + np.arange(33) / 32) for e in range(6)])
     pts += [edges, np.nextafter(edges, 0), np.nextafter(edges, 100)]
     x = np.unique(np.concatenate(pts).astype(dt))
@@ -316,10 +328,9 @@ def _accuracy(tag, funs, dt, jax, jnp, np):
     xj = jnp.asarray(x)
     got = {}
     for name in ("chebax", "jax"):
-        f = funs[name]
-        d1 = jax.vmap(jax.grad(f))
-        d2 = jax.vmap(jax.grad(jax.grad(f)))
-        got[name] = [np.asarray(jax.jit(g)(xj)) for g in (f, d1, d2)]
+        lg, dg = families["gammaln"][name], families["digamma"][name]
+        fs = (lg, dg, jax.vmap(jax.grad(dg)))
+        got[name] = [np.asarray(jax.jit(g)(xj)) for g in fs]
     zero = ref[0] == 0
     assert np.all(got["chebax"][0][zero] == 0), "lgamma(1) and lgamma(2) must be 0"
     # x^2 below the smallest normal flushes to 0, so trigamma overflows early there
@@ -327,19 +338,16 @@ def _accuracy(tag, funs, dt, jax, jnp, np):
     for k in range(3):
         bad = ~np.isfinite(got["chebax"][k]) & ~(ovf & (k == 2))
         assert not bad.any(), (k, x[bad])
-    print(f"{tag} max error against mpmath (digamma absolute within 0.05 of {X0:.4f})")
+    print(f"{tag} max relative error against mpmath (trigamma: digamma's derivative)")
     print(
         f"  {'x':16s} {'n':>5s} {'lgamma cheb':>20s} {'jax':>20s} "
         f"{'digamma cheb':>20s} {'jax':>20s} {'trigamma cheb':>20s} {'jax':>20s}"
     )
     for lo, hi in ((0, 1), (1, 4), (4, 16), (16, 64), (64, np.inf)):
         m = (x >= lo) & (x < hi) & ~zero & ~ovf
-        near = np.abs(x - X0) < 0.05
         cells = []
         for k in range(3):
             den = np.abs(ref[k])
-            if k == 1:
-                den = np.where(near, 1.0, den)
             for name in ("chebax", "jax"):
                 with np.errstate(all="ignore"):
                     e = np.abs(got[name][k][m].astype(float) - ref[k][m]) / den[m]

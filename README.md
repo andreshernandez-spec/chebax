@@ -62,7 +62,7 @@ for now, with a DeprecationWarning naming the replacement.
 | quantiles | `betaincinv`, `stdtr`, `stdtrit` | — | via `grad` (IFT) | jax#2399/#20358; Student-t ν ∈ [0.2, 200] via dedicated slice tables |
 | von Mises | `vonmises_cdf/icdf` | — | via `grad` | κ ∈ [0, 50] |
 | erf family | `dawsn`, `erfcx` | — | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
-| `gammaln` | `gammaln(x)` | — | — (no params) | x ≥ 0 (nan below 0, where jax's gives log\|Γ\|); relative accuracy next to the zeros at 1 and 2, where jax's is only absolute; the derivative, digamma, from its own table. Against jax's gammaln: 3.7x on values and 4.4x on value_and_grad on one CPU core in float64, 2.8x / 5.0x float32; 2.4x / 2.3x on the GPU in float64, 1.1x / 1.7x float32 (`experiments/44`) |
+| gamma | `gammaln(x)`, `digamma(x)` | — | — (no params) | x ≥ 0 (nan below 0, where jax's reflect); both keep relative accuracy next to their zeros (lgamma's at 1 and 2, digamma's at 1.4616), where jax's are only absolutely accurate; gammaln's derivative is digamma, from its own table. Against jax's on one CPU core in float64: gammaln 3.6x on values and 4.1x on value_and_grad, digamma 2.8x and 3.4x; on the GPU in float64, 2.4x / 2.2x and 2.7x / 6.0x (`experiments/44`) |
 | Lambert W | `lambertw(x, k)` | — | — | both real branches, jax#13680 |
 | Tweedie | `tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` | — | via `grad` | power p ∈ [1.05, 1.95] (uniform per call), μ, φ > 0 and y ≥ 0 broadcast, the zero mass included; Wright's Φ(ρ, 0; z) with ρ = (2−p)/(p−1) ∈ [1/19, 19]; 89–130x scipy's `log_wright_bessel` on one CPU core, 254–331x on the GPU (`experiments/21`) |
 

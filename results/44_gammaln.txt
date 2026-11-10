@@ -1,0 +1,141 @@
+# 2026-11-10. chebax branch gammaln-table (on abbaecc, tree as committed with this file). jax 0.11.0.
+# CPU: i9-11980HK, one core, taskset CPU 4, 5 alternations, desktop idle. GPU: RTX 3080 Laptop, 5 alternations.
+
+series error, max over nine points a panel (edges included)
+layout     terms    lgamma         its deriv           digamma         its deriv
+equal          8   1.1e-14 4.1e-12 at      3 2.0e-14 at      3 2.5e-11 at   3.25
+equal          9   3.5e-16 9.0e-14 at      3 4.8e-16 at      3 6.2e-13 at   3.25
+octave         8   3.3e-16 3.2e-15 at      4 2.5e-16 at   1.41 6.2e-14 at   1.03
+octave         9   3.3e-16 5.0e-16 at   1.35 2.5e-16 at   1.41 7.1e-16 at   1.03
+[cpu f64] gammaln instructions in the compiled program
+  chebax                   value           {'divide': 1, 'log': 1}
+  chebax                   value_and_grad  {'divide': 2, 'log': 2}
+  value-series derivative  value_and_grad  {'divide': 1, 'log': 1}
+  jax                      value           {'divide': 9, 'log': 2, 'log-plus-one': 1, 'sine': 1}
+  jax                      value_and_grad  {'cosine': 1, 'divide': 20, 'log': 2, 'log-plus-one': 1, 'sine': 2}
+[cpu f64] digamma instructions in the compiled program
+  chebax                   value           {'divide': 1, 'log': 1}
+  chebax                   value_and_grad  {'divide': 3, 'log': 1}
+  jax                      value           {'cosine': 1, 'divide': 19, 'log-plus-one': 1, 'sine': 1}
+  jax                      value_and_grad  {'cosine': 1, 'divide': 21, 'log-plus-one': 1, 'sine': 1}
+[cpu f64] max relative error against mpmath (trigamma: digamma's derivative)
+  x                    n          lgamma cheb                  jax         digamma cheb                  jax        trigamma cheb                  jax
+  [0, 1)           815   2.6e-16 at   0.8479   1.3e+01 at        1   5.8e-16 at        1   2.3e-15 at        1   2.3e-16 at 7.713e-06   1.4e-15 at 0.0004136
+  [1, 4)          1068   4.1e-16 at    2.482   1.0e+01 at        2   2.7e-16 at    1.359   4.4e+00 at    1.462   7.2e-16 at    2.062   1.4e-15 at    3.283
+  [4, 16)          992   2.2e-16 at    5.528   1.6e-15 at    4.001   2.2e-16 at    7.875   7.1e-16 at    4.001   6.3e-16 at    4.255   1.3e-15 at    14.23
+  [16, 64)        1063   2.2e-16 at     17.5   6.4e-16 at       47   2.2e-16 at    55.11   6.5e-16 at    61.55   6.2e-16 at    60.24   1.2e-15 at    57.24
+  [64, inf)        530   2.7e-16 at    67.03   5.6e-16 at    64.42   2.2e-16 at     3177   4.3e-16 at       64   2.2e-16 at 1.36e+11   1.2e-15 at 6.028e+10
+[cpu f64] gammaln ns per element, N = 1048576
+  uniform [1, 13)          value           chebax                     7.936 ns  3.25x jax  temp     0 MiB  compile 0.07 s
+  uniform [1, 13)          value           other gather              12.938 ns  1.99x jax  temp     0 MiB  compile 0.06 s
+  uniform [1, 13)          value           jax                       25.806 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  uniform [1, 13)          value_and_grad  chebax                    16.966 ns  3.94x jax  temp     8 MiB  compile 0.12 s
+  uniform [1, 13)          value_and_grad  other gather              25.859 ns  2.58x jax  temp     8 MiB  compile 0.13 s
+  uniform [1, 13)          value_and_grad  value-series derivative   39.667 ns  1.68x jax  temp    80 MiB  compile 0.12 s
+  uniform [1, 13)          value_and_grad  jax                       66.766 ns  1.00x jax  temp    72 MiB  compile 0.12 s
+  log-uniform [1e-3, 1e4)  value           chebax                     7.749 ns  3.59x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           other gather              12.336 ns  2.26x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           jax                       27.819 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                    16.939 ns  4.08x jax  temp     8 MiB  compile 0.09 s
+  log-uniform [1e-3, 1e4)  value_and_grad  other gather              25.990 ns  2.66x jax  temp     8 MiB  compile 0.09 s
+  log-uniform [1e-3, 1e4)  value_and_grad  value-series derivative   40.093 ns  1.73x jax  temp    80 MiB  compile 0.12 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                       69.182 ns  1.00x jax  temp    72 MiB  compile 0.13 s
+[cpu f64] digamma ns per element, N = 1048576
+  uniform [1, 13)          value           chebax                     9.346 ns  2.79x jax  temp     0 MiB  compile 0.05 s
+  uniform [1, 13)          value           jax                       26.049 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  uniform [1, 13)          value_and_grad  chebax                    41.681 ns  3.48x jax  temp    81 MiB  compile 0.20 s
+  uniform [1, 13)          value_and_grad  jax                      145.047 ns  1.00x jax  temp     8 MiB  compile 0.07 s
+  log-uniform [1e-3, 1e4)  value           chebax                     8.994 ns  2.77x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           jax                       24.872 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                    43.148 ns  3.37x jax  temp    81 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                      145.594 ns  1.00x jax  temp     8 MiB  compile 0.07 s
+[cpu f32] gammaln instructions in the compiled program
+  chebax                   value           {'divide': 1, 'log': 1}
+  chebax                   value_and_grad  {'divide': 2, 'log': 2}
+  value-series derivative  value_and_grad  {'divide': 1, 'log': 1}
+  jax                      value           {'divide': 9, 'log': 2, 'log-plus-one': 1, 'sine': 1}
+  jax                      value_and_grad  {'cosine': 1, 'divide': 20, 'log': 2, 'log-plus-one': 1, 'sine': 2}
+[cpu f32] digamma instructions in the compiled program
+  chebax                   value           {'divide': 1, 'log': 1}
+  chebax                   value_and_grad  {'divide': 3, 'log': 1}
+  jax                      value           {'cosine': 1, 'divide': 19, 'log-plus-one': 1, 'sine': 1}
+  jax                      value_and_grad  {'cosine': 1, 'divide': 21, 'log-plus-one': 1, 'sine': 1}
+[cpu f32] max relative error against mpmath (trigamma: digamma's derivative)
+  x                    n          lgamma cheb                  jax         digamma cheb                  jax        trigamma cheb                  jax
+  [0, 1)           659   1.7e-07 at   0.9758   5.9e+00 at        1   1.9e-07 at   0.9912   1.3e-06 at     0.99   1.4e-07 at   0.7045   1.3e-06 at   0.8251
+  [1, 4)           897   2.0e-07 at    1.307   1.0e+01 at        2   1.7e-07 at     1.29   2.1e+01 at    1.462   2.1e-07 at    3.563   1.2e-06 at    1.451
+  [4, 16)          864   1.5e-07 at    12.35   9.6e-07 at    5.065   1.3e-07 at    11.72   5.1e-07 at    5.065   2.6e-07 at    14.18   1.1e-06 at    7.987
+  [16, 64)         935   1.4e-07 at    28.81   2.6e-07 at    27.55   1.6e-07 at    55.21   1.8e-07 at    61.37   2.4e-07 at     30.1   1.1e-06 at    60.01
+  [64, inf)        529   1.3e-07 at    67.06   2.3e-07 at    66.58   1.4e-07 at    64.17   1.7e-07 at    67.01   8.9e-08 at 7.83e+06   1.0e+00 at 9.481e+18
+[cpu f32] gammaln ns per element, N = 1048576
+  uniform [1, 13)          value           chebax                     2.947 ns  2.97x jax  temp     0 MiB  compile 0.06 s
+  uniform [1, 13)          value           other gather              12.171 ns  0.72x jax  temp     0 MiB  compile 0.05 s
+  uniform [1, 13)          value           jax                        8.749 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  uniform [1, 13)          value_and_grad  chebax                     6.466 ns  3.81x jax  temp     4 MiB  compile 0.11 s
+  uniform [1, 13)          value_and_grad  other gather              25.609 ns  0.96x jax  temp     4 MiB  compile 0.08 s
+  uniform [1, 13)          value_and_grad  value-series derivative    6.846 ns  3.60x jax  temp    24 MiB  compile 0.10 s
+  uniform [1, 13)          value_and_grad  jax                       24.663 ns  1.00x jax  temp    36 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value           chebax                     2.875 ns  2.75x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           other gather              12.109 ns  0.65x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           jax                        7.914 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     6.390 ns  4.35x jax  temp     4 MiB  compile 0.09 s
+  log-uniform [1e-3, 1e4)  value_and_grad  other gather              25.415 ns  1.09x jax  temp     4 MiB  compile 0.09 s
+  log-uniform [1e-3, 1e4)  value_and_grad  value-series derivative    6.929 ns  4.01x jax  temp    24 MiB  compile 0.10 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                       27.798 ns  1.00x jax  temp    36 MiB  compile 0.13 s
+[cpu f32] digamma ns per element, N = 1048576
+  uniform [1, 13)          value           chebax                     3.439 ns  2.01x jax  temp     0 MiB  compile 0.05 s
+  uniform [1, 13)          value           jax                        6.927 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  uniform [1, 13)          value_and_grad  chebax                     7.789 ns  8.72x jax  temp    25 MiB  compile 0.14 s
+  uniform [1, 13)          value_and_grad  jax                       67.904 ns  1.00x jax  temp     4 MiB  compile 0.06 s
+  log-uniform [1e-3, 1e4)  value           chebax                     3.996 ns  2.89x jax  temp     0 MiB  compile 0.05 s
+  log-uniform [1e-3, 1e4)  value           jax                       11.556 ns  1.00x jax  temp     0 MiB  compile 0.03 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     8.734 ns  8.14x jax  temp    25 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                       71.100 ns  1.00x jax  temp     4 MiB  compile 0.08 s
+[gpu f64] gammaln ns per element, N = 4194304
+  uniform [1, 13)          value           chebax                     0.709 ns  2.35x jax  temp     0 MiB  compile 0.18 s
+  uniform [1, 13)          value           other gather               0.783 ns  2.13x jax  temp    32 MiB  compile 0.14 s
+  uniform [1, 13)          value           jax                        1.666 ns  1.00x jax  temp     0 MiB  compile 0.16 s
+  uniform [1, 13)          value_and_grad  chebax                     1.268 ns  2.21x jax  temp    48 MiB  compile 0.24 s
+  uniform [1, 13)          value_and_grad  other gather               1.278 ns  2.19x jax  temp    16 MiB  compile 0.23 s
+  uniform [1, 13)          value_and_grad  value-series derivative    1.442 ns  1.94x jax  temp   192 MiB  compile 0.20 s
+  uniform [1, 13)          value_and_grad  jax                        2.802 ns  1.00x jax  temp    32 MiB  compile 0.16 s
+  log-uniform [1e-3, 1e4)  value           chebax                     0.683 ns  2.40x jax  temp     0 MiB  compile 0.13 s
+  log-uniform [1e-3, 1e4)  value           other gather               0.741 ns  2.21x jax  temp    32 MiB  compile 0.12 s
+  log-uniform [1e-3, 1e4)  value           jax                        1.641 ns  1.00x jax  temp     0 MiB  compile 0.16 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     1.259 ns  2.22x jax  temp    48 MiB  compile 0.20 s
+  log-uniform [1e-3, 1e4)  value_and_grad  other gather               1.272 ns  2.20x jax  temp    16 MiB  compile 0.20 s
+  log-uniform [1e-3, 1e4)  value_and_grad  value-series derivative    1.446 ns  1.94x jax  temp   192 MiB  compile 0.19 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                        2.798 ns  1.00x jax  temp    32 MiB  compile 0.18 s
+[gpu f64] digamma ns per element, N = 4194304
+  uniform [1, 13)          value           chebax                     0.725 ns  2.71x jax  temp    32 MiB  compile 0.14 s
+  uniform [1, 13)          value           jax                        1.967 ns  1.00x jax  temp     0 MiB  compile 0.20 s
+  uniform [1, 13)          value_and_grad  chebax                     1.496 ns  6.02x jax  temp   176 MiB  compile 0.26 s
+  uniform [1, 13)          value_and_grad  jax                        9.009 ns  1.00x jax  temp     0 MiB  compile 0.22 s
+  log-uniform [1e-3, 1e4)  value           chebax                     0.737 ns  2.72x jax  temp    32 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value           jax                        2.001 ns  1.00x jax  temp     0 MiB  compile 0.19 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     1.504 ns  5.99x jax  temp   176 MiB  compile 0.20 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                        9.015 ns  1.00x jax  temp     0 MiB  compile 0.21 s
+[gpu f32] gammaln ns per element, N = 4194304
+  uniform [1, 13)          value           chebax                     0.033 ns  1.04x jax  temp     0 MiB  compile 0.18 s
+  uniform [1, 13)          value           other gather               0.061 ns  0.56x jax  temp    16 MiB  compile 0.10 s
+  uniform [1, 13)          value           jax                        0.034 ns  1.00x jax  temp     0 MiB  compile 0.16 s
+  uniform [1, 13)          value_and_grad  chebax                     0.034 ns  1.70x jax  temp     0 MiB  compile 0.22 s
+  uniform [1, 13)          value_and_grad  other gather               0.036 ns  1.62x jax  temp     0 MiB  compile 0.16 s
+  uniform [1, 13)          value_and_grad  value-series derivative    0.034 ns  1.71x jax  temp     0 MiB  compile 0.15 s
+  uniform [1, 13)          value_and_grad  jax                        0.058 ns  1.00x jax  temp     0 MiB  compile 0.18 s
+  log-uniform [1e-3, 1e4)  value           chebax                     0.031 ns  1.12x jax  temp     0 MiB  compile 0.10 s
+  log-uniform [1e-3, 1e4)  value           other gather               0.060 ns  0.57x jax  temp    16 MiB  compile 0.09 s
+  log-uniform [1e-3, 1e4)  value           jax                        0.034 ns  1.00x jax  temp     0 MiB  compile 0.13 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     0.035 ns  1.66x jax  temp     0 MiB  compile 0.16 s
+  log-uniform [1e-3, 1e4)  value_and_grad  other gather               0.036 ns  1.60x jax  temp     0 MiB  compile 0.17 s
+  log-uniform [1e-3, 1e4)  value_and_grad  value-series derivative    0.033 ns  1.75x jax  temp     0 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                        0.058 ns  1.00x jax  temp     0 MiB  compile 0.19 s
+[gpu f32] digamma ns per element, N = 4194304
+  uniform [1, 13)          value           chebax                     0.032 ns  1.23x jax  temp     0 MiB  compile 0.13 s
+  uniform [1, 13)          value           jax                        0.040 ns  1.00x jax  temp     0 MiB  compile 0.17 s
+  uniform [1, 13)          value_and_grad  chebax                     0.033 ns  4.35x jax  temp     0 MiB  compile 0.19 s
+  uniform [1, 13)          value_and_grad  jax                        0.146 ns  1.00x jax  temp     0 MiB  compile 0.27 s
+  log-uniform [1e-3, 1e4)  value           chebax                     0.030 ns  1.32x jax  temp     0 MiB  compile 0.10 s
+  log-uniform [1e-3, 1e4)  value           jax                        0.039 ns  1.00x jax  temp     0 MiB  compile 0.14 s
+  log-uniform [1e-3, 1e4)  value_and_grad  chebax                     0.032 ns  4.47x jax  temp     0 MiB  compile 0.15 s
+  log-uniform [1e-3, 1e4)  value_and_grad  jax                        0.143 ns  1.00x jax  temp     0 MiB  compile 0.24 s

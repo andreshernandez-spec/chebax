@@ -63,6 +63,7 @@ CASES = {
     "erfcx": ("chebax.erfcx(2.0)", 0.25539567631050574),
     "gammaln": ("chebax.gammaln(2.5)", 0.2846828704729192),
     "digamma": ("chebax.digamma(2.5)", 0.7031566406452432),
+    "ndtri_exp": ("chebax.ndtri_exp(-3.0)", -1.6469217205277148),
     "lambertw": ("chebax.lambertw(3.0, 0)", 1.04990889496404),
     "spherical_jn": ("chebax.spherical_jn_frozen(2)(4.0)", 0.27628368577135016),
     "gammainc_at_inf": ("chebax.gammainc_scalar(2.0, jnp.inf)", 1.0),

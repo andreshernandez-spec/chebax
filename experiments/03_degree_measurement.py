@@ -14,7 +14,7 @@ project's own regenerability rule — this script fixes that.
 Run everything:      python experiments/03_degree_measurement.py
 One family:          python experiments/03_degree_measurement.py besselk
 Families: besselj besselk besseli bessely betainc gammainc gammainc_array
-stdtr vonmises erf gammaln
+stdtr vonmises erf gammaln ndtri_exp
 
 WHAT THIS DOES NOT ESTABLISH
 ----------------------------
@@ -215,10 +215,39 @@ def gammaln():
         report(f"{name} panel [{lo}, {float(hi):g}]", fit_axis(f, 24, lo, hi), [6, 7, 8])
 
 
+def ndtri_exp():
+    # the errors those terms leave, and the speed, are experiments/45
+    print("ndtri_exp (claims: 10 terms for values, 9 in the centre, and 10 for dz/dy; float32 5)")
+
+    def a(s):  # -ndtri(e^(-s^2/2)); erfinv needs the digits 2p - 1 cancels
+        with mp.workdps(DPS + 60):
+            return -mp.sqrt(2) * mp.erfinv(2 * mp.exp(-s * s / 2) - 1)
+
+    def mills(z):  # Phi(z) / phi(z)
+        return mp.sqrt(mp.pi / 2) * mp.erfc(-z / mp.sqrt(2)) * mp.exp(z * z / 2)
+
+    def centre(d):
+        return mp.sqrt(2) * mp.erfinv(mp.expm1(d))
+
+    pieces = (
+        ("centre h, top panel", lambda d: centre(d) / d, 28 / 64),
+        ("centre dz/dy, top panel", lambda d: mills(centre(d)), 28 / 64),
+        ("centre h, bottom panel", lambda d: centre(d) / d, -52 / 64),
+    )
+    for name, f, lo in pieces:
+        report(f"{name} [{lo:g}, {lo + 1 / 64:g}]", fit_axis(f, 24, lo, lo + 1 / 64), [4, 5, 8, 9, 10])
+    for lo in (1.6875, 2.0, 4.0, 8.0):  # panel J0 of octave 0, then octaves 1-3
+        hi = lo + 2 ** int(mp.floor(mp.log(lo, 2))) / 16
+        report(f"tail a/s [{lo:g}, {hi:g}]", fit_axis(lambda s: a(s) / s, 24, lo, hi), [4, 5, 8, 9, 10])
+        da = lambda s: s * mills(-a(s))
+        report(f"tail a'(s) [{lo:g}, {hi:g}]", fit_axis(da, 24, lo, hi), [4, 5, 8, 9, 10])
+
+
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
             "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
             "gammainc_array": gammainc_array, "stdtr": stdtr,
-            "vonmises": vonmises, "erf": erf, "gammaln": gammaln}
+            "vonmises": vonmises, "erf": erf, "gammaln": gammaln,
+            "ndtri_exp": ndtri_exp}
 
 if __name__ == "__main__":
     picks = sys.argv[1:] or list(FAMILIES)

@@ -1862,3 +1862,62 @@ Speed against jax.scipy.special's, experiments/44 (log-uniform x in
 Float32 values on the GPU take 0.03 ns per element for both, about 270 GB/s
 for the 8 bytes each element reads and writes. Compiling takes under 0.25 s
 for both, on either device.
+
+## 54. ndtri_exp from centre and tail panels (2026-11-11)
+
+`chebax.ndtri_exp(y)` = ndtri(e^y) for y <= 0, the standard normal quantile
+of a log-probability. PyMC's TruncatedNormal icdf calls it (pytensor's
+NdtriExp), and pytensor's JAX backend lowers that to ndtri(exp(y)), which is
+-inf below y = -745 in float64 (-87 in float32) and, within 1e-3 of 0, inf
+at 286 of 300 test points and off by up to 9.7e-3 at the rest
+(experiments/45).
+
+The centre, e^-1.5 <= e^y <= 1 - e^-1.5, holds h = z / d on 81 panels of
+1/64 in d = y + log 2, and the runtime forms z = h (y + LN2_HI) + h LN2_LO.
+y + LN2_HI is exact across the centre, so z stays relative next to the median:
+ndtri_exp(fl(-log 2)) = 2.9e-17, where jax's composition and scipy's
+ndtri_exp give 0. The tails hold g = a/s, a = -ndtri(e^(-s^2/2)), on 16
+panels an octave in s = sqrt(-2u), from the panel holding sqrt(3) up to
+2^30, with u = y below the centre and log(1 - e^y) above it, so z = -s g
+or s g. Above 2^30, g = 1 to under 0.2 ulp. The octave and the panel come
+from the exponent bits of s, as in gammaln. s is 2 sqrt(-u/2), which never
+overflows: ndtri_exp(-max float) = -1.9e154 is correctly rounded.
+
+The seams sit at e^-1.5 because a is ill-conditioned in s next to the
+median, so the rounding of s and of log(1 - e^y) grows by s a'/a: 5.8 at
+e^-1, 2.9 at e^-1.5. Moving them out costs the centre more panels: its
+convergence is set by the distance to y = 0, and 1/64 keeps the top panel
+within the tail's ten terms.
+
+XLA evaluates every branch of a select for every element, so the centre and
+tail panels lie end to end in one table (550 panels of 10 terms) and each
+element runs one series. The value compiles to one expm1, one log and one
+sqrt and no division; jax's composition to one exp, two logs, a sqrt and
+five divides. The derivative has its own table on the same panels, dz/dy in
+the centre and a'(s) in the tail, so dz/dy = a'/s below and a'/s e^y/(1 -
+e^y) above: value_and_grad adds one divide, against nineteen for jax's.
+Both read the panel lookup that gammaln used, now `_common.panel_series`
+(one gather per coefficient on the CPU, one row gather elsewhere).
+
+Accuracy against mpmath (tests/test_ndtri_exp.py), all relative: float64 z
+4.7e-16 (5.7e-16 on jax 0.5.3), dz/dy 6.3e-16, d2z/dy2 5.6e-15 (AD through
+the derivative's table, weakest on the centre's top panel); float32 (5
+terms) 2.7e-7, 3.3e-7, 1.6e-6. scipy's ndtri_exp is off by 5.1e-13 below
+y = -745 and absolute next to the median. Above y = -3e-153, d2z/dy2
+overflows float64 and comes back nan, not inf.
+
+Speed against jax's ndtri(exp(y)), experiments/45 (log U for U uniform on
+(0, 1); N = 2^20 on one CPU core, 2^22 on the GPU):
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| value | 0.97x | 0.70x | 1.84x | 1.11x |
+| value_and_grad | 2.35x | 2.40x | 3.96x | 1.74x |
+
+On the CPU the value pays for the gathers and for the upper tail's expm1 and
+log, which every element computes. On the GPU, 1 - e^y is -expm1(y): written
+0 - expm1(y), the float32 value compiled to two fusions, the first writing
+each element's panel index and centre mask to memory (20 MiB at 2^22) and
+the second reading y again, and it ran at 0.52x jax's in a first run of
+experiments/45. The per-coefficient gathers still do that ("other gather",
+0.52x).

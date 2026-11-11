@@ -34,6 +34,7 @@ _LAZY = {
     "chebax._src.recipes.gammaln": ("digamma", "gammaln"),
     "chebax._src.recipes.lambertw": ("lambertw",),
     "chebax._src.recipes.matern": ("matern",),
+    "chebax._src.recipes.ndtri_exp": ("ndtri_exp",),
     "chebax._src.recipes.spherical": (
         "spherical_jn",
         "spherical_jn_frozen",
@@ -180,6 +181,7 @@ __all__ = [
     "log_stdtr_sf",
     "log_wright_bessel0",
     "matern",
+    "ndtri_exp",
     "pergroup",
     "PiecewiseCheb",
     "spherical_jn",
@@ -254,6 +256,7 @@ if TYPE_CHECKING:
     from chebax._src.recipes.gammaln import digamma, gammaln
     from chebax._src.recipes.lambertw import lambertw
     from chebax._src.recipes.matern import matern
+    from chebax._src.recipes.ndtri_exp import ndtri_exp
     from chebax._src.recipes.spherical import (
         spherical_jn,
         spherical_jn_frozen,

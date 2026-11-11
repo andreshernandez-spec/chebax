@@ -33,6 +33,7 @@ from chebax._src.recipes._common import (
     deprecated_factory,
     edge_slope,
     frozen_cache,
+    nan_outside,
 )
 from chebax._src.recipes.betainc_kernel import (
     eval_betainc,
@@ -254,12 +255,10 @@ def _betainc_cached(a, b, _tag):
 
 
 def nan_outside_box(a, b):
-    """a and b, both nan where (a, b) is outside the tables, so the kernel gives
-    nan values and derivatives instead of extrapolating. Added, not selected: a
-    where would give a and b a zero cotangent in reverse mode."""
+    """a and b, each nan outside the tables' [0.1, 100], so the kernel gives nan
+    values and derivatives instead of extrapolating."""
     lo, hi = _dom.BETAINC.lo, _dom.BETAINC.hi
-    pad = jnp.where((a < lo) | (a > hi) | (b < lo) | (b > hi), jnp.nan, 0.0)
-    return a + pad, b + pad
+    return nan_outside(a, lo, hi), nan_outside(b, lo, hi)
 
 
 def betainc_scalar(a, b, x):

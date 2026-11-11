@@ -25,6 +25,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     frozen_cache,
+    nan_outside,
     panel_coefs,
     param_coefs,
     param_coefs_der,
@@ -139,10 +140,10 @@ def _traced_series(nu):
 
 
 def besselk_scalar(nu, x, scaled=False):
-    """K_nu(x), nu a traced scalar in [0, 10] (unchecked under trace),
-    differentiable in both. scaled=True gives e^x K (kve), finite past
-    x ~ 746 where K underflows."""
-    nu = canon_param(nu, "besselk_scalar", "nu")
+    """K_nu(x), nu a traced scalar in [0, 10] (nan outside, with nan
+    derivatives), differentiable in both. scaled=True gives e^x K (kve),
+    finite past x ~ 746 where K underflows."""
+    nu = nan_outside(canon_param(nu, "besselk_scalar", "nu"), 0.0, _kt.VMAX)
     ltil, ltail = _traced_series(nu)
     return _eval_k(nu, canon_float(x), ltil, ltail, bool(scaled))
 
@@ -150,7 +151,7 @@ def besselk_scalar(nu, x, scaled=False):
 def log_besselk_scalar(nu, x):
     """ln K_nu(x) from the log-tables, finite for every finite x (-inf at
     inf); otherwise as besselk_scalar."""
-    nu = canon_param(nu, "log_besselk_scalar", "nu")
+    nu = nan_outside(canon_param(nu, "log_besselk_scalar", "nu"), 0.0, _kt.VMAX)
     x = jnp.asarray(x)
     ltil, ltail = _traced_series(nu)
     xi = _xin(x)

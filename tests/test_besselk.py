@@ -123,6 +123,35 @@ def test_order_out_of_range():
         chebax.besselk_frozen(10.5)
 
 
+@pytest.mark.parametrize(
+    "f",
+    [
+        chebax.besselk_scalar,
+        lambda nu, x: chebax.besselk_scalar(nu, x, scaled=True),
+        chebax.log_besselk_scalar,
+    ],
+)
+def test_traced_order_out_of_range_is_nan(f):
+    # The tables used to extrapolate: besselk(15, 2) gave 0 (true 4.1e10),
+    # log_besselk(15, 0.5) -3.5e10, besselk(-0.5, x) was off by 7e-3. Below
+    # the 1e-6 clamp dK/dx is 0 in reverse mode, as it is inside the box.
+    x = jnp.asarray([0.0, 1e-7, 0.5, 2.0, 7.0, 20.0, 800.0, jnp.inf])
+    val = jax.jit(jax.vmap(f, (None, 0)))
+    rev = jax.jit(jax.vmap(jax.grad(f, (0, 1)), (None, 0)))
+    fwd = jax.jit(jax.vmap(jax.jacfwd(f, (0, 1)), (None, 0)))
+    for nu in [-0.5, 10.5, 15.0]:
+        assert np.isnan(float(f(nu, 2.0))), nu
+        assert np.isnan(np.asarray(val(nu, x))).all(), nu
+        for dnu, dx in [rev(nu, x), fwd(nu, x)]:
+            assert np.isnan(np.asarray(dnu)).all(), nu
+            assert np.isnan(np.asarray(dx)[2:]).all(), nu
+    # the box is closed
+    for nu in [0.0, 10.0]:
+        xs = x[2:6]
+        assert np.isfinite(np.asarray(val(nu, xs))).all(), nu
+        assert all(np.isfinite(np.asarray(g)).all() for g in rev(nu, xs)), nu
+
+
 def test_f32_moderate_domain():
     xs = np.logspace(-2, np.log10(30.0), 24)
     K = np.array([float(mp.besselk(mp.mpf(2.5), mp.mpf(x))) for x in xs])

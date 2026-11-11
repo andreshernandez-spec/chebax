@@ -11,9 +11,9 @@ share one series: centre and tail panels lie end to end in one table, and
 each element finds its own. The value costs one expm1, one log and one
 sqrt per element and no division; the derivative has its own table and
 one division. Against jax's ndtri(exp(y)), which is -inf below y = -745
-and loses digits as y nears 0 (experiments/45): value_and_grad 2.2-2.5x
-faster on one CPU core and 1.7-4.0x on the GPU, the value 0.70-0.97x on
-the CPU and 1.1-1.9x on the GPU.
+and loses digits as y nears 0 (experiments/45): value_and_grad 2.1-2.4x
+faster on one CPU core and 2.0-4.0x on the GPU, the value 0.69-0.97x on
+the CPU and 1.0-1.9x on the GPU.
 """
 
 import functools

@@ -24,6 +24,15 @@ Sections:
             alternations of the best of 7 calls; value_and_grad of sum(f(y)).
             "temp" is the compiled program's temporary memory from XLA, "compile"
             the time to trace, lower and compile it.
+  ablation  why the CPU value is slower than its parts (CPU only, values only,
+            same data and timing as speed). A copy of the runtime's value,
+            checked equal to chebax's, timed with one thing removed: the
+            gathers (every element reads panel 0, still waiting on its index),
+            the upper tail's expm1 and log (those lanes take u = -1.5), both;
+            then with the full work kept but the gather index, or the series
+            coordinate, computed without the log (the upper lanes take the
+            first tail panel, so their values are wrong; cost only). Last,
+            each transcendental alone.
 
 Usage:
   [E45_DEVICES=cpu,gpu E45_REPS=5 E45_CORE=10] python experiments/45_ndtri_exp.py
@@ -143,6 +152,8 @@ def run(device, dtype):
         _ops(tag, funs, jax, jnp)
         _accuracy(tag, funs, dt, jax, jnp, np)
     _speed(tag, device, funs, dt, jax, jnp, np)
+    if device == "cpu":
+        _ablation(tag, dt, jax, jnp, np)
 
 
 def _other_gather(device):
@@ -291,6 +302,96 @@ def _speed(tag, device, funs, dt, jax, jnp, np):
                     f"{jx / t:5.2f}x jax  temp {temp:5.0f} MiB  "
                     f"compile {compile_s[k]:4.2f} s"
                 )
+
+
+def _value_variant(y, gathers=True, log=True, index_log=True, coord_log=True):
+    """The runtime's value with pieces removed (see the ablation section)."""
+    import jax
+    import jax.numpy as jnp
+
+    from chebax._src.recipes import _common
+    from chebax._src.recipes import ndtri_exp as N
+    from chebax._src.recipes import ndtri_exp_table as T
+
+    tab = N._tables()
+    lower = y < T.YC
+    centre = ~lower & (y <= T.Y_HI)
+    log_q = jnp.log(-jnp.expm1(y)) if log else T.YC
+    u = jnp.where(lower, y, jnp.where(centre, T.YC, log_q))
+    s = 2.0 * jnp.sqrt(-0.5 * u)
+    s_free = 2.0 * jnp.sqrt(-0.5 * jnp.where(lower, y, T.YC))
+    si = s if index_log else s_free
+    sv = s if coord_log else s_free
+    big = si >= T.S_BIG
+    st, sv = jnp.where(big, 1.5, si), jnp.where(big, 1.5, sv)
+    if y.dtype == jnp.float64:
+        it, mb, bias = jnp.int64, 52, 1023
+    else:
+        it, mb, bias = jnp.int32, 23, 127
+    e = (jax.lax.bitcast_convert_type(st, it) >> mb) - bias
+    scale = jax.lax.bitcast_convert_type((bias - e) << mb, y.dtype)
+    j = jnp.floor((st * scale - 1.0) * T.K)
+    w = (sv * scale - 1.0) * T.K
+    i_tail = (e * T.K - T.J0 + T.NC).astype(jnp.int32) + j.astype(jnp.int32)
+    wc = (jnp.where(centre, y, T.YC) + N._SHIFT) * T.WC
+    jc = jnp.floor(wc)
+    i = jnp.where(centre, jc.astype(jnp.int32), i_tail)
+    v = 2.0 * jnp.where(centre, wc - jc, w - j) - 1.0
+    if gathers:
+        f = _common.per_coefficient_series(tab.value, i, v)
+    else:
+        di = i.astype(v.dtype) * 0.0
+        n = tab.value.shape[1]
+        f = _common._panel_clenshaw([tab.value[0, k] + di for k in range(n)], v)
+    yc = jnp.where(centre, y, -tab.ln2_hi)
+    mid = f * (yc + tab.ln2_hi) + f * tab.ln2_lo
+    a = s * jnp.where(s >= T.S_BIG, 1.0, f)
+    return jnp.where(centre, mid, jnp.where(lower, -a, a))
+
+
+def _ablation(tag, dt, jax, jnp, np):
+    import chebax
+
+    n = 2**20
+    reps = int(os.environ.get("E45_REPS", 5))
+    rng = np.random.default_rng(45)
+    y = jax.device_put(jnp.asarray(np.log(rng.uniform(np.finfo(dt).tiny, 1, n)), dt))
+    want = np.asarray(jax.jit(chebax.ndtri_exp)(y))
+    got = np.asarray(jax.jit(_value_variant)(y))
+    assert np.array_equal(got, want), "the copy no longer matches the runtime"
+    v = _value_variant
+    funs = {
+        "jax ndtri(exp)": lambda y: jax.scipy.special.ndtri(jnp.exp(y)),
+        "chebax": chebax.ndtri_exp,
+        "without gathers": lambda y: v(y, gathers=False),
+        "without expm1, log": lambda y: v(y, log=False),
+        "without either": lambda y: v(y, gathers=False, log=False),
+        "index without the log": lambda y: v(y, index_log=False),
+        "coordinate without the log": lambda y: v(y, coord_log=False),
+        "both without the log": lambda y: v(y, index_log=False, coord_log=False),
+        "exp alone": jnp.exp,
+        "expm1 alone": jnp.expm1,
+        "log alone": lambda y: jnp.log(-y),
+        "sqrt alone": lambda y: jnp.sqrt(-y),
+        "log(-expm1) alone": lambda y: jnp.log(-jnp.expm1(y)),
+    }
+    comps = {k: jax.jit(f).lower(y).compile() for k, f in funs.items()}
+    for c in comps.values():
+        jax.block_until_ready(c(y))
+    times = {k: [] for k in comps}
+    for _ in range(reps):
+        for k, c in comps.items():
+            best = np.inf
+            for _ in range(7):
+                t0 = time.perf_counter()
+                jax.block_until_ready(c(y))
+                best = min(best, time.perf_counter() - t0)
+            times[k].append(best)
+    jx = np.median(times["jax ndtri(exp)"])
+    print(f"{tag} ablation of the value, ns per element, N = {n}, log U")
+    for k in comps:
+        t = np.median(times[k])
+        print(f"  {k:28s} {t / n * 1e9:7.3f} ns {jx / t:5.2f}x jax")
 
 
 def main():

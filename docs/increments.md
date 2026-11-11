@@ -1911,13 +1911,26 @@ Speed against jax's ndtri(exp(y)), experiments/45 (log U for U uniform on
 
 | | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
 |---|---|---|---|---|
-| value | 0.97x | 0.70x | 1.84x | 1.11x |
-| value_and_grad | 2.35x | 2.40x | 3.96x | 1.74x |
+| value | 0.97x | 0.69x | 1.91x | 1.04x |
+| value_and_grad | 2.41x | 2.37x | 4.02x | 2.01x |
 
-On the CPU the value pays for the gathers and for the upper tail's expm1 and
-log, which every element computes. On the GPU, 1 - e^y is -expm1(y): written
-0 - expm1(y), the float32 value compiled to two fusions, the first writing
-each element's panel index and centre mask to memory (20 MiB at 2^22) and
-the second reading y again, and it ran at 0.52x jax's in a first run of
-experiments/45. The per-coefficient gathers still do that ("other gather",
-0.52x).
+On the CPU the value lags jax's for three reasons, measured by the ablation
+in experiments/45 on the float32 value (6.8 ns per element against jax's
+4.9). XLA's CPU backend emits no gather instruction: the compiled loop (its
+assembly, dumped with XLA_FLAGS=--xla_dump_to) moves each block's panel
+indices to integer registers one at a time and loads every coefficient lane
+by lane. The upper tail's expm1 and log run on every element, and XLA's
+float64 log is slow (5.1 ns alone, exp 1.2). And the two compound, because
+the panel index comes from s, which waits for the log on every lane, so each
+element runs one serial chain from expm1 to the gathered loads. Without the
+gathers the value takes 3.6 ns, without expm1 and log 3.0, without either
+1.2. With all the work kept, an index that does not wait for the log takes
+the value to 4.7 ns; a series coordinate that does not wait leaves it at
+6.8, so the series' own chain after the log is not the cost. Float64 shows
+the same at 18.0 ns: 15.3 with the index off the log.
+
+On the GPU, 1 - e^y is -expm1(y): written 0 - expm1(y), the float32 value
+compiled to two fusions, the first writing each element's panel index and
+centre mask to memory (20 MiB at 2^22) and the second reading y again, and
+it ran at 0.52x jax's in a first run of experiments/45. The per-coefficient
+gathers still do that ("other gather", 0.53x).

@@ -32,6 +32,13 @@ import jax.numpy as jnp
 
 from chebax._src.recipes import gammaln_table as _t
 from chebax._src.recipes._common import canon_float, canon_tag
+from chebax._src.recipes._common import panel_series as _series
+from chebax._src.recipes._common import row_series as _row_series
+
+# experiments/44 times the per-coefficient form on the GPU
+from chebax._src.recipes._common import (
+    per_coefficient_series as _per_coefficient_series,
+)
 
 _Tables = namedtuple("_Tables", "lgamma psi stirling dstirling x0_hi x0_lo")
 _G_END = 2.0 ** _t.META["g_octaves"]
@@ -70,34 +77,6 @@ def _horner(p, c):
     for k in range(c.size - 2, -1, -1):
         out = c[k] + p * out
     return out
-
-
-def _clenshaw(c, s):
-    b1 = b2 = jnp.zeros_like(s)
-    for ck in c[:0:-1]:
-        b1, b2 = ck - b2 + 2.0 * s * b1, b1
-    return c[0] - b2 + s * b1
-
-
-def _per_coefficient_series(panels, i, s):
-    n = panels.shape[1]
-    return _clenshaw([jnp.take(panels[:, k], i, mode="clip") for k in range(n)], s)
-
-
-def _row_series(panels, i, s):
-    rows = jnp.take(panels, i, axis=0, mode="clip")
-    return _clenshaw([rows[..., k] for k in range(panels.shape[1])], s)
-
-
-def _series(panels, i, s):
-    """Panel i's series at s. On the CPU, one gather per coefficient fuses
-    into the recurrence, and one row gather instead runs 1.5-4.2x slower. On
-    the GPU, the index those gathers share is written to memory first
-    (float32 values at 0.57x jax's), and one row gather reads it once
-    (experiments/44)."""
-    return jax.lax.platform_dependent(
-        panels, i, s, cpu=_per_coefficient_series, default=_row_series
-    )
 
 
 def _locate(x):

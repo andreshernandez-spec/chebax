@@ -1,5 +1,6 @@
 """Shared runtime for recipes: table reconstruction, domain checks, the
-safeguarded root solver and its per-dtype constants, a float64 digamma.
+safeguarded root solver and its per-dtype constants, a float64 digamma, the
+per-element panel lookup.
 
 A 2-D TABLE[k, j] is the j-th parameter coefficient of the k-th argument
 coefficient, the parameter mapped from [lo, hi] onto [-1, 1] (_gen_common's axis
@@ -207,6 +208,37 @@ def cheb_basis(s, n):
     for _ in range(2, n):
         b.append(2.0 * s * b[-1] - b[-2])
     return jnp.stack(b[:n], axis=-1)
+
+
+def _panel_clenshaw(c, s):
+    b1 = b2 = jnp.zeros_like(s)
+    for ck in c[:0:-1]:
+        b1, b2 = ck - b2 + 2.0 * s * b1, b1
+    return c[0] - b2 + s * b1
+
+
+def per_coefficient_series(panels, i, s):
+    n = panels.shape[1]
+    return _panel_clenshaw(
+        [jnp.take(panels[:, k], i, mode="clip") for k in range(n)], s
+    )
+
+
+def row_series(panels, i, s):
+    rows = jnp.take(panels, i, axis=0, mode="clip")
+    return _panel_clenshaw([rows[..., k] for k in range(panels.shape[1])], s)
+
+
+def panel_series(panels, i, s):
+    """Row i of panels[i, k] as a Chebyshev series at s in [-1, 1], i and s
+    per element. On the CPU, one gather per coefficient fuses into the
+    recurrence, and one row gather instead runs 1.5-4.2x slower. On the GPU,
+    the index those gathers share is written to memory first (gammaln's
+    float32 values at 0.57x jax's), and one row gather reads it once
+    (experiments/44)."""
+    return jax.lax.platform_dependent(
+        panels, i, s, cpu=per_coefficient_series, default=row_series
+    )
 
 
 def _patch_parts(tab, n, sy, sp, grad):

@@ -10,11 +10,11 @@ normal to the largest float. d2z/dy2 is checked for |y| <= 1e12, where its
 reference keeps 30 digits, and where it is below the largest float (above
 y = -3e-153 it overflows, and comes back nan, not inf).
 
-Worst on this grid, jax 0.11: float64 z 4.7e-16 (5.7e-16 on jax 0.5.3),
-dz/dy 6.3e-16, d2z/dy2 5.6e-15 (bars 2e-15, 2.5e-15, 2.2e-14); float32 2.7e-7, 3.3e-7, 1.6e-6 (bars
-1.1e-6, 1.3e-6, 6e-6). d2z/dy2 differentiates the derivative's table, so it
-is weakest on the centre's top panel. The grid stops at the smallest
-normal (XLA flushes subnormal y to 0, where z is inf).
+Worst on this grid, jax 0.11: float64 z 3.8e-16 (4.2e-16 on jax 0.5.3),
+dz/dy 6.3e-16, d2z/dy2 5.6e-15 (bars 2e-15, 2.5e-15, 2.2e-14); float32
+2.6e-7, 3.3e-7, 1.6e-6 (bars 1.1e-6, 1.3e-6, 6e-6). d2z/dy2 differentiates
+the derivative's table, so it is weakest on the centre's top panel. The grid
+stops at the smallest normal (XLA flushes subnormal y to 0, where z is inf).
 """
 
 import os
@@ -161,6 +161,43 @@ def test_row_gather_matches_per_coefficient():
         ]
     finally:
         N._series = saved
+    for w, g in zip(want, got):
+        np.testing.assert_allclose(g, w, rtol=5e-16, atol=0)
+
+
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+def test_cpu_panel_estimate_stays_in_its_bound(dtype):
+    # the CPU picks upper-tail panels from a log-free estimate of
+    # log(1 - e^y): on these points off by 5.75e-4 at most, |v| <= 1.007
+    rng = np.random.default_rng(45)
+    tiny = np.finfo(dtype).tiny
+    y = np.concatenate(
+        [
+            -rng.uniform(0, -nt.Y_HI, 500_000),
+            -np.exp(rng.uniform(np.log(tiny), np.log(-nt.Y_HI), 500_000)),
+        ]
+    ).astype(dtype)
+    y = y[(y > nt.Y_HI) & (np.abs(y) >= tiny)]
+    est = jax.jit(lambda v: N._estimated_u(v, v))(jnp.asarray(y))
+    exact = np.log(-np.expm1(y.astype(float)))
+    assert np.max(np.abs(np.asarray(est, float) - exact)) <= 6e-4
+    v = np.asarray(jax.jit(N._locate)(jnp.asarray(y))[-1])
+    assert np.max(np.abs(v)) <= 1.013
+
+
+def test_exact_index_matches_estimated():
+    # CUDA in float64 and other platforms pick the panel from s itself, which
+    # CPU-only CI never lowers; an edge the estimate puts in the next panel
+    # moves 1 ulp
+    y = jnp.asarray(Y)
+    want = [np.asarray(jax.jit(f)(y)) for f in (N._value, N._slope)]
+    saved, N._index_u = N._index_u, N._exact_u
+    try:
+        got = [
+            np.asarray(jax.jit(lambda v, f=f: f(v))(y)) for f in (N._value, N._slope)
+        ]
+    finally:
+        N._index_u = saved
     for w, g in zip(want, got):
         np.testing.assert_allclose(g, w, rtol=5e-16, atol=0)
 

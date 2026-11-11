@@ -3,17 +3,17 @@ design is in ndtri_exp_gen). The centre, e^-1.5 <= e^y <= 1 - e^-1.5, is
 (y + log 2) h(y + log 2), relative next to the median's zero. The tails are
 -+ s g(s), s = sqrt(-2 u), u = y below the centre and log(1 - e^y) above
 it, so neither forms e^y where it underflows or 1 - e^y where it rounds
-to 0; g = 1 from s = 2^30. Float64 floors, all relative: z 4.7e-16, dz/dy
+to 0; g = 1 from s = 2^30. Float64 floors, all relative: z 3.8e-16, dz/dy
 6.3e-16, d2z/dy2 5.6e-15 (tests/test_ndtri_exp.py).
 
 XLA evaluates every branch of a select for every element, so the branches
 share one series: centre and tail panels lie end to end in one table, and
-each element finds its own. The value costs one expm1, one log and one
-sqrt per element and no division; the derivative has its own table and
-one division. Against jax's ndtri(exp(y)), which is -inf below y = -745
-and loses digits as y nears 0 (experiments/45): value_and_grad 2.1-2.4x
-faster on one CPU core and 2.0-4.0x on the GPU, the value 0.69-0.97x on
-the CPU and 1.0-1.9x on the GPU.
+each element finds its own. The value costs one expm1, one log and one or
+two sqrts per element and no division; the derivative has its own table
+and one division. Against jax's ndtri(exp(y)), which is -inf below y = -745
+and loses digits as y nears 0 (experiments/45): value_and_grad 2.0-2.4x
+faster on one CPU core and 3.2-4.0x on the GPU, the value 0.92-1.10x on
+the CPU and 1.1-1.9x on the GPU.
 """
 
 import functools
@@ -54,6 +54,54 @@ def _tables():
     return _tables_cached(canon_tag())
 
 
+def _layout(dtype):
+    """Integer type, mantissa bits and exponent bias of a float dtype."""
+    if dtype == jnp.float64:
+        return jnp.int64, 52, 1023
+    return jnp.int32, 23, 127
+
+
+def _estimated_u(y, u):
+    """u for the panel index, without the log: above the centre, log(1 - e^y)
+    = log(-y) + y/2 + y^2/24 + O(y^4), log(-y) from the exponent bits and
+    LN_EST on the mantissa. It is off by at most 6e-4 there (LN_EST_ERR,
+    the y^4 term, and float32 rounding of the exponent's part), and s^2 >= 3
+    with panels at least s/32 wide, so s lies within 1.3% of a half-width of
+    the panel picked, where its series still holds. u goes unused: reading it
+    would wait for the log."""
+    lower = y < _t.YC
+    upper = y > _t.Y_HI
+    x = jnp.where(upper, -y, 1.0)
+    it, mb, bias = _layout(y.dtype)
+    bits = jax.lax.bitcast_convert_type(x, it)
+    mant = (bits & ((1 << mb) - 1)) | (bias << mb)
+    m = jax.lax.bitcast_convert_type(mant, y.dtype) - 1.0
+    log_m = _t.LN_EST[-1]
+    for c in _t.LN_EST[-2::-1]:
+        log_m = c + m * log_m
+    log_x = ((bits >> mb) - bias).astype(y.dtype) * _t.LN2_HI + log_m
+    yu = jnp.where(upper, y, 0.0)
+    return jnp.where(lower, y, jnp.where(upper, log_x + yu * (0.5 + yu / 24.0), _t.YC))
+
+
+def _exact_u(y, u):
+    return u
+
+
+def _index_u(y, u):
+    """u for picking the tail panel. XLA's CPU backend has no gather
+    instruction: it moves each panel index to an integer register and loads
+    the coefficients lane by lane, so an index that waits for log(1 - e^y)
+    puts one serial chain on every element. The CPU takes the estimate, and
+    so does CUDA in float32, where the program for value and gradient then
+    fuses whole; in float64 there the estimate costs more than it saves
+    (experiments/45). Other platforms are unmeasured and keep u."""
+    cuda = _estimated_u if y.dtype == jnp.float32 else _exact_u
+    return jax.lax.platform_dependent(
+        y, u, cpu=_estimated_u, cuda=cuda, default=_exact_u
+    )
+
+
 def _locate(y):
     """Region masks, 1 - e^y, the tail's s, and each element's panel i and
     coordinate v in [-1, 1]."""
@@ -66,24 +114,24 @@ def _locate(y):
     u = jnp.where(lower, y, jnp.where(centre, _t.YC, jnp.log(q)))
     # 2 sqrt(-u/2): exact scalings, so -2u never overflows
     s = 2.0 * jnp.sqrt(-0.5 * u)
-    big = s >= _t.S_BIG
-    st = jnp.where(big, 1.5, s)
-    if y.dtype == jnp.float64:
-        it, mb, bias = jnp.int64, 52, 1023
-    else:
-        it, mb, bias = jnp.int32, 23, 127
+    # the panel from s_i, the coordinate in it from s; they differ only
+    # above the centre, where _index_u estimates
+    s_i = 2.0 * jnp.sqrt(-0.5 * _index_u(y, u))
+    big_i = s_i >= _t.S_BIG
+    st = jnp.where(big_i, 1.5, s_i)
+    it, mb, bias = _layout(y.dtype)
     # st = 2^e (1 + m), m in [0, 1): the octave e from the exponent bits
     e = (jax.lax.bitcast_convert_type(st, it) >> mb) - bias
     scale = jax.lax.bitcast_convert_type((bias - e) << mb, y.dtype)
-    w = (st * scale - 1.0) * _t.K
-    j = jnp.floor(w)
+    j = jnp.floor((st * scale - 1.0) * _t.K)
+    w = (jnp.where(big_i, 1.5, s) * scale - 1.0) * _t.K
     i_tail = (e * _t.K - _t.J0 + _t.NC).astype(jnp.int32) + j.astype(jnp.int32)
     # one add, so eager and jitted programs put an edge in the same panel
     wc = (jnp.where(centre, y, _t.YC) + _SHIFT) * _t.WC
     jc = jnp.floor(wc)
     i = jnp.where(centre, jc.astype(jnp.int32), i_tail)
     v = 2.0 * jnp.where(centre, wc - jc, w - j) - 1.0
-    return centre, lower, q, s, big, i, v
+    return centre, lower, q, s, s >= _t.S_BIG, i, v
 
 
 def _value(y):

@@ -26,7 +26,13 @@ values: dz/dy in the centre and a'(s) = s Phi(-a)/phi(a) in the tail, so
 dz/dy = a'(s)/s below YC and a'(s)/s * e^y/(1 - e^y) above Y_HI. Measured
 (experiments/03): NTP = 10 terms hold the values, 9 in the centre, and
 NTP_D = 10 the derivative, both to eps/4 of the panel's leading
-coefficient; float32 keeps 5 of each. Regenerate with:
+coefficient; float32 keeps 5 of each.
+
+LN_EST holds the power-basis coefficients of the degree-LN_DEG Chebyshev
+interpolant of log(1 + x) on [0, 1], off by at most LN_EST_ERR (on a grid
+of LN_GRID points). On the CPU, and on CUDA in float32, the runtime picks
+upper-tail panels from an estimate of log(1 - e^y) built on it, so the
+gathers need not wait for the log (ndtri_exp.py says why). Regenerate with:
 
     python -m chebax._src.recipes.ndtri_exp_gen
 """
@@ -48,6 +54,8 @@ OCTAVES = 30  # tail octaves [1, 2^30)
 NN = 24  # nodes per panel fit
 NTP = 10  # terms kept per value panel
 NTP_D = 10  # and per derivative panel
+LN_DEG = 3  # log(1 + x) on [0, 1] for the CPU's panel estimate
+LN_GRID = 4001  # points its error is measured on
 
 
 def _erfcx(mp, x):
@@ -84,6 +92,35 @@ def _tail_a(mp, s):
     raise RuntimeError(f"no convergence at s = {s}")
 
 
+def _ln_estimate(mp):
+    """Power-basis coefficients of log(1 + x)'s Chebyshev interpolant on
+    [0, 1], and its largest error on LN_GRID points."""
+    c = dct(mp, [mp.log1p((u + 1) / 2) for u in nodes(mp, LN_DEG + 1)])
+    # T_k(2x - 1) in powers of x, by T_(k+1) = 2 (2x - 1) T_k - T_(k-1)
+    t_prev, t_cur = [mp.mpf(1)], [mp.mpf(-1), mp.mpf(2)]
+    power = [c[0]] + [mp.mpf(0)] * LN_DEG
+    for k in range(1, LN_DEG + 1):
+        for n, v in enumerate(t_cur):
+            power[n] += c[k] * v
+        nxt = [mp.mpf(0)] * (len(t_cur) + 1)
+        for n, v in enumerate(t_cur):
+            nxt[n] -= 2 * v
+            nxt[n + 1] += 4 * v
+        for n, v in enumerate(t_prev):
+            nxt[n] -= v
+        t_prev, t_cur = t_cur, nxt
+
+    def poly(x):
+        out = power[-1]
+        for v in power[-2::-1]:
+            out = v + x * out
+        return out
+
+    xs = [mp.mpf(n) / (LN_GRID - 1) for n in range(LN_GRID)]
+    err = max(abs(poly(x) - mp.log1p(x)) for x in xs)
+    return [float(v) for v in power], float(err)
+
+
 def generate_tables():
     import mpmath as mp
 
@@ -111,6 +148,7 @@ def generate_tables():
             w = mp.mpf(2) ** e / K
             for j in range(j0 if e == 0 else 0, K):
                 fits.append(fit(tail, 2**e + j * w, w))
+        ln_est, ln_err = _ln_estimate(mp)
         scalars = {
             "NC": c_hi - c_lo,
             "D_LO": c_lo / WC,
@@ -118,6 +156,8 @@ def generate_tables():
             "Y_HI": float(y_hi),
             "LN2_HI": float(ln2),
             "LN2_LO": float(ln2 - mp.mpf(float(ln2))),
+            "LN_EST": ln_est,
+            "LN_EST_ERR": ln_err,
         }
     return [f[0] for f in fits], [f[1] for f in fits], scalars
 
@@ -141,6 +181,8 @@ def main(out_dir=None):
             "nn": NN,
             "ntp": NTP,
             "ntp_d": NTP_D,
+            "ln_deg": LN_DEG,
+            "ln_grid": LN_GRID,
         },
         {
             "YC": YC,

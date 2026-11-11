@@ -23,16 +23,20 @@ Sections:
   speed     ns per element at N = 2^20 (CPU) or 2^22 (GPU), median over E45_REPS
             alternations of the best of 7 calls; value_and_grad of sum(f(y)).
             "temp" is the compiled program's temporary memory from XLA, "compile"
-            the time to trace, lower and compile it.
-  ablation  why the CPU value is slower than its parts (CPU only, values only,
-            same data and timing as speed). A copy of the runtime's value,
-            checked equal to chebax's, timed with one thing removed: the
-            gathers (every element reads panel 0, still waiting on its index),
-            the upper tail's expm1 and log (those lanes take u = -1.5), both;
-            then with the full work kept but the gather index, or the series
-            coordinate, computed without the log (the upper lanes take the
-            first tail panel, so their values are wrong; cost only). Last,
-            each transcendental alone.
+            the time to trace, lower and compile it. "other index" is the
+            runtime with the tail panel index it does not use there: the
+            exact one on the CPU and on the GPU in float32, the estimate on
+            the GPU in float64 (see ablation).
+  ablation  why the CPU value lagged jax's (CPU only, values only, same data
+            and timing as speed). A copy of the runtime's value, checked equal
+            to chebax's, timed with the CPU's estimated panel index ("chebax")
+            and with the exact one ("exact index", the CPU's too before the
+            estimate), and from the exact index with one thing removed:
+            the gathers (every element reads panel 0, still waiting on its
+            index), the upper tail's expm1 and log (those lanes take u = -1.5),
+            both, or the log from the series coordinate. "index without the
+            log" puts upper lanes on the first tail panel: wrong values, the
+            cost of a free index. Last, each transcendental alone.
 
 Usage:
   [E45_DEVICES=cpu,gpu E45_REPS=5 E45_CORE=10] python experiments/45_ndtri_exp.py
@@ -147,6 +151,7 @@ def run(device, dtype):
         "other gather": _other_gather(device),
         "jax ndtri(exp)": lambda y: jax.scipy.special.ndtri(jnp.exp(y)),
     }
+    funs["other index"] = _other_index(device, dt)
     tag = f"[{device} {dtype}]"
     if device == "cpu":
         _ops(tag, funs, jax, jnp)
@@ -156,25 +161,25 @@ def run(device, dtype):
         _ablation(tag, dt, jax, jnp, np)
 
 
-def _other_gather(device):
+def _patched(name, replacement):
+    """chebax.ndtri_exp with the runtime's N.<name> replaced while it traces."""
     import jax
 
     from chebax._src.recipes import _common
     from chebax._src.recipes import ndtri_exp as N
 
-    form = _common.row_series if device == "cpu" else _common.per_coefficient_series
-
-    def with_form(fn):
+    def swapped(fn):
         def g(y):
-            saved, N._series = N._series, form
+            saved = getattr(N, name)
+            setattr(N, name, replacement)
             try:
                 return fn(y)
             finally:
-                N._series = saved
+                setattr(N, name, saved)
 
         return g
 
-    value, slope = with_form(N._value), with_form(N._slope)
+    value, slope = swapped(N._value), swapped(N._slope)
 
     @jax.custom_jvp
     def f(y):
@@ -186,6 +191,25 @@ def _other_gather(device):
         return value(y), slope(y) * dy
 
     return lambda y: f(_common.canon_float(y))
+
+
+def _other_index(device, dt):
+    """The runtime with the panel index it does not use on this device and
+    dtype: the exact one where it estimates (the CPU, the GPU in float32),
+    the estimate where it does not."""
+    import numpy as np
+
+    from chebax._src.recipes import ndtri_exp as N
+
+    estimates = device == "cpu" or dt == np.float32
+    return _patched("_index_u", N._exact_u if estimates else N._estimated_u)
+
+
+def _other_gather(device):
+    from chebax._src.recipes import _common
+
+    form = _common.row_series if device == "cpu" else _common.per_coefficient_series
+    return _patched("_series", form)
 
 
 def _vg(f, jax, jnp):
@@ -304,7 +328,7 @@ def _speed(tag, device, funs, dt, jax, jnp, np):
                 )
 
 
-def _value_variant(y, gathers=True, log=True, index_log=True, coord_log=True):
+def _value_variant(y, gathers=True, log=True, index="estimate", coord_log=True):
     """The runtime's value with pieces removed (see the ablation section)."""
     import jax
     import jax.numpy as jnp
@@ -319,8 +343,10 @@ def _value_variant(y, gathers=True, log=True, index_log=True, coord_log=True):
     log_q = jnp.log(-jnp.expm1(y)) if log else T.YC
     u = jnp.where(lower, y, jnp.where(centre, T.YC, log_q))
     s = 2.0 * jnp.sqrt(-0.5 * u)
-    s_free = 2.0 * jnp.sqrt(-0.5 * jnp.where(lower, y, T.YC))
-    si = s if index_log else s_free
+    free_u = jnp.where(lower, y, T.YC)
+    s_free = 2.0 * jnp.sqrt(-0.5 * free_u)
+    index_u = {"estimate": N._estimated_u(y, u), "exact": u, "free": free_u}[index]
+    si = 2.0 * jnp.sqrt(-0.5 * index_u)
     sv = s if coord_log else s_free
     big = si >= T.S_BIG
     st, sv = jnp.where(big, 1.5, si), jnp.where(big, 1.5, sv)
@@ -363,12 +389,12 @@ def _ablation(tag, dt, jax, jnp, np):
     funs = {
         "jax ndtri(exp)": lambda y: jax.scipy.special.ndtri(jnp.exp(y)),
         "chebax": chebax.ndtri_exp,
-        "without gathers": lambda y: v(y, gathers=False),
-        "without expm1, log": lambda y: v(y, log=False),
-        "without either": lambda y: v(y, gathers=False, log=False),
-        "index without the log": lambda y: v(y, index_log=False),
-        "coordinate without the log": lambda y: v(y, coord_log=False),
-        "both without the log": lambda y: v(y, index_log=False, coord_log=False),
+        "exact index": lambda y: v(y, index="exact"),
+        "  without gathers": lambda y: v(y, gathers=False, index="exact"),
+        "  without expm1, log": lambda y: v(y, log=False, index="exact"),
+        "  without either": lambda y: v(y, gathers=False, log=False, index="exact"),
+        "  coordinate without the log": lambda y: v(y, index="exact", coord_log=False),
+        "index without the log": lambda y: v(y, index="free"),
         "exp alone": jnp.exp,
         "expm1 alone": jnp.expm1,
         "log alone": lambda y: jnp.log(-y),

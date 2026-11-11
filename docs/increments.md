@@ -1891,18 +1891,18 @@ within the tail's ten terms.
 
 XLA evaluates every branch of a select for every element, so the centre and
 tail panels lie end to end in one table (550 panels of 10 terms) and each
-element runs one series. The value compiles to one expm1, one log and one
-sqrt and no division; jax's composition to one exp, two logs, a sqrt and
-five divides. The derivative has its own table on the same panels, dz/dy in
+element runs one series. The value compiles to one expm1, one log, two sqrts
+(one picks the tail panel, below) and no division; jax's composition to one
+exp, two logs, a sqrt and five divides. The derivative has its own table on the same panels, dz/dy in
 the centre and a'(s) in the tail, so dz/dy = a'/s below and a'/s e^y/(1 -
 e^y) above: value_and_grad adds one divide, against nineteen for jax's.
 Both read the panel lookup that gammaln used, now `_common.panel_series`
 (one gather per coefficient on the CPU, one row gather elsewhere).
 
 Accuracy against mpmath (tests/test_ndtri_exp.py), all relative: float64 z
-4.7e-16 (5.7e-16 on jax 0.5.3), dz/dy 6.3e-16, d2z/dy2 5.6e-15 (AD through
+3.8e-16 (4.2e-16 on jax 0.5.3), dz/dy 6.3e-16, d2z/dy2 5.6e-15 (AD through
 the derivative's table, weakest on the centre's top panel); float32 (5
-terms) 2.7e-7, 3.3e-7, 1.6e-6. scipy's ndtri_exp is off by 5.1e-13 below
+terms) 2.6e-7, 3.3e-7, 1.6e-6. scipy's ndtri_exp is off by 5.1e-13 below
 y = -745 and absolute next to the median. Above y = -3e-153, d2z/dy2
 overflows float64 and comes back nan, not inf.
 
@@ -1911,26 +1911,44 @@ Speed against jax's ndtri(exp(y)), experiments/45 (log U for U uniform on
 
 | | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
 |---|---|---|---|---|
-| value | 0.97x | 0.69x | 1.91x | 1.04x |
-| value_and_grad | 2.41x | 2.37x | 4.02x | 2.01x |
+| value | 1.10x | 0.95x | 1.91x | 1.08x |
+| value_and_grad | 2.35x | 2.15x | 4.00x | 3.24x |
 
-On the CPU the value lags jax's for three reasons, measured by the ablation
-in experiments/45 on the float32 value (6.8 ns per element against jax's
-4.9). XLA's CPU backend emits no gather instruction: the compiled loop (its
+XLA's CPU backend emits no gather instruction: the compiled loop (its
 assembly, dumped with XLA_FLAGS=--xla_dump_to) moves each block's panel
 indices to integer registers one at a time and loads every coefficient lane
-by lane. The upper tail's expm1 and log run on every element, and XLA's
-float64 log is slow (5.1 ns alone, exp 1.2). And the two compound, because
-the panel index comes from s, which waits for the log on every lane, so each
-element runs one serial chain from expm1 to the gathered loads. Without the
-gathers the value takes 3.6 ns, without expm1 and log 3.0, without either
-1.2. With all the work kept, an index that does not wait for the log takes
-the value to 4.7 ns; a series coordinate that does not wait leaves it at
-6.8, so the series' own chain after the log is not the cost. Float64 shows
-the same at 18.0 ns: 15.3 with the index off the log.
+by lane. With the tail panel picked from the exact s, that index waits for
+the upper tail's log on every lane, so each element ran one serial chain
+from expm1 to the gathered loads, and the float32 value took 7.0 ns per
+element against jax's 5.2 (the ablation in experiments/45, "exact index").
+Without the gathers it takes 3.9 ns, without the upper tail's expm1 and log
+3.0, without either 1.2, and with all the work but a free index 4.8. A
+series coordinate that does not wait for the log changes nothing (7.1), so
+the series' own chain after the log is not the cost. XLA's float64 log is
+slow besides (5.1 ns alone, exp 1.2).
+
+So the CPU picks upper-tail panels from an estimate of log(1 - e^y) that
+needs no log: log(-y) + y/2 + y^2/24, with log(-y) from the exponent bits
+and a cubic in the mantissa (LN_EST, the Chebyshev interpolant of log(1 + x)
+on [0, 1], off by 5.7e-4). The exact s still places the element in the
+panel, which the estimate can miss by at most 1.3% of a half-width (s^2 >= 3
+above the centre, half-widths >= s/64), where the series still holds. On the
+test's 10^6 points per dtype the estimate is off by 5.75e-4 at most and |v|
+<= 1.007; values move by 1 ulp at panel edges. The float32 value takes 5.6
+ns (0.94x jax's), float64 16.7 (1.08x, from 0.99x). value_and_grad was not
+bound by that chain and pays for the estimate: 2.15x jax's in float32
+against 2.39x with the exact index, 2.35x against 2.50x in float64.
+
+On the GPU, which gathers in hardware, the estimate's float64 work costs
+more than it saves (values 1.51x jax's against 1.91x, value_and_grad 3.42x
+against 4.00x), so float64 keeps the exact index there. In float32 it lets
+XLA fuse value and gradient into one program (0 MiB of temporaries, against
+16), 3.24x jax's against 1.96x; values stay at 1.08x against 1.11x.
+`lax.platform_dependent` picks per platform and dtype; TPU and ROCm are
+unmeasured and keep the exact index.
 
 On the GPU, 1 - e^y is -expm1(y): written 0 - expm1(y), the float32 value
 compiled to two fusions, the first writing each element's panel index and
 centre mask to memory (20 MiB at 2^22) and the second reading y again, and
 it ran at 0.52x jax's in a first run of experiments/45. The per-coefficient
-gathers still do that ("other gather", 0.53x).
+gathers still do that ("other gather", 0.56x, 16 MiB).

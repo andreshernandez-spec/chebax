@@ -35,6 +35,7 @@ EXPECTED = {
     "chebax._src.recipes.lambertw": set(),
     "chebax._src.recipes.erf_family": {"erf_table"},
     "chebax._src.recipes.gammaln": {"gammaln_table"},
+    "chebax._src.recipes.ndtri_exp": {"ndtri_exp_table"},
     "chebax._src.recipes.besselk": {"besselk_table"},
     "chebax._src.recipes.matern": {"besselk_table"},
     # dI/dnu at nu = 0 is -K_0, which besseli_scalar's order derivative uses

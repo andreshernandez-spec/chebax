@@ -95,6 +95,7 @@ python -m chebax._src.recipes.gammainc_large_gen  # regenerate the Temme-zone ta
 python -m chebax._src.recipes.gammainc_array_gen  # regenerate the per-element patches (~1 min)
 python -m chebax._src.recipes.gammaincinv_array_gen # regenerate the quantile table (~2.5 min)
 python -m chebax._src.recipes.gammaln_gen         # regenerate the gammaln tables (~3 s)
+python -m chebax._src.recipes.ndtri_exp_gen       # regenerate the ndtri_exp table (~13 s)
 python -m chebax._src.recipes.hyp1f1_gen          # regenerate the hyp1f1 log-tables (~11 min;
                                                   #  CI regen-checks only the tail table; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)

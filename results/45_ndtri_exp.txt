@@ -1,0 +1,132 @@
+# 2026-11-11. chebax branch ndtri-exp (on 1196013, tree as committed with this file). jax 0.11.0.
+# CPU: i9-11980HK, one core, taskset CPU 12, 5 alternations, desktop idle. GPU: RTX 3080 Laptop, 5 alternations.
+# Second of two passes; every speed ratio of the first was within 13% of this one.
+
+[cpu f64] instructions in the compiled program
+  chebax           value           {'exponential-minus-one': 1, 'log': 1, 'sqrt': 2}
+  chebax           value_and_grad  {'divide': 1, 'exponential-minus-one': 1, 'log': 1, 'sqrt': 2}
+  jax ndtri(exp)   value           {'divide': 5, 'exponential': 1, 'log': 2, 'sqrt': 1}
+  jax ndtri(exp)   value_and_grad  {'divide': 19, 'exponential': 1, 'log': 2, 'sqrt': 1}
+  other index      value           {'exponential-minus-one': 1, 'log': 1, 'sqrt': 1}
+  other index      value_and_grad  {'divide': 1, 'exponential-minus-one': 1, 'log': 1, 'sqrt': 1}
+[cpu f64] max relative error against mpmath, n nonfinite where finite
+  y                      n                       chebax               jax ndtri(exp)                        scipy
+  [-max, -745)         299   2.1e-16    0  3.5e-16    0       nan  299  1.0e+00    0   5.1e-13    0              
+  [-745, -1.5)         799   4.3e-16    0  4.2e-16    0   6.2e-16    4  1.0e+00    0   4.1e-16    0              
+  [-1.5, -0.25)        634   4.5e-16    0  7.2e-16    0   1.0e+00    0  6.1e-16    0   1.0e+00    0              
+  [-0.25, -1e-3)       299   5.7e-16    0  4.9e-16    0   5.0e-15    0  4.8e-14    0   4.4e-16    0              
+  [-1e-3, -tiny]       300   2.3e-16    0  4.2e-16    0   9.7e-03  286  1.0e+00    0   2.2e-16    0              
+  -log 2 +- 0.1        122   3.7e-16    0  3.5e-16    0   1.0e+00    0  3.7e-16    0   1.0e+00    0              
+  (each cell: z error, nonfinite z; dz/dy error, nonfinite dz/dy)
+[cpu f64] ns per element, N = 1048576
+  log U, U in (0, 1)          value           chebax            16.391 ns  1.10x jax  temp     0 MiB  compile 0.09 s
+  log U, U in (0, 1)          value           other gather      41.371 ns  0.44x jax  temp     0 MiB  compile 0.07 s
+  log U, U in (0, 1)          value           jax ndtri(exp)    18.022 ns  1.00x jax  temp     0 MiB  compile 0.06 s
+  log U, U in (0, 1)          value           other index       18.377 ns  0.98x jax  temp     0 MiB  compile 0.06 s
+  log U, U in (0, 1)          value_and_grad  chebax            20.086 ns  2.35x jax  temp    24 MiB  compile 0.18 s
+  log U, U in (0, 1)          value_and_grad  other gather      32.309 ns  1.46x jax  temp    24 MiB  compile 0.16 s
+  log U, U in (0, 1)          value_and_grad  jax ndtri(exp)    47.222 ns  1.00x jax  temp    72 MiB  compile 0.27 s
+  log U, U in (0, 1)          value_and_grad  other index       18.880 ns  2.50x jax  temp    16 MiB  compile 0.16 s
+  -|y| log-uniform 1e-6..1e6  value           chebax            20.200 ns  0.92x jax  temp     0 MiB  compile 0.07 s
+  -|y| log-uniform 1e-6..1e6  value           other gather      39.883 ns  0.46x jax  temp     0 MiB  compile 0.07 s
+  -|y| log-uniform 1e-6..1e6  value           jax ndtri(exp)    18.508 ns  1.00x jax  temp     0 MiB  compile 0.06 s
+  -|y| log-uniform 1e-6..1e6  value           other index       21.298 ns  0.87x jax  temp     0 MiB  compile 0.06 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  chebax            22.598 ns  2.04x jax  temp    24 MiB  compile 0.17 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other gather      34.557 ns  1.33x jax  temp    24 MiB  compile 0.16 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  jax ndtri(exp)    45.997 ns  1.00x jax  temp    72 MiB  compile 0.24 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other index       21.263 ns  2.16x jax  temp    16 MiB  compile 0.14 s
+[cpu f64] ablation of the value, ns per element, N = 1048576, log U
+  jax ndtri(exp)                18.152 ns  1.00x jax
+  chebax                        16.738 ns  1.08x jax
+  exact index                   18.389 ns  0.99x jax
+    without gathers             14.228 ns  1.28x jax
+    without expm1, log           5.654 ns  3.21x jax
+    without either               3.460 ns  5.25x jax
+    coordinate without the log  17.966 ns  1.01x jax
+  index without the log         15.868 ns  1.14x jax
+  exp alone                      1.168 ns 15.54x jax
+  expm1 alone                    2.348 ns  7.73x jax
+  log alone                      5.014 ns  3.62x jax
+  sqrt alone                     0.821 ns 22.10x jax
+  log(-expm1) alone              8.614 ns  2.11x jax
+[cpu f32] instructions in the compiled program
+  chebax           value           {'exponential-minus-one': 1, 'log': 1, 'sqrt': 2}
+  chebax           value_and_grad  {'divide': 1, 'exponential-minus-one': 1, 'log': 1, 'sqrt': 2}
+  jax ndtri(exp)   value           {'divide': 5, 'exponential': 1, 'log': 2, 'sqrt': 1}
+  jax ndtri(exp)   value_and_grad  {'divide': 19, 'exponential': 1, 'log': 2, 'sqrt': 1}
+  other index      value           {'exponential-minus-one': 1, 'log': 1, 'sqrt': 1}
+  other index      value_and_grad  {'divide': 1, 'exponential-minus-one': 1, 'log': 1, 'sqrt': 1}
+[cpu f32] max relative error against mpmath, n nonfinite where finite
+  y                      n                       chebax               jax ndtri(exp)
+  [-max, -87)          299   1.1e-07    0  1.0e-07    0       nan  299  1.0e+00    0
+  [-87, -1.5)          799   2.3e-07    0  2.0e-07    0   2.2e-07    0  5.8e-07    0
+  [-1.5, -0.25)        618   1.7e-07    0  2.5e-07    0   1.0e+00    0  2.8e-07    0
+  [-0.25, -1e-3)       299   2.7e-07    0  3.1e-07    0   2.6e-06    0  2.5e-05    0
+  [-1e-3, -tiny]       300   1.5e-07    0  2.4e-07    0   1.7e-02  261  1.0e+00    0
+  -log 2 +- 0.1        104   1.2e-07    0  1.2e-07    0   1.0e+00    0  1.2e-07    0
+  (each cell: z error, nonfinite z; dz/dy error, nonfinite dz/dy)
+[cpu f32] ns per element, N = 1048576
+  log U, U in (0, 1)          value           chebax             5.502 ns  0.95x jax  temp     0 MiB  compile 0.08 s
+  log U, U in (0, 1)          value           other gather       5.632 ns  0.93x jax  temp     0 MiB  compile 0.07 s
+  log U, U in (0, 1)          value           jax ndtri(exp)     5.211 ns  1.00x jax  temp     0 MiB  compile 0.06 s
+  log U, U in (0, 1)          value           other index        7.050 ns  0.74x jax  temp     0 MiB  compile 0.06 s
+  log U, U in (0, 1)          value_and_grad  chebax             8.617 ns  2.15x jax  temp    12 MiB  compile 0.20 s
+  log U, U in (0, 1)          value_and_grad  other gather      19.678 ns  0.94x jax  temp    12 MiB  compile 0.15 s
+  log U, U in (0, 1)          value_and_grad  jax ndtri(exp)    18.542 ns  1.00x jax  temp    36 MiB  compile 0.26 s
+  log U, U in (0, 1)          value_and_grad  other index        7.772 ns  2.39x jax  temp     8 MiB  compile 0.13 s
+  -|y| log-uniform 1e-6..1e6  value           chebax             5.585 ns  0.93x jax  temp     0 MiB  compile 0.06 s
+  -|y| log-uniform 1e-6..1e6  value           other gather       5.721 ns  0.91x jax  temp     0 MiB  compile 0.07 s
+  -|y| log-uniform 1e-6..1e6  value           jax ndtri(exp)     5.219 ns  1.00x jax  temp     0 MiB  compile 0.06 s
+  -|y| log-uniform 1e-6..1e6  value           other index        6.941 ns  0.75x jax  temp     0 MiB  compile 0.06 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  chebax             8.634 ns  2.17x jax  temp    12 MiB  compile 0.15 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other gather      19.985 ns  0.94x jax  temp    12 MiB  compile 0.15 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  jax ndtri(exp)    18.695 ns  1.00x jax  temp    36 MiB  compile 0.27 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other index        7.794 ns  2.40x jax  temp     8 MiB  compile 0.14 s
+[cpu f32] ablation of the value, ns per element, N = 1048576, log U
+  jax ndtri(exp)                 5.230 ns  1.00x jax
+  chebax                         5.564 ns  0.94x jax
+  exact index                    6.981 ns  0.75x jax
+    without gathers              3.851 ns  1.36x jax
+    without expm1, log           3.049 ns  1.72x jax
+    without either               1.241 ns  4.21x jax
+    coordinate without the log   7.092 ns  0.74x jax
+  index without the log          4.772 ns  1.10x jax
+  exp alone                      0.401 ns 13.03x jax
+  expm1 alone                    0.873 ns  5.99x jax
+  log alone                      0.543 ns  9.63x jax
+  sqrt alone                     0.223 ns 23.44x jax
+  log(-expm1) alone              1.901 ns  2.75x jax
+[gpu f64] ns per element, N = 4194304
+  log U, U in (0, 1)          value           chebax             0.870 ns  1.91x jax  temp    32 MiB  compile 0.21 s
+  log U, U in (0, 1)          value           other gather       0.942 ns  1.77x jax  temp    16 MiB  compile 0.15 s
+  log U, U in (0, 1)          value           jax ndtri(exp)     1.663 ns  1.00x jax  temp     0 MiB  compile 0.23 s
+  log U, U in (0, 1)          value           other index        1.103 ns  1.51x jax  temp    32 MiB  compile 0.19 s
+  log U, U in (0, 1)          value_and_grad  chebax             1.222 ns  4.00x jax  temp    64 MiB  compile 0.24 s
+  log U, U in (0, 1)          value_and_grad  other gather       1.182 ns  4.13x jax  temp    80 MiB  compile 0.21 s
+  log U, U in (0, 1)          value_and_grad  jax ndtri(exp)     4.884 ns  1.00x jax  temp   352 MiB  compile 0.40 s
+  log U, U in (0, 1)          value_and_grad  other index        1.429 ns  3.42x jax  temp    96 MiB  compile 0.24 s
+  -|y| log-uniform 1e-6..1e6  value           chebax             0.868 ns  1.92x jax  temp    32 MiB  compile 0.13 s
+  -|y| log-uniform 1e-6..1e6  value           other gather       0.937 ns  1.78x jax  temp    16 MiB  compile 0.13 s
+  -|y| log-uniform 1e-6..1e6  value           jax ndtri(exp)     1.667 ns  1.00x jax  temp     0 MiB  compile 0.19 s
+  -|y| log-uniform 1e-6..1e6  value           other index        1.113 ns  1.50x jax  temp    32 MiB  compile 0.19 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  chebax             1.230 ns  3.94x jax  temp    64 MiB  compile 0.21 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other gather       1.182 ns  4.10x jax  temp    80 MiB  compile 0.22 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  jax ndtri(exp)     4.850 ns  1.00x jax  temp   352 MiB  compile 0.36 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other index        1.431 ns  3.39x jax  temp    96 MiB  compile 0.24 s
+[gpu f32] ns per element, N = 4194304
+  log U, U in (0, 1)          value           chebax             0.031 ns  1.08x jax  temp     0 MiB  compile 0.21 s
+  log U, U in (0, 1)          value           other gather       0.058 ns  0.56x jax  temp    16 MiB  compile 0.15 s
+  log U, U in (0, 1)          value           jax ndtri(exp)     0.033 ns  1.00x jax  temp     0 MiB  compile 0.22 s
+  log U, U in (0, 1)          value           other index        0.030 ns  1.11x jax  temp     0 MiB  compile 0.14 s
+  log U, U in (0, 1)          value_and_grad  chebax             0.037 ns  3.24x jax  temp     0 MiB  compile 0.25 s
+  log U, U in (0, 1)          value_and_grad  other gather       0.062 ns  1.96x jax  temp    16 MiB  compile 0.20 s
+  log U, U in (0, 1)          value_and_grad  jax ndtri(exp)     0.121 ns  1.00x jax  temp     8 MiB  compile 1.41 s
+  log U, U in (0, 1)          value_and_grad  other index        0.062 ns  1.96x jax  temp    16 MiB  compile 0.17 s
+  -|y| log-uniform 1e-6..1e6  value           chebax             0.031 ns  1.08x jax  temp     0 MiB  compile 0.16 s
+  -|y| log-uniform 1e-6..1e6  value           other gather       0.059 ns  0.56x jax  temp    16 MiB  compile 0.14 s
+  -|y| log-uniform 1e-6..1e6  value           jax ndtri(exp)     0.033 ns  1.00x jax  temp     0 MiB  compile 0.21 s
+  -|y| log-uniform 1e-6..1e6  value           other index        0.030 ns  1.13x jax  temp     0 MiB  compile 0.12 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  chebax             0.040 ns  3.15x jax  temp     0 MiB  compile 0.22 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other gather       0.067 ns  1.90x jax  temp    16 MiB  compile 0.19 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  jax ndtri(exp)     0.127 ns  1.00x jax  temp     8 MiB  compile 1.35 s
+  -|y| log-uniform 1e-6..1e6  value_and_grad  other index        0.064 ns  1.99x jax  temp    16 MiB  compile 0.15 s

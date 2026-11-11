@@ -1862,3 +1862,39 @@ Speed against jax.scipy.special's, experiments/44 (log-uniform x in
 Float32 values on the GPU take 0.03 ns per element for both, about 270 GB/s
 for the 8 bytes each element reads and writes. Compiling takes under 0.25 s
 for both, on either device.
+
+## 54. betainc and betaincinv give nan outside their box (2026-11-11)
+
+betainc_frozen raised outside (a, b) in [0.1, 100]^2, but the traced
+functions, which the public betainc, log_betainc and betaincinv call, read
+the panels past their edges eagerly and under jit alike. betainc(150, 40,
+0.8) was -inf with gradients -inf and +inf (scipy 0.6276), log_betainc nan,
+and betaincinv(150, 40, 0.8) 1.0 with zero gradients (scipy 0.8146). Close
+outside the box the extrapolation happened to land: betainc(101, 40, 0.8)
+and betainc(0.05, 2, 0.3) matched scipy to six digits. The pytensor
+bridge was safe, since it clips into the box and masks the result.
+
+nan_outside_box turns a and b into nan where (a, b) is outside, and the
+kernel's existing nan handling does the rest: _finish gives nan values and
+derivatives at every x, the endpoints too, and betaincinv_core marks nan
+shapes out of bounds. The nan is added to a and b, not selected: a where
+gives the unselected parameter a zero cotangent in reverse mode, so the
+gradient would have been 0 instead of nan. Both masks sit before the
+custom_jvp. Inside betaincinv's primal, the rule took the density from the
+unmasked shapes, and reverse mode drops the nan the rule selects for a nan
+quantile, which left dx/dp = 0. Inside the box a + 0.0 is a, so values and
+derivatives there are unchanged bit for bit.
+
+test_traced_out_of_box_is_nan checks betainc_scalar and log_betainc_scalar
+at one pair past each of the four edges and at a = 101, x = 0, 0.3, 0.8, 1:
+values eager and under jit, gradients in forward and reverse mode, and that
+the closed box's corners stay finite. test_out_of_box_group_stays_in_its_group
+puts one group outside under pergroup: the other group's values and
+gradients are untouched. test_betaincinv_out_of_box_is_nan does the same
+for the quantile at p = 0, 0.3, 0.8 and 1.
+
+Inside the box betainc, log_betainc and betaincinv, values and all three
+gradients, are bit for bit main's on 16 (a, b) pairs (the corners, panel
+edges and random pairs) at 9 x each, float64 and float32 on the CPU. Quick
+suite 858 passed, slow suite 16 passed with the usual two skips; the new
+tests and the betaincinv tests pass on JAX 0.5.3.

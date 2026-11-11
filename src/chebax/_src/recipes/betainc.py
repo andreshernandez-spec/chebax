@@ -1,4 +1,5 @@
-"""Regularized incomplete beta I_x(a, b) for a, b in [0.1, 100], x in [0, 1].
+"""Regularized incomplete beta I_x(a, b) for a, b in [0.1, 100], x in [0, 1];
+outside the box the traced functions give nan and betainc_frozen raises.
 
 For x <= 1/2 (DLMF 8.17.7)
 
@@ -252,11 +253,21 @@ def _betainc_cached(a, b, _tag):
     return BetaInc(a, b, *_eager_series_pair(a, b))
 
 
+def nan_outside_box(a, b):
+    """a and b, both nan where (a, b) is outside the tables, so the kernel gives
+    nan values and derivatives instead of extrapolating. Added, not selected: a
+    where would give a and b a zero cotangent in reverse mode."""
+    lo, hi = _dom.BETAINC.lo, _dom.BETAINC.hi
+    pad = jnp.where((a < lo) | (a > hi) | (b < lo) | (b > hi), jnp.nan, 0.0)
+    return a + pad, b + pad
+
+
 def betainc_scalar(a, b, x):
-    """I_x(a, b) for traceable scalar a, b in [0.1, 100] (unchecked under trace),
-    differentiable in all three; two tensor contractions per call."""
+    """I_x(a, b) for traceable scalar a, b in [0.1, 100] (nan outside, with nan
+    derivatives), differentiable in all three; two tensor contractions per call."""
     a = canon_param(a, "betainc_scalar", "a")
     b = canon_param(b, "betainc_scalar", "b")
+    a, b = nan_outside_box(a, b)
     return with_edge_slopes(a, b, x, _betainc_cj(a, b, jnp.asarray(x)))
 
 
@@ -267,6 +278,7 @@ def log_betainc_scalar(a, b, x):
     x >= 1 gives 0."""
     a = canon_param(a, "log_betainc_scalar", "a")
     b = canon_param(b, "log_betainc_scalar", "b")
+    a, b = nan_outside_box(a, b)
     return _log_betainc_cj(a, b, jnp.asarray(x))
 
 

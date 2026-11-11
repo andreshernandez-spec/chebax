@@ -157,6 +157,46 @@ def test_param_out_of_range():
         chebax.betainc_frozen(1.0, 101.0)
 
 
+OUT_OF_BOX = [(150.0, 40.0), (40.0, 150.0), (0.05, 2.0), (2.0, 0.05), (101.0, 3.0)]
+X_EDGES = jnp.asarray([0.0, 0.3, 0.8, 1.0])
+
+
+@pytest.mark.parametrize("f", [chebax.betainc_scalar, chebax.log_betainc_scalar])
+def test_traced_out_of_box_is_nan(f):
+    # the tables used to extrapolate in silence: betainc(150, 40, .8) gave -inf
+    # with -inf/+inf gradients (scipy 0.6276), log_betainc nan; a = 101 and
+    # 0.05 happened to be close
+    one = jax.vmap(f, (None, None, 0))
+    rev = jax.jit(jax.vmap(jax.grad(f, (0, 1, 2)), (None, None, 0)))
+    fwd = jax.jit(jax.vmap(jax.jacfwd(f, (0, 1, 2)), (None, None, 0)))
+    for a, b in OUT_OF_BOX:
+        assert np.isnan(np.asarray(one(a, b, X_EDGES))).all()
+        assert np.isnan(np.asarray(jax.jit(one)(a, b, X_EDGES))).all()
+        for g in rev(a, b, X_EDGES) + fwd(a, b, X_EDGES):
+            assert np.isnan(np.asarray(g)).all()
+    # the box is closed
+    for a, b in [(100.0, 0.1), (0.1, 100.0), (100.0, 100.0)]:
+        x = X_EDGES[1:3]
+        assert np.isfinite(np.asarray(one(a, b, x))).all()
+        assert all(np.isfinite(np.asarray(g)).all() for g in rev(a, b, x))
+
+
+def test_out_of_box_group_stays_in_its_group():
+    idx = np.array([0, 1, 0, 1, 1])
+    x = jnp.asarray([0.2, 0.4, 0.6, 0.8, 0.5])
+    f = chebax.pergroup(chebax.betainc_scalar, idx)
+    a, b = jnp.asarray([2.0, 150.0]), jnp.asarray([3.0, 40.0])
+    y = np.asarray(f(a, b, x))
+    ga, gb, gx = jax.grad(lambda a, b, x: jnp.sum(f(a, b, x)), (0, 1, 2))(a, b, x)
+    live = idx == 0
+    ref = jax.vmap(lambda t: chebax.betainc_scalar(2.0, 3.0, t))(x[live])
+    np.testing.assert_allclose(y[live], np.asarray(ref), rtol=5e-15)
+    assert np.isnan(y[~live]).all()
+    assert np.isfinite([ga[0], gb[0]]).all() and np.isnan([ga[1], gb[1]]).all()
+    assert np.isfinite(np.asarray(gx)[live]).all()
+    assert np.isnan(np.asarray(gx)[~live]).all()
+
+
 @pytest.mark.slow
 def test_table_regenerates_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath

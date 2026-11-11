@@ -330,6 +330,18 @@ def test_quantile_endpoints_and_nan():
         assert np.isnan(float(v))
 
 
+def test_betaincinv_out_of_box_is_nan():
+    # betaincinv(150, 40, .8) gave 1.0 with zero gradients (scipy 0.8146)
+    assert np.isnan(float(chebax.betaincinv(150.0, 40.0, 0.8)))
+    val = jax.jit(chebax.betaincinv)
+    rev = jax.jit(jax.grad(chebax.betaincinv, (0, 1, 2)))
+    fwd = jax.jit(jax.jacfwd(chebax.betaincinv, (0, 1, 2)))
+    for a, b in [(150.0, 40.0), (40.0, 150.0), (0.05, 2.0), (2.0, 0.05)]:
+        for p in [0.0, 0.3, 0.8, 1.0]:
+            assert np.isnan(float(val(a, b, p)))
+            assert all(np.isnan(float(g)) for g in rev(a, b, p) + fwd(a, b, p))
+
+
 def test_float32_inputs_promote():
     # x64-on plus explicit float32 arguments used to crash the solver with
     # a loop-carry dtype mismatch; now they promote to the canonical dtype

@@ -7,6 +7,9 @@ what a sampled scalar RV lowers to; batched shapes fall back to tfp when it
 is installed and raise NotImplementedError otherwise, except where noted:
 
 - Erfcx, Erfcinv: pure jax, no restrictions.
+- NdtriExp (pytensor >= 3.2.2; PyMC's TruncatedNormal icdf): chebax's
+  ndtri_exp, no restrictions. pytensor's own lowering is ndtri(exp(y)),
+  -inf below y = -745 and +inf as y nears 0. In the icdf: experiments/46.
 - GammaIncInv, GammaIncCInv, BetaIncInv: chebax's inverses; BetaIncInv is nan
   outside the (a, b) box [0.1, 100]^2.
 - Ive, Kve: besseli_scalar and besselk_scalar(|v|) for |v| <= 10, nan outside.
@@ -41,6 +44,11 @@ except ImportError as e:
     raise ImportError(
         "chebax.pytensor needs pytensor>=3.2: pip install chebax[pytensor]"
     ) from e
+
+try:
+    from pytensor.scalar.math import NdtriExp
+except ImportError:  # pytensor < 3.2.2
+    NdtriExp = None
 
 import chebax
 from chebax import domains as _dom
@@ -93,6 +101,16 @@ def _jax_funcify_Erfcinv(op, **kwargs):
         return -jax.scipy.special.ndtri(0.5 * y) / jnp.sqrt(2.0)
 
     return erfcinv
+
+
+if NdtriExp is not None:
+
+    @jax_funcify.register(NdtriExp)
+    def _jax_funcify_NdtriExp(op, **kwargs):
+        def ndtri_exp(y):
+            return chebax.ndtri_exp(y).astype(_out_dtype(y))
+
+        return ndtri_exp
 
 
 @jax_funcify.register(GammaIncInv)

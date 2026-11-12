@@ -1,0 +1,62 @@
+# 2026-11-12. chebax branch pytensor-ndtri-exp (on 76b7db9, tree as committed with this file). jax 0.11.0,
+# pytensor 3.2.3, pymc 6.2.0. CPU: i9-11980HK, one core, taskset CPU 12, 5 alternations. GPU: RTX 3080 Laptop,
+# 5 alternations. Second of two passes; accuracy identical in both, every speed ratio within 5%.
+
+[cpu f64 cast_policy=custom] icdf error |x - x_ref| / max(|x_ref|, 1), n nonfinite
+    lower   upper           pytensor             chebax
+       -1     inf       1.7e-08    0       1.7e-08    0
+        5     inf       6.2e-10    0       6.2e-10    0
+       10     inf       1.7e-10    0       1.7e-10    0
+       38     inf             -    7       1.2e-11    0
+       40     inf             -    7       1.1e-11    0
+     1000     inf             -    7       1.7e-14    0
+     -inf       1       1.7e-08    0       1.7e-08    0
+     -inf      -5       6.2e-10    0       6.2e-10    0
+     -inf     -40             -    7       1.1e-11    0
+       -3       3       1.9e-09    0       1.9e-09    0
+        5       6       1.7e-08    0       1.7e-08    0
+       40      41             -    7       1.7e-08    0
+[cpu f64 cast_policy=numpy+floatX] icdf error |x - x_ref| / max(|x_ref|, 1), n nonfinite
+    lower   upper           pytensor             chebax
+       -1     inf       4.4e-16    0       2.2e-16    0
+        5     inf       2.0e-16    0       2.0e-16    0
+       10     inf       1.8e-16    0       1.8e-16    0
+       38     inf             -    7       1.9e-16    0
+       40     inf             -    7       1.8e-16    0
+     1000     inf             -    7       1.1e-16    0
+     -inf       1       4.4e-16    0       1.1e-16    0
+     -inf      -5       1.8e-16    0       1.8e-16    0
+     -inf     -40             -    7       1.8e-16    0
+       -3       3       1.7e-16    0       1.7e-16    0
+        5       6       1.8e-16    0       1.8e-16    0
+       40      41             -    7       1.8e-16    0
+[cpu f32 cast_policy=custom] icdf error |x - x_ref| / max(|x_ref|, 1), n nonfinite
+    lower   upper           pytensor             chebax
+       -1     inf       1.8e-07    0       2.4e-07    0
+        5     inf       5.2e-08    0       1.0e-07    0
+       10     inf       2.0e-08    0       2.0e-08    0
+       13     inf             -    6       5.9e-08    0
+       20     inf             -    6       1.0e-07    0
+     -inf     -13             -    6       7.3e-08    0
+       -3       3       2.8e-07    0       1.9e-07    0
+        5       6       9.5e-08    0       8.4e-08    0
+[cpu f64 cast_policy=custom] ns per element, N = 1048576, TruncatedNormal(mu, 1, lower=0)
+  icdf                  pytensor   79.331 ns  1.00x pytensor's
+  icdf                  chebax     72.035 ns  1.10x pytensor's
+  value_and_grad in mu  pytensor  165.271 ns  1.00x pytensor's
+  value_and_grad in mu  chebax    100.954 ns  1.64x pytensor's
+[cpu f32 cast_policy=custom] ns per element, N = 1048576, TruncatedNormal(mu, 1, lower=0)
+  icdf                  pytensor   19.826 ns  1.00x pytensor's
+  icdf                  chebax     19.370 ns  1.02x pytensor's
+  value_and_grad in mu  pytensor   69.594 ns  1.00x pytensor's
+  value_and_grad in mu  chebax     42.855 ns  1.62x pytensor's
+[gpu f64 cast_policy=custom] ns per element, N = 4194304, TruncatedNormal(mu, 1, lower=0)
+  icdf                  pytensor    4.511 ns  1.00x pytensor's
+  icdf                  chebax      2.964 ns  1.52x pytensor's
+  value_and_grad in mu  pytensor   10.452 ns  1.00x pytensor's
+  value_and_grad in mu  chebax      3.374 ns  3.10x pytensor's
+[gpu f32 cast_policy=custom] ns per element, N = 4194304, TruncatedNormal(mu, 1, lower=0)
+  icdf                  pytensor    0.083 ns  1.00x pytensor's
+  icdf                  chebax      0.099 ns  0.84x pytensor's
+  value_and_grad in mu  pytensor    0.454 ns  1.00x pytensor's
+  value_and_grad in mu  chebax      0.125 ns  3.63x pytensor's

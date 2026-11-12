@@ -202,6 +202,14 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
+def log1p(x):
+    """log1p for x in (-1, inf). XLA's float64 log1p is up to 128 ulp off on
+    (-0.63, -0.25) (jax 0.11 CPU, increment 34; 5.5e-14 in gammainc_array's
+    ln P); log(1 + x) there gives 3.7e-16. XLA simplifies the textbook
+    x log(u)/(u - 1) back to log1p."""
+    return jnp.where(x < -0.25, jnp.log(1.0 + x), jnp.log1p(x))
+
+
 def nan_outside(p, lo, hi):
     """check_range for a traced p: nan where p is outside [lo, hi], so the table
     reads nan instead of extrapolating. Added, not selected: a where would give

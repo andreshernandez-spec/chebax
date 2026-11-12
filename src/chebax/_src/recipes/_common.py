@@ -262,7 +262,9 @@ def _patch_parts(tab, n, sy, sp, grad):
     sum into one loop. Gathering the [k, j] block for an einsum stored it per element
     and ran a batched dot over it (experiment 43)."""
     ky, kp = tab.shape[1:]
-    flat = tab.reshape(-1)
+    # Inside another custom_jvp rule (skewnorm's), jit hands the table over as a
+    # numpy constant, which a traced index cannot gather from.
+    flat = jnp.asarray(tab).reshape(-1)
     base = n * (ky * kp)
     ty, dty = _basis_and_slope(sy, ky)
     tp, dtp = _basis_and_slope(sp, kp)

@@ -2089,14 +2089,17 @@ smaller is formed directly and the other as log1p(-it).
 ln K comes from one 12 x 12 patch per element of a table over two charts
 (skewnorm_gen's docstring has the formulas): sigma = s sqrt(1+a^2)/sqrt 2,
 whose square is K's exponent, and delta = a/sqrt(1+a^2), with a bulk ln N
-over (delta, sigma) for sigma <= 3 and a tail ln R over (1/sigma^2,
-1/(1 + a s/sqrt 2)) beyond, where R -> 1 and the rest of K is
-e^(-sigma^2) erfcx(a s/sqrt 2) in closed form. The tail's R is C-infinity
-but not analytic at 1/sigma^2 = 0 (its series has k! coefficients), so its
-patches halve toward that end, as gammainc_array's B0 does. Of the seams
-tried, sigma = 3 needs the fewest patches, 46, against 51 at 2. Halving from
-one box took 16 minutes, half of it on patches later split, so the generator
-starts the same refinement from the cuts it found; it takes 5 minutes.
+over (delta, sigma) for sigma <= 3 and a tail G over (1/sigma^2,
+t = 1/(1 + a s/sqrt 2)) beyond, where the rest of K, e^(-sigma^2) c0 t/(2
+sqrt(pi) sigma) with c0 = 1/sqrt(1+a^2), is closed form. G holds the tail's erfcx(a s/sqrt 2), so the value calls no
+erfcx for it, in 18 patches against 21 for the ratio to erfcx alone. G is
+C-infinity but not analytic at 1/sigma^2 = 0 (its series has k!
+coefficients), so its patches halve toward that end, as gammainc_array's B0
+does. Of the seams tried, sigma = 3 needs the fewest patches, 43, against 51
+at 2. Halving from one box took 16 minutes, half of it on patches later
+split, so the generator starts the same refinement from the cuts it found; it
+takes 5 minutes. float32 reads 6 x 6 blocks, whose dropped coefficients sum
+to at most 3.6e-8 (TOL32 = 5e-8, under float32's rounding of ln K).
 
 Accuracy against mpmath on 1,047 points (tests/test_skewnorm.py, a from 1e-8
 to 1e8, x to +-1e3, every patch cut), the reference a third integral form:
@@ -2104,32 +2107,57 @@ to 1e8, x to +-1e3, every patch cut), the reference a third integral form:
 9.3e-14, at x = 32 where 1 - F = e^-512 and x^2 is rounded. Slopes are the
 closed forms dF/dx = 2 phi(x) Phi(a x) and dF/da = -e^(-sigma^2)/(pi (1+a^2))
 over F, with sigma^2 (or x^2/2) taken out of both logs where ln F is near
-minus it: 1.0e-14 on the same metric, at a = 1e8 where the slope is 1e19.
+minus it: 7.7e-15 on the same metric, at a = 1e8 where the slope is 6e17.
 The first version formed ln(K/erfc) as ln K - ln erfc, both near -x^2/2,
 and lost 1e-10 in the slopes at x = -1000 (6e-3 in float32); it is now
 ln N - mu^2 - ln erfcx(y), with no x^2 in it. Second derivatives, AD of the
-rule, 2.7e-15. float32 (7 x 7 blocks): ln F 4.4e-7, slopes 7.1e-6 relative.
+rule, 2.9e-14, at a = 10, x = -1, where they differentiate the tail's erfcx
+through the table (2.7e-15 while erfcx sat outside it). float32: ln F 4.4e-7,
+slopes 5.2e-6 relative.
 
 Speed against the textbook form in jax, experiments/49 (a in [-5, 5], x in
-[-4, 4], where that form is still finite; 2^20 elements):
+[-4, 4], where that form is still finite; 2^20 elements, one CPU core):
 
 | | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
 |---|---|---|---|---|
-| value | 0.54x | 0.47x | 0.87x | 0.70x |
-| value_and_grad | 0.63x | 0.39x | 0.85x | 0.61x |
+| value | 1.00x | 1.02x | 1.10x | 2.13x |
+| value_and_grad | 0.96x | 0.80x | 1.02x | 1.35x |
 
-The table read alone (ln K: coordinates, one patch, its closed-form
-factors) is 0.82 of the float32 CPU value but 0.44 of the float64 one, so in
-float64 most of the time is the logs, exps and erf around it. In a first
-version XLA fused the patch's gathers with those into one loop, and the
-float64 value ran slower than value_and_grad; a barrier after the patch sum
-splits the two. One log1mexp, on the smaller of F and 1 - F, replaced one
-per case.
+At 2^16 elements, in cache, the CPU is 0.86x and 0.94x in float64, 0.62x and
+0.53x in float32. The table read alone is about half the CPU value's time (0.48
+to 0.60).
+
+What each choice is worth, experiments/50 (the shipped runtime with one piece
+changed, its time over the shipped one; values, CPU f64 / CPU f32 / GPU f64 /
+GPU f32):
+
+- erf from its series below y = 1/2 and 1 - erfc above, not lax.erf: lax.erf
+  is 1.28x / 0.94x / 1.01x / 1.05x, so the series pays on the float64 CPU and
+  costs up to 6% on the float32 CPU.
+- ln(erf + K) as logaddexp: written log(erf + exp(lk)), XLA's CPU value
+  program reads each of the 144 coefficients in its own loop through memory,
+  4.6x in float64 and 2.2x in float32 (value_and_grad is unaffected).
+- The cell found by comparing with the cuts as constants, not by gathering a
+  row of cuts per element (locate_patch): gathering is 0.81x / 1.24x / 0.99x /
+  2.17x, faster only for float64 values on the CPU.
+- The tail's erfcx inside G: computing it in the value is 1.06x / 1.06x /
+  1.13x / 1.00x.
+- float32 6 x 6 blocks: 7 x 7 is 1.18x on the CPU and 3.10x on the GPU.
+- No optimization_barrier: one after the patch sum is 0.95x / 1.00x / 1.09x /
+  0.92x on values and up to 1.12x on value_and_grad.
+- One log1mexp, on the smaller of F and 1 - F, not one per case.
+
+The log1p workaround (below) costs float64 CPU values 11%, which jax >= 0.12
+does not pay.
 
 Shared changes: gammainc_array's log1p workaround for XLA's float64 log1p
-(increment 34) moved to `_common.log1p`. `_common.patch_sum` takes its table
-through jnp.asarray: called inside another custom_jvp rule under jit, the
-table arrives as a numpy constant, which a traced index cannot gather from
-(jax.jit(jax.hessian(...)) failed).
+(increment 34) moved to `_common.log1p`, which now skips it for float32 and
+for jax >= 0.12, where XLA's log1p is within 1.4 ulp on (-0.7, -0.2) against
+mpmath (float64 on jax 0.5.3 and 0.11: 120 ulp). `_common.locate_static` finds
+a patch from cuts known when tracing, by compares. `_common.patch_sum` takes
+its table through jnp.asarray: called inside another custom_jvp rule under
+jit, the table arrives as a numpy constant, which a traced index cannot
+gather from (jax.jit(jax.hessian(...)) failed). gammainc_array_gen's
+`_block32` takes the float32 tolerance as an argument.
 
 Not done: a pytensor op for PyMC to lower, and the Rice CDF (Marcum Q).

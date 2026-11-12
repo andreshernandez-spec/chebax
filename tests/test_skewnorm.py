@@ -18,11 +18,13 @@ log-uniform random points (1,047 in all).
 Measured worst, float64, jax 0.11 and 0.5.3 (CI's floor) alike: ln F 7.8e-16
 (bar 3e-15); relative 9.3e-14 (bar 4e-13), at x = 32 where 1 - F = e^-512, from
 rounding x^2 in e^(-x^2/2) (log_skewnorm_sf holds that complement to the first
-metric). Slopes, both AD modes against the closed forms: 1.0e-14 (bar 4e-14),
-at a = 1e8 where the slope is 1e19 = e^44 assembled from logs; relative 7.7e-14
-(bar 3e-13), only where a slope is itself e^(-x^2/2)-small. Second derivatives
-(AD of the rule) 2.7e-15, bar 1.1e-14. float32 at the float32-rounded points:
-ln F 4.4e-7 (bar 1.8e-6), slopes relative 7.1e-6 (bar 3e-5).
+metric). Slopes, both AD modes against the closed forms: 7.7e-15 (bar 4e-14),
+at a = 1e8 where the slope is 6e17, assembled from logs; relative 7.7e-14 (bar
+3e-13), only where a slope is itself e^(-x^2/2)-small. Second derivatives (AD
+of the rule) 2.9e-14, bar 1.2e-13, at a = 10, x = -1 in the tail chart, whose
+erfcx they differentiate through the table. float32 (6 x 6 blocks) at the
+float32-rounded points: ln F 4.4e-7 (bar 1.8e-6), slopes relative 5.2e-6 (bar
+3e-5).
 """
 
 import os
@@ -394,6 +396,6 @@ BAR_LOGF = 3e-15
 BAR_LOGF_REL = 4e-13
 BAR_D = 4e-14
 BAR_D_REL = 3e-13
-BAR_D2 = 1.1e-14
+BAR_D2 = 1.2e-13
 BAR_LOGF32 = 1.8e-6
 BAR_D32 = 3e-5

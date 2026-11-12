@@ -58,7 +58,6 @@ from scipy import stats  # noqa: E402
 
 import chebax  # noqa: E402
 from chebax._src.recipes import skewnorm as S  # noqa: E402
-from chebax._src.recipes.erf_family import erfcx  # noqa: E402
 
 mp.mp.dps = 40
 
@@ -153,8 +152,7 @@ def speed():
         return jnp.log(sp.ndtr(x) - 2.0 * sp.owens_t(x, a))
 
     def log_k(a, x):
-        s, b = jnp.abs(x), jnp.abs(a)
-        return S._log_k(s, b, jnp.log(erfcx(b * s / np.sqrt(2.0))))[0]
+        return S._log_k(jnp.abs(x), jnp.abs(a))[0]
 
     fns = {"chebax": chebax.log_skewnorm_cdf, "textbook": textbook}
     print(f"{'dtype':8} {'n':>8} {'mode':>16} {'chebax ns/el':>13} {'textbook ns/el':>15} "

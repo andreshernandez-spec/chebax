@@ -249,8 +249,8 @@ def skewnorm():
     from chebax._src.recipes import skewnorm_gen as g
 
     print("skewnorm (claims: ln N's delta-direction 12-17x per term on half of [0, 1] "
-          "at sigma = 0, 9-13x at sigma = 3; ln R's eps-direction needs its patches; "
-          "both quadratures agree with 70 dps to 2e-38; --seams: 46 patches at S1 = 3, "
+          "at sigma = 0, 9-13x at sigma = 3; G's eps-direction needs its patches; "
+          "both quadratures agree with 70 dps to 2e-38; --seams: 43 patches at S1 = 3, "
           "51 at S1 = 2)")
 
     def ratio(c):
@@ -264,10 +264,10 @@ def skewnorm():
     e1 = g._E1
     for t in ("0.5", "0.06"):
         for lo, hi in ((0, e1), (0, e1 / 4), (e1 / 2, e1)):
-            c = fit_axis(lambda e: g._log_r(mp, e, mp.mpf(t)), 24, lo, hi)
-            report(f"ln R eps [{lo:.4g}, {hi:.4g}] t={t}", c, [11])
+            c = fit_axis(lambda e: g._log_g(mp, e, mp.mpf(t)), 24, lo, hi)
+            report(f"G eps [{lo:.4g}, {hi:.4g}] t={t}", c, [11])
     pts = [(g._log_n, "0.9999999", "3.0"), (g._log_n, "0.02", "2.9"), (g._log_n, "0", "0.3"),
-           (g._log_r, "0.11", "0.7"), (g._log_r, "1e-5", "1e-6")]
+           (g._log_g, "0.11", "0.7"), (g._log_g, "1e-5", "1e-6")]
     for f, p, y in pts:
         with mp.workdps(40):
             v40 = f(mp, mp.mpf(p), mp.mpf(y))
@@ -279,7 +279,7 @@ def skewnorm():
     # ~25 min: halving from one box, the generator's refinement without its cuts
     for s1 in (2.0, 3.0):
         boxes = (("BULK", g._log_n, (0.0, 1.0), (0.0, s1)),
-                 ("TAIL", g._log_r, (0.0, 1.0 / (s1 * s1)), (0.0, 1.0)))
+                 ("TAIL", g._log_g, (0.0, 1.0 / (s1 * s1)), (0.0, 1.0)))
         counts = []
         with mp.workdps(DPS):
             for name, f, pb, yb in boxes:

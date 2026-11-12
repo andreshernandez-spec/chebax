@@ -27,52 +27,54 @@ breakdown point: x nearest 0 with a nonfinite result or error > 1e-6
 
 speed on cpu (cpu), median of 20 calls, two passes
 dtype           n             mode  chebax ns/el  textbook ns/el  ratio ln K share
-float64      2^12            value        334.27          164.27  0.49x       0.36
-float64      2^12   value_and_grad        300.41          192.07  0.64x
-   passes disagree for chebax value n=2^16: [0.02644124500147882, 0.0316185915035021]
-   passes disagree for textbook value n=2^16: [0.014676961498480523, 0.01620968649876886]
-float64      2^16            value        403.46          223.95  0.56x       0.37
-float64      2^16   value_and_grad        273.58          195.17  0.71x
-float64      2^20            value        376.80          201.71  0.54x       0.44
-float64      2^20   value_and_grad        344.98          216.39  0.63x
+float64      2^12            value        208.46          183.75  0.88x       0.45
+float64      2^12   value_and_grad        224.45          199.97  0.89x
+float64      2^16            value        198.96          172.04  0.86x       0.53
+float64      2^16   value_and_grad        204.36          192.17  0.94x
+float64      2^20            value        201.46          202.21  1.00x       0.48
+float64      2^20   value_and_grad        235.00          225.72  0.96x
 
 $ taskset -c 0 python experiments/49_skewnorm_logcdf.py --float32
 jax 0.11.0, chebax src/chebax/__init__.py, python 3.13.14
 speed on cpu (cpu), median of 20 calls, two passes
 dtype           n             mode  chebax ns/el  textbook ns/el  ratio ln K share
-float32      2^12            value         54.02           25.73  0.48x       0.75
-float32      2^12   value_and_grad         70.26           27.86  0.40x
-float32      2^16            value         53.67           23.45  0.44x       0.73
-float32      2^16   value_and_grad         64.27           24.96  0.39x
-   passes disagree for chebax value n=2^20: [0.08119137399989995, 0.09035281949763885]
-float32      2^20            value         77.43           36.29  0.47x       0.82
-float32      2^20   value_and_grad        101.44           39.54  0.39x
+float32      2^12            value         37.81           25.86  0.68x       0.61
+float32      2^12   value_and_grad         51.30           28.21  0.55x
+float32      2^16            value         38.89           24.26  0.62x       0.55
+float32      2^16   value_and_grad         47.93           25.36  0.53x
+float32      2^20            value         36.99           37.72  1.02x       0.60
+   passes disagree for chebax value_and_grad n=2^20: [0.05235095749958418, 0.05771972749789711]
+float32      2^20   value_and_grad         49.93           39.83  0.80x
 
 $ python experiments/49_skewnorm_logcdf.py --gpu --speed-only
 jax 0.11.0, chebax src/chebax/__init__.py, python 3.13.14
 speed on gpu (NVIDIA GeForce RTX 3080 Laptop GPU), median of 20 calls, two passes
 dtype           n             mode  chebax ns/el  textbook ns/el  ratio ln K share
-   passes disagree for textbook value n=2^12: [0.00010739749995991588, 9.546249930281192e-05]
-float64      2^12            value         27.65           23.31  0.84x       0.67
-   passes disagree for chebax value_and_grad n=2^12: [0.0002452220032864716, 0.00012358349704300053]
-   passes disagree for textbook value_and_grad n=2^12: [0.0002202119976573158, 0.00010885650044656359]
-float64      2^12   value_and_grad         30.17           26.58  0.88x
-float64      2^16            value         11.54           12.64  1.10x       0.60
-float64      2^16   value_and_grad         15.20           14.27  0.94x
-float64      2^20            value         10.15            8.79  0.87x       0.65
-float64      2^20   value_and_grad         11.72            9.95  0.85x
+float64      2^12            value         23.41           25.76  1.10x       0.91
+   passes disagree for chebax value_and_grad n=2^12: [0.00020982099522370845, 0.00012871750368503854]
+float64      2^12   value_and_grad         31.43           27.24  0.87x
+   passes disagree for textbook value n=2^16: [0.0007661740019102581, 0.0006800199989811517]
+float64      2^16            value         11.14           10.38  0.93x       0.47
+   passes disagree for textbook value_and_grad n=2^16: [0.0009030635046656244, 0.0008040510001592338]
+float64      2^16   value_and_grad         12.94           12.27  0.95x
+float64      2^20            value          7.88            8.71  1.10x       0.60
+float64      2^20   value_and_grad          9.62            9.79  1.02x
 
 $ python experiments/49_skewnorm_logcdf.py --gpu --speed-only --float32
 jax 0.11.0, chebax src/chebax/__init__.py, python 3.13.14
 speed on gpu (NVIDIA GeForce RTX 3080 Laptop GPU), median of 20 calls, two passes
 dtype           n             mode  chebax ns/el  textbook ns/el  ratio ln K share
-   passes disagree for chebax value n=2^12: [7.001200356171466e-05, 5.1909501053160056e-05]
-   passes disagree for textbook value n=2^12: [3.804249718086794e-05, 2.8524500521598384e-05]
-float32      2^12            value         12.67            6.96  0.55x       1.00
-   passes disagree for textbook value_and_grad n=2^12: [7.827749868738465e-05, 4.262850052327849e-05]
-float32      2^12   value_and_grad         13.73           10.41  0.76x
-float32      2^16            value          1.14            0.86  0.75x       1.04
-float32      2^16   value_and_grad          1.36            0.88  0.65x
-float32      2^20            value          0.79            0.56  0.70x       0.94
-   passes disagree for textbook value_and_grad n=2^20: [0.0006709044973831624, 0.000964315502642421]
-float32      2^20   value_and_grad          1.05            0.64  0.61x
+   passes disagree for chebax value n=2^12: [4.250300116837025e-05, 3.7915000575594604e-05]
+float32      2^12            value          9.26           10.23  1.10x       0.93
+   passes disagree for chebax value_and_grad n=2^12: [5.837049684487283e-05, 5.078150570625439e-05]
+   passes disagree for textbook value_and_grad n=2^12: [8.265700307674706e-05, 3.846300387522206e-05]
+float32      2^12   value_and_grad         12.40            9.39  0.76x
+   passes disagree for chebax value n=2^16: [0.00010351750097470358, 5.715299630537629e-05]
+   passes disagree for textbook value n=2^16: [4.996649659005925e-05, 4.414800787344575e-05]
+float32      2^16            value          0.87            0.67  0.77x       0.79
+   passes disagree for chebax value_and_grad n=2^16: [0.00012608300312422216, 9.288950241170824e-05]
+float32      2^16   value_and_grad          1.42            0.92  0.65x
+   passes disagree for chebax value n=2^20: [0.0003785364970099181, 0.000249000993790105]
+float32      2^20            value          0.24            0.50  2.13x       0.76
+   passes disagree for chebax value_and_grad n=2^20: [0.0005070845072623342, 0.0004336435013101436]
+float32      2^20   value_and_grad          0.41            0.56  1.35x

@@ -36,7 +36,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import skewnorm_table as _t
-from chebax._src.recipes._common import canon_float, locate_patch, log1p, patch_sum
+from chebax._src.recipes._common import canon_float, locate_static, log1p, patch_sum
 from chebax._src.recipes.erf_family import erfcx
 
 _BULK, _TAIL = range(len(_t.NAMES))
@@ -46,14 +46,24 @@ _LN_SQRT_PI = 0.5 * math.log(math.pi)
 _LN_SQRT_PI_2 = math.log(math.sqrt(math.pi) / 2.0)
 _LN_RSQRT_2PI = -0.5 * math.log(2.0 * math.pi)
 _RSQRT2 = 1.0 / math.sqrt(2.0)
+# each chart's (parameter cuts, argument cuts), compared with as constants
+_CUTS = tuple(
+    (tuple(_t.PCUTS[z][: _t.NPAR[z] + 1]), tuple(_t.YCUTS[z][: _t.NARG[z] + 1]))
+    for z in range(len(_t.NAMES))
+)
+# erf(y)/y = 2/sqrt(pi) sum (-y^2)^n / (n! (2n + 1)): 13 terms to 1.4e-17 at y = 1/2
+_ERF_SERIES = tuple(
+    2.0 / math.sqrt(math.pi) * (-1.0) ** n / (math.factorial(n) * (2 * n + 1))
+    for n in range(13)
+)
 
 
 @functools.lru_cache(maxsize=2)
-def _tables(dtype):
-    """(patch blocks, parameter cuts, argument cuts) in the compute dtype."""
+def _table(dtype):
+    """The patch blocks in the compute dtype."""
     dt = np.dtype(dtype)
     tab = _t.TABLE if dt == np.float64 else _t.TABLE[:, : _t.KY32, : _t.KP32]
-    return np.ascontiguousarray(tab, dt), _t.PCUTS.astype(dt), _t.YCUTS.astype(dt)
+    return np.ascontiguousarray(tab, dt)
 
 
 def _log1mexp(v, use):
@@ -62,30 +72,31 @@ def _log1mexp(v, use):
     return log1p(-jnp.exp(jnp.where(use, v, -1.0)))
 
 
-def _log_k(s, b, ln_ex):
-    """(ln K + sigma^2, ln hyp) at finite s, b >= 0, hyp = sqrt(1 + b^2) = 1/c0,
-    ln_ex = ln erfcx(mu)."""
-    tab, pcuts, ycuts = (jnp.asarray(v) for v in _tables(s.dtype.name))
-    npar, narg, offset = (jnp.asarray(v) for v in (_t.NPAR, _t.NARG, _t.OFFSET))
+def _log_k(s, b):
+    """(ln K + sigma^2, ln hyp) at finite s, b >= 0, hyp = sqrt(1 + b^2) = 1/c0."""
+    tab = jnp.asarray(_table(s.dtype.name))
     hyp = jnp.hypot(1.0, b)
     sig = s * hyp * _RSQRT2
     tail = sig > _t.S1
     # bulk lanes get a tail sigma, so 1/sigma^2 and ln sigma stay finite
     sig_t = jnp.where(tail, sig, 2.0 * _t.S1)
     mu = b * s * _RSQRT2
-    zone = jnp.where(tail, _TAIL, _BULK)
+    t = 1.0 / (1.0 + mu)
+    # one locate per axis on the chart's coordinate, its cuts picked by chart
+    # and compared as constants: gathering a row of cuts per element made
+    # float32 values 2.2x slower on the GPU and 1.2x on the CPU (experiments/50)
     par = jnp.where(tail, 1.0 / (sig_t * sig_t), b / hyp)
-    arg = jnp.where(tail, 1.0 / (1.0 + mu), sig)
-    i, sp = locate_patch(par, pcuts[zone], npar[zone])
-    j, sy = locate_patch(arg, ycuts[zone], narg[zone])
-    # the barrier keeps XLA from fusing the patch's gathers into one loop with
-    # the logs and exps after them
-    f = jax.lax.optimization_barrier(
-        patch_sum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
-    )
+    arg = jnp.where(tail, t, sig)
+    (bulk_p, bulk_y), (tail_p, tail_y) = _CUTS
+    i, sp = locate_static(par, (bulk_p, tail_p), tail)
+    j, sy = locate_static(arg, (bulk_y, tail_y), tail)
+    offset = jnp.where(tail, _t.OFFSET[_TAIL], _t.OFFSET[_BULK])
+    n = offset + i * jnp.where(tail, _t.NARG[_TAIL], _t.NARG[_BULK]) + j
+    f = patch_sum(tab, n, sy, sp)
     ln_hyp = jnp.log(hyp)
-    # tail: ln N = ln(sqrt(pi)/(2 sigma)) + ln erfcx(mu) + ln R
-    extra = _LN_SQRT_PI_2 - jnp.log(sig_t) + ln_ex
+    # tail: ln N = G + ln(sqrt(pi) t/(2 sigma)), erfcx(mu) inside G; t/sigma
+    # underflows only where sigma^2 overflows
+    extra = _LN_SQRT_PI_2 + jnp.log(t / sig_t)
     return -ln_hyp - _LN_PI + f + jnp.where(tail, extra, 0.0), ln_hyp
 
 
@@ -105,27 +116,38 @@ def _parts(a, x):
     y, mu = s * _RSQRT2, b * s * _RSQRT2
     y2, mu2 = 0.5 * s * s, 0.5 * (b * s) * (b * s)
     sig2 = y2 + mu2
+    # erfcx(mu) is only for the derivatives (the value's is in the table): it
+    # is 1/(sqrt(pi) mu) past mu = 1e8, whose subnormal values flush to 0
     ex = erfcx(mu)
-    # erfcx(mu) = 1/(sqrt(pi) mu) past mu = 1e8; its subnormal values flush to 0
     big_mu = mu > 1e8
     ln_ex = jnp.where(
         big_mu,
         -jnp.log(jnp.where(big_mu, mu, 1.0)) - _LN_SQRT_PI,
         jnp.log(jnp.where(big_mu, 1.0, ex)),
     )
-    lk_s, ln_hyp = _log_k(s, b, ln_ex)
+    lk_s, ln_hyp = _log_k(s, b)
     lk = jnp.where(fin_b, lk_s - sig2, -jnp.inf)
 
     # A = erf(y) + K, B = erfc(y) - K, A + B = 1
-    pos_y = y > 0.0
-    l_erf = jnp.where(pos_y, jnp.log(jax.lax.erf(jnp.where(pos_y, y, 1.0))), -jnp.inf)
     ln_erfcx_y = jnp.log(erfcx(y))
+    # erf from its series below y = 1/2 and as 1 - erfc above (within 2 ulp
+    # there, erfc <= 0.48): lax.erf made float64 CPU values 1.3x slower
+    # (experiments/50)
+    near = y < 0.5
+    u = jnp.where(near, y * y, 0.0)
+    series = _ERF_SERIES[-1]
+    for c in _ERF_SERIES[-2::-1]:
+        series = series * u + c
+    erf_y = jnp.where(near, y * series, -jnp.expm1(ln_erfcx_y - y2))
     # ln(K/erfc(y)) without y^2: as lk - ln erfc(y) it cancels y^2 eps, 1e-10
     # in the slopes at x = -1000. K <= erfc(y)/2, so the log1p reads >= -1/2.
     ln_k_over_erfc = jnp.where(fin_b, lk_s - mu2 - ln_erfcx_y, -jnp.inf)
     l_b_tail = log1p(-jnp.exp(ln_k_over_erfc))
     l_b = ln_erfcx_y - y2 + l_b_tail
-    l_a = jnp.logaddexp(l_erf, lk)
+    # as log(erf_y + exp(lk)) XLA's CPU value program reads each patch
+    # coefficient in its own loop, through memory: 4.6x slower in float64
+    # (experiments/50)
+    l_a = jnp.logaddexp(jnp.log(erf_y), lk)
 
     case1 = neg_x & ~neg_a  # F = K
     case2 = neg_x & neg_a  # F = B

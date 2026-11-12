@@ -48,6 +48,8 @@ CASES = [
     ("gammainccinv", lambda p, x: chebax.gammainccinv(p, x), 3, 0.3),
     ("betaincinv", lambda p, x: chebax.betaincinv(p, 2, x), 3, 0.3),
     ("chi2inv", lambda p, x: chebax.chi2inv(p, x), 4, 0.3),
+    ("log_skewnorm_cdf", lambda p, x: chebax.log_skewnorm_cdf(p, x), 3, -1.0),
+    ("log_skewnorm_sf", lambda p, x: chebax.log_skewnorm_sf(p, x), -3, 1.0),
 ]
 
 

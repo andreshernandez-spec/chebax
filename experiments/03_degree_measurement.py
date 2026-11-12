@@ -14,7 +14,8 @@ project's own regenerability rule — this script fixes that.
 Run everything:      python experiments/03_degree_measurement.py
 One family:          python experiments/03_degree_measurement.py besselk
 Families: besselj besselk besseli bessely betainc gammainc gammainc_array
-stdtr vonmises erf gammaln ndtri_exp
+stdtr vonmises erf gammaln ndtri_exp skewnorm
+skewnorm's seam comparison: python experiments/03_degree_measurement.py skewnorm --seams
 
 WHAT THIS DOES NOT ESTABLISH
 ----------------------------
@@ -243,14 +244,58 @@ def ndtri_exp():
         report(f"tail a'(s) [{lo:g}, {hi:g}]", fit_axis(da, 24, lo, hi), [4, 5, 8, 9, 10])
 
 
+def skewnorm():
+    from chebax._src.recipes import gammainc_array_gen as gag
+    from chebax._src.recipes import skewnorm_gen as g
+
+    print("skewnorm (claims: ln N's delta-direction 12-17x per term on half of [0, 1] "
+          "at sigma = 0, 9-13x at sigma = 3; ln R's eps-direction needs its patches; "
+          "both quadratures agree with 70 dps to 2e-38; --seams: 46 patches at S1 = 3, "
+          "51 at S1 = 2)")
+
+    def ratio(c):
+        a = np.abs([float(x) for x in c])
+        return f"ratio {(a[2] / a[12]) ** 0.1:.1f}x per term"
+
+    for sig in (0, 3):
+        for lo, hi in ((0.5, 1.0), (0.0, 0.5), (0.0, 0.25)):
+            c = fit_axis(lambda d: g._log_n(mp, d, mp.mpf(sig)), 24, lo, hi)
+            report(f"ln N delta [{lo:g}, {hi:g}] sigma={sig} {ratio(c)}", c, [11])
+    e1 = g._E1
+    for t in ("0.5", "0.06"):
+        for lo, hi in ((0, e1), (0, e1 / 4), (e1 / 2, e1)):
+            c = fit_axis(lambda e: g._log_r(mp, e, mp.mpf(t)), 24, lo, hi)
+            report(f"ln R eps [{lo:.4g}, {hi:.4g}] t={t}", c, [11])
+    pts = [(g._log_n, "0.9999999", "3.0"), (g._log_n, "0.02", "2.9"), (g._log_n, "0", "0.3"),
+           (g._log_r, "0.11", "0.7"), (g._log_r, "1e-5", "1e-6")]
+    for f, p, y in pts:
+        with mp.workdps(40):
+            v40 = f(mp, mp.mpf(p), mp.mpf(y))
+        with mp.workdps(70):
+            v70 = f(mp, mp.mpf(p), mp.mpf(y))
+        print(f"  {f.__name__}({p}, {y}): |40 dps - 70 dps| = {mp.nstr(abs(v40 - v70), 2)}")
+    if "--seams" not in sys.argv:
+        return
+    # ~25 min: halving from one box, the generator's refinement without its cuts
+    for s1 in (2.0, 3.0):
+        boxes = (("BULK", g._log_n, (0.0, 1.0), (0.0, s1)),
+                 ("TAIL", g._log_r, (0.0, 1.0 / (s1 * s1)), (0.0, 1.0)))
+        counts = []
+        with mp.workdps(DPS):
+            for name, f, pb, yb in boxes:
+                pc, yc, _ = gag._refine(mp, f, "id", pb, yb, a_of=g._ident)
+                counts.append(f"{name} {len(pc) - 1} x {len(yc) - 1}")
+        print(f"  S1 = {s1:g} from one box: " + ", ".join(counts))
+
+
 FAMILIES = {"besselj": besselj, "besselk": besselk, "besseli": besseli,
             "bessely": bessely, "betainc": betainc, "gammainc": gammainc,
             "gammainc_array": gammainc_array, "stdtr": stdtr,
             "vonmises": vonmises, "erf": erf, "gammaln": gammaln,
-            "ndtri_exp": ndtri_exp}
+            "ndtri_exp": ndtri_exp, "skewnorm": skewnorm}
 
 if __name__ == "__main__":
-    picks = sys.argv[1:] or list(FAMILIES)
+    picks = [a for a in sys.argv[1:] if not a.startswith("--")] or list(FAMILIES)
     for name in picks:
         print(f"== {name} ==")
         FAMILIES[name]()

@@ -2069,3 +2069,67 @@ pytensor's lowering:
 The float32 icdf on the GPU takes 0.10 ns per element against 0.08. Both
 variants lower every other op as chebax.pytensor does: pytensor 3.2.3 lowers
 Erfcx through tfp, which the experiment's environment lacks.
+
+## 58. log_skewnorm_cdf and log_skewnorm_sf (2026-11-12)
+
+`chebax.log_skewnorm_cdf(a, x)` is ln F(x; a), F(x; a) = 2 int_{-inf}^x
+phi(t) Phi(a t) dt, the standard skew-normal CDF, with the shape a and x
+broadcast; `log_skewnorm_sf(a, x)` is the same at (-a, -x). PyMC's
+SkewNormal has no logcdf, so Censored and Truncated reject it, and the
+textbook ln(Phi(x) - 2 T(x, a)) cancels for x < 0 < a: at a = 10 it is off
+by more than 1e-6 from x = -0.68 on, whether T is scipy's or jax's
+owens_t, and scipy's own skewnorm.logcdf from x = -1.5 (experiments/49).
+
+Every case reduces to K(s, b) = F(-s; b), s, b >= 0, which is a positive
+integral (1/pi) int_b^inf e^(-s^2 (1+t^2)/2)/(1+t^2) dt. For x <= 0 the CDF
+is K (a >= 0) or erfc(s/sqrt 2) - K (a < 0, and K <= erfc/2, so at most one
+bit cancels); for x > 0 it is erf(s/sqrt 2) + K or 1 - K. Of F and 1 - F the
+smaller is formed directly and the other as log1p(-it).
+
+ln K comes from one 12 x 12 patch per element of a table over two charts
+(skewnorm_gen's docstring has the formulas): sigma = s sqrt(1+a^2)/sqrt 2,
+whose square is K's exponent, and delta = a/sqrt(1+a^2), with a bulk ln N
+over (delta, sigma) for sigma <= 3 and a tail ln R over (1/sigma^2,
+1/(1 + a s/sqrt 2)) beyond, where R -> 1 and the rest of K is
+e^(-sigma^2) erfcx(a s/sqrt 2) in closed form. The tail's R is C-infinity
+but not analytic at 1/sigma^2 = 0 (its series has k! coefficients), so its
+patches halve toward that end, as gammainc_array's B0 does. Of the seams
+tried, sigma = 3 needs the fewest patches, 46, against 51 at 2. Halving from
+one box took 16 minutes, half of it on patches later split, so the generator
+starts the same refinement from the cuts it found; it takes 5 minutes.
+
+Accuracy against mpmath on 1,047 points (tests/test_skewnorm.py, a from 1e-8
+to 1e8, x to +-1e3, every patch cut), the reference a third integral form:
+|ln F - ref| / max(1, |ref|) 7.8e-16 on jax 0.11 and 0.5.3; plain relative
+9.3e-14, at x = 32 where 1 - F = e^-512 and x^2 is rounded. Slopes are the
+closed forms dF/dx = 2 phi(x) Phi(a x) and dF/da = -e^(-sigma^2)/(pi (1+a^2))
+over F, with sigma^2 (or x^2/2) taken out of both logs where ln F is near
+minus it: 1.0e-14 on the same metric, at a = 1e8 where the slope is 1e19.
+The first version formed ln(K/erfc) as ln K - ln erfc, both near -x^2/2,
+and lost 1e-10 in the slopes at x = -1000 (6e-3 in float32); it is now
+ln N - mu^2 - ln erfcx(y), with no x^2 in it. Second derivatives, AD of the
+rule, 2.7e-15. float32 (7 x 7 blocks): ln F 4.4e-7, slopes 7.1e-6 relative.
+
+Speed against the textbook form in jax, experiments/49 (a in [-5, 5], x in
+[-4, 4], where that form is still finite; 2^20 elements):
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| value | 0.54x | 0.47x | 0.87x | 0.70x |
+| value_and_grad | 0.63x | 0.39x | 0.85x | 0.61x |
+
+The table read alone (ln K: coordinates, one patch, its closed-form
+factors) is 0.82 of the float32 CPU value but 0.44 of the float64 one, so in
+float64 most of the time is the logs, exps and erf around it. In a first
+version XLA fused the patch's gathers with those into one loop, and the
+float64 value ran slower than value_and_grad; a barrier after the patch sum
+splits the two. One log1mexp, on the smaller of F and 1 - F, replaced one
+per case.
+
+Shared changes: gammainc_array's log1p workaround for XLA's float64 log1p
+(increment 34) moved to `_common.log1p`. `_common.patch_sum` takes its table
+through jnp.asarray: called inside another custom_jvp rule under jit, the
+table arrives as a numpy constant, which a traced index cannot gather from
+(jax.jit(jax.hessian(...)) failed).
+
+Not done: a pytensor op for PyMC to lower, and the Rice CDF (Marcum Q).

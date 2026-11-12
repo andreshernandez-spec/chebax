@@ -340,6 +340,35 @@ def locate_patch(val, cuts, n):
     return k, 2.0 * (val - lo) / (hi - lo) - 1.0
 
 
+def locate_static(val, cuts, which=None):
+    """locate_patch for cuts known when tracing (ascending floats, padding
+    repeats allowed): the interval index and val mapped onto [-1, 1], from
+    compares with constants instead of gathering a row of cuts per element.
+    Given two rows of cuts, the boolean array which picks the second."""
+    rows = [cuts] if which is None else list(cuts)
+    rows = [[float(c) for c in r] for r in rows]
+    for r in rows:
+        while len(r) > 2 and r[-1] == r[-2]:
+            r.pop()
+
+    def per_row(f):
+        v = [f(r) for r in rows]
+        return v[0] if which is None else jnp.where(which, v[1], v[0])
+
+    i = jnp.zeros(jnp.shape(val), jnp.int32)
+    lo = jnp.zeros_like(val) + per_row(lambda r: r[0])
+    width = jnp.zeros_like(val) + per_row(lambda r: r[1] - r[0])
+    for k in range(1, max(map(len, rows)) - 1):
+        # a row with fewer intervals never passes the cuts it does not have
+        cut = per_row(lambda r: r[k] if k < len(r) - 1 else math.inf)
+        step = per_row(lambda r: r[k + 1] - r[k] if k < len(r) - 1 else 1.0)
+        up = val >= cut
+        i = i + up
+        lo = jnp.where(up, cut, lo)
+        width = jnp.where(up, step, width)
+    return i, 2.0 * (val - lo) / width - 1.0
+
+
 def newton_bisect(f_and_df, x0, lo0, hi0, iters, snap=None):
     """Fixed-count Newton for increasing f, bracketed in [lo, hi], falling back to
     the midpoint (doubling while hi is inf). The bounds test is inclusive: else a

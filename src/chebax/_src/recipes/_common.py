@@ -202,11 +202,17 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
+# XLA's float64 log1p is up to 128 ulp off on (-0.63, -0.25) before jax 0.12
+# (increment 34); float32, and float64 from 0.12 on, are within 1.4 ulp there
+_LOG1P_EXACT = jax.__version_info__ >= (0, 12)
+
+
 def log1p(x):
-    """log1p for x in (-1, inf). XLA's float64 log1p is up to 128 ulp off on
-    (-0.63, -0.25) (jax 0.11 CPU, increment 34; 5.5e-14 in gammainc_array's
-    ln P); log(1 + x) there gives 3.7e-16. XLA simplifies the textbook
-    x log(u)/(u - 1) back to log1p."""
+    """log1p for x in (-1, inf), as log(1 + x) below -0.25 where XLA's own is
+    off (5.5e-14 in gammainc_array's ln P, 3.7e-16 this way). XLA simplifies
+    the textbook x log(u)/(u - 1) back to log1p."""
+    if _LOG1P_EXACT or jnp.result_type(x) != jnp.float64:
+        return jnp.log1p(x)
     return jnp.where(x < -0.25, jnp.log(1.0 + x), jnp.log1p(x))
 
 

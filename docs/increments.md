@@ -1988,3 +1988,54 @@ compiled to two fusions, the first writing each element's panel index and
 centre mask to memory (20 MiB at 2^22) and the second reading y again, and
 it ran at 0.52x jax's in a first run of experiments/45. The per-coefficient
 gathers still do that ("other gather", 0.56x, 16 MiB).
+
+## 56. besselk and besseli give nan outside their order box (2026-11-11)
+
+The frozen factories raised outside nu in [0, 10], but besselk_scalar,
+log_besselk_scalar, besseli_scalar and besseli_ratio, which the public
+besselk, log_besselk and besseli call, read the tables past their edges.
+besselk(15, 2) was 0 (true 4.06e10), log_besselk(15, 0.5) -3.5e10,
+besseli(15, 2) -0.0062 (true 8.1e-13) and besseli(15, 7) -2e9. Just past
+an edge the values were close but not table-accurate: besselk(-0.5, x) was
+off by 7e-3, besseli_ratio(10.5, x) by 3e-3 (its box ends at 9, since the
+tail reads I at nu + 1). The pytensor bridge clipped and masked, so it was
+safe.
+
+nan_outside, now in _common, adds nan to the order outside the box, so the
+tables read nan. betainc's nan_outside_box uses it too, masking a and b
+each on its own rather than both together; the kernel gives nan for
+either, and entry 54's tests pass unchanged. besseli's mask sits before
+its custom_jvp, so the rule sees the nan order too. Two selects still won
+over a nan order. Unscaled I put inf at x = inf for any order, and
+besseli_ratio put 1 at x = inf and then a selected nan for a nan order,
+which gave forward mode zero tangents at every x (a nan order passed in
+did the same before this change). Both selects now skip a nan order and
+leave it to the tail, which gives nan with nan derivatives. Inside the box
+no order is nan and nu + 0.0 is nu, so the arithmetic there is the same.
+
+Outside the box every value is nan, eager and under jit, and so is the
+order derivative at every x in forward and reverse mode. The x derivative
+is nan too, except where x is clamped: below besselk's 1e-6 and at the
+ratio's x = inf it stays 0 in reverse mode, as it is inside the box.
+matern, which calls log_besselk_scalar, is nan at r > 0 for nu > 10.
+
+test_traced_order_out_of_range_is_nan (besselk, its scaled and log forms,
+and besseli scaled and unscaled) checks orders -0.5, 10.5 and 15 at x from
+0 to inf: values eager and under jit, both derivatives in forward and
+reverse mode, and that orders 0 and 10 stay finite.
+test_besseli_ratio_order_out_of_range_is_nan does the same for the ratio
+at -0.5, 9.5, 15 and a nan order, and
+test_out_of_range_group_stays_in_its_group puts one besseli group outside
+under pergroup.
+
+Inside the box, values and first derivatives of besselk, its scaled and
+log forms, besseli scaled and unscaled, the ratio, matern, vonmises_cdf,
+betainc, log_betainc and betaincinv are bit for bit main's at 9 orders and
+14 x from 0 to inf (3162 numbers per dtype), float64 and float32 on the
+CPU, except besseli_ratio's x derivative at x = 5 and 8: up to 1.5e-14
+relative in float64 and 7 ulp in float32. The pad in besseli_scalar,
+which the ratio's tail calls, changes the program XLA compiles; undoing
+either ratio edit leaves the difference, and both versions are within
+5.4e-14 of mpmath. Quick suite 879 passed, slow suite 17 passed with the
+usual two skips; the out-of-box tests of both entries and
+test_besseli_ratio_joint_gradient pass on JAX 0.5.3.

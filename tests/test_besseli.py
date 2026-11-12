@@ -99,6 +99,62 @@ def test_order_out_of_range():
         chebax.besseli_frozen(-0.5)
 
 
+def _all_nan(f, nus, x, dx_lanes=slice(None)):
+    val = jax.jit(jax.vmap(f, (None, 0)))
+    rev = jax.jit(jax.vmap(jax.grad(f, (0, 1)), (None, 0)))
+    fwd = jax.jit(jax.vmap(jax.jacfwd(f, (0, 1)), (None, 0)))
+    for nu in nus:
+        assert np.isnan(float(f(nu, 2.0))), nu
+        assert np.isnan(np.asarray(val(nu, x))).all(), nu
+        for dnu, dx in [rev(nu, x), fwd(nu, x)]:
+            assert np.isnan(np.asarray(dnu)).all(), nu
+            assert np.isnan(np.asarray(dx)[dx_lanes]).all(), nu
+    return val, rev
+
+
+@pytest.mark.parametrize("scaled", [False, True])
+def test_traced_order_out_of_range_is_nan(scaled):
+    # The tables used to extrapolate: besseli(15, 2) gave -0.0062 (true
+    # 8.1e-13), besseli(15, 7) -2e9; unscaled I at x = inf was inf for any
+    # order, nan included.
+    def f(nu, x):
+        return chebax.besseli_scalar(nu, x, scaled)
+
+    x = jnp.asarray([0.0, 0.5, 2.0, 7.0, 20.0, 800.0, jnp.inf])
+    val, rev = _all_nan(f, [-0.5, 10.5, 15.0], x)
+    # the box is closed
+    for nu in [0.0, 10.0]:
+        xs = x[1:5]
+        assert np.isfinite(np.asarray(val(nu, xs))).all(), nu
+        assert all(np.isfinite(np.asarray(g)).all() for g in rev(nu, xs)), nu
+
+
+def test_besseli_ratio_order_out_of_range_is_nan():
+    # The tail reads I at nu + 1, so the box ends at 9: nu = 10.5 was off by
+    # 3e-3 and nu = 15 gave 201 at x = 7. A nan order gave zero forward-mode
+    # derivatives. At x = inf the x clamp leaves d/dx 0 in reverse mode.
+    x = jnp.asarray([0.0, 0.5, 2.0, 7.0, 20.0, jnp.inf])
+    f = chebax.besseli_ratio
+    _all_nan(f, [-0.5, 9.5, 15.0, np.nan], x, slice(None, -1))
+    assert np.isfinite(np.asarray(jax.vmap(f, (None, 0))(9.0, x))).all()
+
+
+def test_out_of_range_group_stays_in_its_group():
+    idx = np.array([0, 1, 0, 1, 1])
+    x = jnp.asarray([0.3, 1.0, 4.0, 9.0, 30.0])
+    f = chebax.pergroup(chebax.besseli_scalar, idx)
+    nu = jnp.asarray([2.5, 15.0])
+    y = np.asarray(f(nu, x))
+    gnu, gx = jax.grad(lambda n, x: jnp.sum(f(n, x)), (0, 1))(nu, x)
+    live = idx == 0
+    ref = jax.vmap(lambda t: chebax.besseli_scalar(2.5, t))(x[live])
+    np.testing.assert_allclose(y[live], np.asarray(ref), rtol=5e-15)
+    assert np.isnan(y[~live]).all()
+    assert np.isfinite(float(gnu[0])) and np.isnan(float(gnu[1]))
+    assert np.isfinite(np.asarray(gx)[live]).all()
+    assert np.isnan(np.asarray(gx)[~live]).all()
+
+
 @pytest.mark.slow
 def test_tables_regenerate_bit_for_bit(tmp_path):
     # full-file comparison: coefficients, META (generator hash, mpmath

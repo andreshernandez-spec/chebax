@@ -1988,3 +1988,33 @@ compiled to two fusions, the first writing each element's panel index and
 centre mask to memory (20 MiB at 2^22) and the second reading y again, and
 it ran at 0.52x jax's in a first run of experiments/45. The per-coefficient
 gathers still do that ("other gather", 0.56x, 16 MiB).
+
+## 56. chebax.pytensor lowers NdtriExp (2026-11-12)
+
+`import chebax.pytensor` now lowers pytensor's NdtriExp with
+chebax.ndtri_exp (pytensor 3.2.2 added the op; an import guard keeps 3.2.0
+and 3.2.1 working). PyMC's TruncatedNormal icdf calls it on log p and on
+log(1 - p). pytensor's own lowering is ndtri(exp(y)), so once the truncation
+is 38 standard deviations out in float64, or 13 in float32, every quantile
+comes back inf or nan (experiments/46).
+
+Accuracy of the icdf with float64 parameters, against mpmath: under
+pytensor's default cast policy PyMC's normal-CDF helpers build float32
+constants (pt.log(0.5), pt.sqrt(2.0)) and hold both lowerings to 1.7e-8
+wherever pytensor's is finite. With cast_policy=numpy+floatX, chebax's is
+within 2.2e-16 on every case, truncations at 38, 40, 1000, -40 and [40, 41]
+included, where pytensor's gives 7 of 7 points nonfinite; where it is finite
+it is within 4.4e-16. In float32 chebax's is within 2.4e-7.
+
+Speed, the same graph with either lowering (TruncatedNormal(mu, 1, lower=0),
+u uniform on (0, 1); N = 2^20 on one CPU core, 2^22 on the GPU), against
+pytensor's lowering:
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| icdf | 1.10x | 1.02x | 1.52x | 0.84x |
+| value_and_grad in mu | 1.64x | 1.62x | 3.10x | 3.63x |
+
+The float32 icdf on the GPU takes 0.10 ns per element against 0.08. Both
+variants lower every other op as chebax.pytensor does: pytensor 3.2.3 lowers
+Erfcx through tfp, which the experiment's environment lacks.

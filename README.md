@@ -88,7 +88,10 @@ scalar (batched ones fall back to tfp or fail loudly); out-of-domain values
 return nan, never silently wrong numbers. `gammainccinv` takes its
 upper-tail probability directly (it used to be solved at `1 - p`, which
 collapsed everything below ~1e-17 onto one point), so both tails resolve to
-the same depth.
+the same depth. It also lowers `ndtri_exp` (pytensor >= 3.2.2), which
+TruncatedNormal's icdf calls: pytensor's own lowering, `ndtri(exp(y))`, gives
+inf at every quantile once the truncation is 38 standard deviations out in
+float64 (13 in float32), and chebax's stays accurate there (`experiments/46`).
 
 For numpyro users: `from chebax.numpyro import TruncatedGamma, TruncatedBeta,
 TruncatedStudentT` (installs with `pip install chebax[numpyro]`) gives the

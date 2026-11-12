@@ -221,6 +221,32 @@ def test_erf_family_pure_jax():
     )
 
 
+@pytest.mark.skipif(
+    not hasattr(pytensor.scalar.math, "NdtriExp"), reason="pytensor < 3.2.2"
+)
+def test_ndtri_exp_past_the_underflow():
+    # pytensor's own lowering, ndtri(exp(y)), is -inf below y = -745 in float64
+    # and below -103 in float32; PyMC's TruncatedNormal icdf calls it
+    y = pt.dvector("y")
+    f = jaxify([y], pt.ndtri_exp(y))
+    yv = np.array([-1e4, -800.0, -10.0, -np.log(2.0), -1e-3, -1e-300])
+    # scipy is absolute next to the median: 0 at fl(-log 2), where z = 2.9e-17
+    np.testing.assert_allclose(
+        np.asarray(f(yv)), sps.ndtri_exp(yv), rtol=1e-11, atol=1e-16
+    )
+    g = jax.grad(lambda t: f(jnp.reshape(t, (1,)))[0])
+    for t in (-800.0, -1e-3):
+        z = sps.ndtri_exp(t)
+        want = np.sqrt(2 * np.pi) * np.exp(t + z * z / 2)
+        assert abs(float(g(t)) - want) <= 1e-12 * want
+    y32 = pt.fvector("y32")
+    got = jaxify([y32], pt.ndtri_exp(y32))(np.array([-200.0, -0.5], np.float32))
+    assert got.dtype == np.float32
+    np.testing.assert_allclose(
+        np.asarray(got, np.float64), sps.ndtri_exp([-200.0, -0.5]), rtol=1e-6
+    )
+
+
 def test_batched_parameters_fall_back():
     try:
         import tensorflow_probability  # noqa: F401

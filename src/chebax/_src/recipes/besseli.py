@@ -40,6 +40,7 @@ from chebax._src.recipes._common import (
     digamma64,
     frozen_cache,
     log_half,
+    nan_outside,
     param_coefs,
     param_coefs_der,
     pow_half,
@@ -125,7 +126,8 @@ def _eval_i(v, inv_gamma, x, lh, lt, scaled):
     tail = _tail_i(xo, lt_val, scaled)
     out = jnp.where(x <= _it.XS, inner, tail)
     if not scaled:
-        out = jnp.where(jnp.isinf(x), jnp.inf, out)
+        # a nan order stays nan at inf, as the tail gives it
+        out = jnp.where(jnp.isinf(x) & ~jnp.isnan(v), jnp.inf, out)
     return jnp.where(jnp.isnan(x), jnp.nan, out)
 
 
@@ -155,7 +157,7 @@ def _eval_value(v, inv_gamma, x, r, tail_series, tail_edge, scaled):
         tail = _tail_i(xo, tail_series(t), False)
     value = jnp.where(inner, small, tail)
     if not scaled:
-        value = jnp.where(jnp.isinf(x), jnp.inf, value)
+        value = jnp.where(jnp.isinf(x) & ~jnp.isnan(v), jnp.inf, value)
     return jnp.where(jnp.isnan(x), jnp.nan, value)
 
 
@@ -401,11 +403,11 @@ def _besseli_scalar_jvp(scaled, primals, tangents):
 
 
 def besseli_scalar(nu, x, scaled=False):
-    """I_nu(x), nu a traced scalar in [0, 10] (unchecked under trace),
-    differentiable in both to second order, also near nu = 0."""
-    return _besseli_scalar_cj(
-        canon_param(nu, "besseli_scalar", "nu"), canon_float(x), bool(scaled)
-    )
+    """I_nu(x), nu a traced scalar in [0, 10] (nan outside, with nan
+    derivatives), differentiable in both to second order, also near nu = 0."""
+    # outside the custom_jvp, so its rule sees the nan order too
+    nu = nan_outside(canon_param(nu, "besseli_scalar", "nu"), 0.0, _it.VMAX)
+    return _besseli_scalar_cj(nu, canon_float(x), bool(scaled))
 
 
 def besseli(nu=None, x=None, scaled=False, *, v=None):
@@ -456,9 +458,11 @@ def _ratio_series(nu, x):
 
 def besseli_ratio(nu, x):
     """I_{nu+1}(x) / I_nu(x), the von Mises mean resultant length at nu = 0
-    (vMF: nu = d/2 - 1), for nu in [0, 9] uniform per call and x >= 0; 0 at
-    x = 0, 1 at +inf. The series below x = 2, scaled besseli_scalar above."""
-    nu = canon_param(nu, "besseli_ratio", "nu")
+    (vMF: nu = d/2 - 1), for nu in [0, 9] uniform per call (nan outside) and
+    x >= 0; 0 at x = 0, 1 at +inf. The series below x = 2, scaled
+    besseli_scalar above."""
+    # 9, not 10: the tail reads the tables at nu + 1
+    nu = nan_outside(canon_param(nu, "besseli_ratio", "nu"), 0.0, _it.VMAX - 1.0)
     x = jnp.asarray(x)
     near = x <= _RATIO_XS
     xs = jnp.where(near, x, 0.0)
@@ -472,5 +476,7 @@ def besseli_ratio(nu, x):
         _ratio_series(nu, xs),
         besseli_scalar(nu + 1.0, xt, scaled=True) / besseli_scalar(nu, xt, scaled=True),
     )
-    r = jnp.where(jnp.isinf(x), 1.0, r)
-    return jnp.where(jnp.isnan(x) | jnp.isnan(nu), jnp.nan, r)
+    # A nan order is left to the tail, which gives nan with nan derivatives;
+    # selecting a nan here would give forward mode zero tangents.
+    r = jnp.where(jnp.isinf(x) & ~jnp.isnan(nu), 1.0, r)
+    return jnp.where(jnp.isnan(x), jnp.nan, r)

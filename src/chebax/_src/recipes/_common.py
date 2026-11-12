@@ -202,6 +202,13 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
+def nan_outside(p, lo, hi):
+    """check_range for a traced p: nan where p is outside [lo, hi], so the table
+    reads nan instead of extrapolating. Added, not selected: a where would give
+    p a zero cotangent in reverse mode."""
+    return p + jnp.where((p < lo) | (p > hi), jnp.nan, 0.0)
+
+
 def cheb_basis(s, n):
     """T_0(s), ..., T_{n-1}(s) along a new last axis."""
     b = [jnp.ones_like(s), s]

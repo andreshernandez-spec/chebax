@@ -1,0 +1,83 @@
+run gpu-f64-rerun: main = 765853d, branch = dedabd5, k8 = 
+k8 = branch dedabd5 with the 8 x 8 table, packing at >= 512 bytes; rerun of the float64 GPU cells
+jax: branch 0.11.0, k8 0.11.0, main 0.11.0
+ratio = main ns / variant ns (above 1: faster)
+
+## gpu float64, ns per element (N = 1048576)
+| op | region | main | branch | k8 | branch ratio | k8 ratio |
+|---|---|---|---|---|---|---|
+| P | a<1 lower | 10.0 | 8.8 | 6.9 | 1.14x | 1.46x |
+| P | a<1 bulk | 10.2 | 8.9 | 6.8 | 1.16x | 1.50x |
+| P | a<1 upper | 10.1 | 8.8 | 6.8 | 1.15x | 1.48x |
+| P | a1-20 lower | 9.9 | 8.8 | 6.7 | 1.13x | 1.48x |
+| P | a1-20 bulk | 10.2 | 8.9 | 6.8 | 1.15x | 1.50x |
+| P | a1-20 upper | 9.9 | 8.9 | 6.8 | 1.12x | 1.47x |
+| P | a>20 lower | 10.0 | 8.8 | 6.9 | 1.13x | 1.46x |
+| P | a>20 bulk | 9.8 | 8.3 | 6.5 | 1.19x | 1.52x |
+| P | a>20 upper | 9.8 | 8.6 | 6.7 | 1.14x | 1.46x |
+| P | mixed | 10.4 | 9.1 | 7.0 | 1.15x | 1.49x |
+| P vg | a<1 lower | 17.2 | 16.1 | 13.9 | 1.07x | 1.24x |
+| P vg | a<1 bulk | 17.6 | 16.3 | 14.0 | 1.08x | 1.26x |
+| P vg | a<1 upper | 17.1 | 15.9 | 13.8 | 1.08x | 1.24x |
+| P vg | a1-20 lower | 17.2 | 16.0 | 13.9 | 1.07x | 1.24x |
+| P vg | a1-20 bulk | 17.8 | 16.4 | 14.2 | 1.08x | 1.25x |
+| P vg | a1-20 upper | 17.4 | 16.3 | 14.1 | 1.06x | 1.23x |
+| P vg | a>20 lower | 17.6 | 16.5 | 14.1 | 1.07x | 1.24x |
+| P vg | a>20 bulk | 17.0 | 15.7 | 13.5 | 1.09x | 1.27x |
+| P vg | a>20 upper | 17.0 | 16.0 | 13.7 | 1.06x | 1.24x |
+| P vg | mixed | 25.0 | 20.2 | 17.9 | 1.24x | 1.39x |
+| lnQ | a<1 lower | 10.0 | 9.3 | 7.2 | 1.07x | 1.38x |
+| lnQ | a<1 bulk | 10.2 | 9.5 | 7.4 | 1.07x | 1.37x |
+| lnQ | a<1 upper | 9.9 | 9.3 | 7.3 | 1.07x | 1.37x |
+| lnQ | a1-20 lower | 9.9 | 9.2 | 7.1 | 1.07x | 1.40x |
+| lnQ | a1-20 bulk | 10.2 | 9.5 | 7.4 | 1.07x | 1.37x |
+| lnQ | a1-20 upper | 9.8 | 9.2 | 7.2 | 1.06x | 1.37x |
+| lnQ | a>20 lower | 10.0 | 9.3 | 7.1 | 1.08x | 1.40x |
+| lnQ | a>20 bulk | 9.7 | 9.1 | 7.0 | 1.07x | 1.38x |
+| lnQ | a>20 upper | 9.7 | 9.0 | 6.9 | 1.08x | 1.40x |
+| lnQ | mixed | 10.3 | 9.8 | 7.7 | 1.06x | 1.34x |
+| lnQ vg | a<1 lower | 16.9 | 16.9 | 14.5 | 1.00x | 1.16x |
+| lnQ vg | a<1 bulk | 17.3 | 17.4 | 15.0 | 1.00x | 1.15x |
+| lnQ vg | a<1 upper | 17.0 | 17.0 | 14.7 | 1.00x | 1.16x |
+| lnQ vg | a1-20 lower | 16.8 | 16.9 | 14.6 | 1.00x | 1.16x |
+| lnQ vg | a1-20 bulk | 17.5 | 17.5 | 15.2 | 1.00x | 1.15x |
+| lnQ vg | a1-20 upper | 17.2 | 17.2 | 14.9 | 1.00x | 1.15x |
+| lnQ vg | a>20 lower | 17.2 | 17.2 | 14.9 | 1.00x | 1.15x |
+| lnQ vg | a>20 bulk | 16.8 | 16.8 | 14.5 | 1.00x | 1.16x |
+| lnQ vg | a>20 upper | 16.8 | 16.8 | 14.5 | 1.00x | 1.16x |
+| lnQ vg | mixed | 21.2 | 21.3 | 19.0 | 1.00x | 1.11x |
+
+compile s / temp MiB (gpu float64, largest over passes)
+  P: main 0.4 / 490.0; branch 0.4 / 458.0; k8 0.3 / 262.0
+  P vg: main 0.8 / 373.0; branch 0.7 / 378.0; k8 0.5 / 534.0
+  lnQ: main 0.3 / 490.0; branch 0.3 / 458.0; k8 0.3 / 262.0
+  lnQ vg: main 0.7 / 373.0; branch 0.7 / 377.0; k8 0.4 / 533.0
+
+accuracy, worst per region (gpu float64)
+  P: P
+        main: worst 1.4e-15 | 3e-16 4e-16 1e-16 5e-16 5e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+      branch: worst 1.4e-15 | 3e-16 4e-16 1e-16 5e-16 5e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+          k8: worst 1.4e-15 | 3e-16 5e-16 4e-16 4e-16 6e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+  P vg: dP/da
+        main: worst 6.7e-14 | 7e-15 9e-16 7e-15 1e-14 6e-14 8e-15 4e-14 1e-15 2e-14 7e-14
+      branch: worst 6.7e-14 | 7e-15 9e-16 7e-15 1e-14 6e-14 8e-15 4e-14 1e-15 2e-14 7e-14
+          k8: worst 6.8e-14 | 7e-15 8e-15 6e-15 1e-14 4e-14 2e-14 4e-14 1e-15 2e-14 7e-14
+  P vg: dP/dx
+        main: worst 1.3e-13 | 2e-14 2e-15 2e-14 1e-14 2e-14 1e-14 5e-14 1e-15 2e-14 1e-13
+      branch: worst 1.3e-13 | 2e-14 2e-15 2e-14 1e-14 2e-14 1e-14 5e-14 1e-15 2e-14 1e-13
+          k8: worst 1.3e-13 | 2e-14 1e-14 2e-14 1e-14 4e-14 1e-14 5e-14 2e-15 2e-14 1e-13
+  lnQ: lnQ
+        main: worst 1.3e-15 | 1e-17 1e-15 4e-16 6e-17 5e-16 4e-16 9e-18 6e-16 6e-16 9e-16
+      branch: worst 1.3e-15 | 1e-17 1e-15 4e-16 6e-17 5e-16 4e-16 9e-18 6e-16 6e-16 9e-16
+          k8: worst 2.7e-15 | 2e-17 2e-15 2e-15 5e-17 7e-16 4e-16 3e-17 6e-16 6e-16 3e-15
+  lnQ vg: dlnQ/da
+        main: worst 5.6e-14 | 1e-16 3e-15 7e-15 6e-17 6e-14 4e-15 7e-18 2e-16 4e-16 3e-14
+      branch: worst 5.6e-14 | 1e-16 3e-15 7e-15 6e-17 6e-14 4e-15 7e-18 2e-16 4e-16 3e-14
+          k8: worst 3.7e-14 | 1e-16 8e-15 6e-15 8e-17 3e-14 2e-14 1e-17 2e-16 4e-16 4e-14
+  lnQ vg: dlnQ/dx
+        main: worst 3.7e-13 | 3e-14 5e-15 2e-14 1e-14 2e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+      branch: worst 3.7e-13 | 3e-14 5e-15 2e-14 1e-14 2e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+          k8: worst 3.7e-13 | 3e-14 9e-15 1e-14 1e-14 4e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+
+regions: a<1 lower, a<1 bulk, a<1 upper, a1-20 lower, a1-20 bulk, a1-20 upper, a>20 lower, a>20 bulk, a>20 upper, mixed
+passes differing by more than 1.25x: none

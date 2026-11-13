@@ -61,20 +61,31 @@ def lgamma(a):
     return _gammaln_cj(a)
 
 
+# above this a, log_xpdf takes Stirling's form; Binet's remainder to a^-13
+# truncates at 3e-17 there, and the direct form cancels ((a - 1) ln x against
+# lnGamma(a): 1e-13 in the density at a = 94)
+_STIR = 10.0
+_BINET = (1 / 12, -1 / 360, 1 / 1260, -1 / 1680, 1 / 1188, -691 / 360360, 1 / 156)
+
+
 def log_xpdf(a, t, small=False, lga=None):
-    """ln(x pdf(x)) of Gamma(a, 1) at x = a e^t. Above a = 100, against the
-    cancellation, -a (e^t - 1 - t) + ln(a / (2 pi))/2 - S(a), S Stirling's to
-    a^-5; small (python constant) means a <= 100 everywhere. lga is lnGamma(a)
-    if the caller has it (jax's gammaln otherwise; unread above a = 100)."""
+    """ln(x pdf(x)) of Gamma(a, 1) at x = a e^t. Above _STIR, against the
+    cancellation, -a (e^t - 1 - t) + ln(a / (2 pi))/2 - S(a), S Binet's
+    remainder; small (python constant) means a <= 100 everywhere, direct form.
+    lga is lnGamma(a) if the caller has it (jax's gammaln otherwise; unread
+    above _STIR)."""
     if lga is None:
-        lga = jax.scipy.special.gammaln(a if small else jnp.where(a > 100.0, 1.0, a))
+        am = a if small else jnp.where(a > _STIR, 1.0, a)
+        lga = jax.scipy.special.gammaln(am)
     if small:
         return a * (t + jnp.log(a)) - a * jnp.exp(t) - lga
-    stir = a > 100.0
+    stir = a > _STIR
     ab = jnp.where(stir, a, 1000.0)
     ai2 = 1.0 / (ab * ab)
-    rem = (1.0 / 12.0 - ai2 * (1.0 / 360.0 - ai2 / 1260.0)) / ab
-    lead = 0.5 * jnp.log(ab / (2.0 * math.pi)) - rem
+    rem = _BINET[-1]
+    for c in _BINET[-2::-1]:
+        rem = rem * ai2 + c
+    lead = 0.5 * jnp.log(ab / (2.0 * math.pi)) - rem / ab
     am = jnp.where(stir, 1.0, a)
     direct = am * (t + jnp.log(am)) - am * jnp.exp(t) - jnp.where(stir, 0.0, lga)
     return jnp.where(stir, lead - _a_phi(ab, t), direct)

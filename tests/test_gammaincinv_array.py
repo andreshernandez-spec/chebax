@@ -15,7 +15,9 @@ uniform expansion.
 Derivatives come from the implicit function theorem on the same ln P and
 ln Q the solve inverted. Against mpmath at the 40-dps root (dx/dp = 1/pdf,
 dx/da = -dP/da / pdf, each tail differentiated directly), measured worst
-7.9e-15 relative over a from 0.1 to 640 in both tails, bar 3e-14; forward
+over a from 0.1 to 640 in both tails: dx/da 7.4e-15, bar 3e-14; dx/dp
+2.2e-14, bar 9e-14 (taken alone it uses the closed-form density, which
+loses about |ln F| eps: a = 0.1, p = 1e-5, where ln pdf = 102); forward
 and reverse mode agree to the last bit. Second derivatives, which the
 scalar path cannot take in a: d2x/dp2 1.4e-13 (bar 6e-13) against
 -((a-1)/x - 1) (dx/dp)^2, d2x/da2 4.6e-12 (bar 2e-11) against a central
@@ -172,7 +174,7 @@ def test_gradients_against_mpmath(name):
         ref_a2 = (_dxda(am + h, ti, upper) - _dxda(am - h, ti, upper)) / (2 * h)
         pt = (name, ai, ti)
         assert abs(rev_a[i] / _dxda(am, ti, upper) - 1) <= 3e-14, pt
-        assert abs(rev_t[i] / ref_t - 1) <= 3e-14, pt
+        assert abs(rev_t[i] / ref_t - 1) <= 9e-14, pt
         assert abs(d2t[i] / ref_t2 - 1) <= 6e-13, pt
         assert abs(d2a[i] / ref_a2 - 1) <= 2e-11, pt
 
@@ -208,12 +210,12 @@ def test_exponential_case_is_exact():
 
 
 def test_density_in_closed_form_above_1e3():
-    # above a = 1e3 both derivatives come from the root found again,
-    # unrounded (Halley steps in ln(x/a) on _log_pq given d = x/a - 1
-    # exactly), since L_x at the float x is off by its change over one
-    # float step, about eps sqrt(a) (1 + |z|). Against mpmath, measured
-    # worst 2.3e-13 in dx/dp (a = 2e3, p = 1e-300) and 3.6e-16 in dx/da;
-    # bars 8e-13 and 1.5e-15
+    # above a = 1e3 both derivatives come from the unrounded root (one
+    # Newton step in ln(x/a) from the float x, _log_pq given d = x/a - 1
+    # exactly for dx/da), since L_x at the float x is off by its change over
+    # one float step, about eps sqrt(a) (1 + |z|). Against mpmath, measured
+    # worst 3.2e-13 in dx/dp (a = 2e3, p = 1e-300) and 3.6e-16 in dx/da;
+    # bars 1.3e-12 and 1.5e-15
     pts = [(1e3, 1e-300), (2e3, 1e-300), (2e3, 0.5), (1e4, 1e-100)]
     pts += [(1e5, 1e-200), (1e5, 0.9)]
     a = jnp.asarray([q[0] for q in pts])
@@ -226,7 +228,7 @@ def test_density_in_closed_form_above_1e3():
             am = mp.mpf(ai)
             pdf = mp.exp((am - 1) * mp.log(x) - x - mp.loggamma(am))
             ref = (-1 if name == "cinv" else 1) / pdf
-            assert abs(g[i] / ref - 1) <= 8e-13, (name, ai, ti, g[i], float(ref))
+            assert abs(g[i] / ref - 1) <= 1.3e-12, (name, ai, ti, g[i], float(ref))
             ref_a = _dxda(am, ti, name == "cinv")
             assert abs(ga[i] / ref_a - 1) <= 1.5e-15, (name, ai, ti, ga[i])
 

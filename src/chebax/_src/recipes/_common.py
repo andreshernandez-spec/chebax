@@ -344,7 +344,8 @@ def locate_static(val, cuts, which=None):
     """locate_patch for cuts known when tracing (ascending floats, padding
     repeats allowed): the interval index and val mapped onto [-1, 1], from
     compares with constants instead of gathering a row of cuts per element.
-    Given two rows of cuts, the boolean array which picks the second."""
+    Given two rows of cuts, the boolean array which picks the second; given
+    more, the integer array which picks row which."""
     rows = [cuts] if which is None else list(cuts)
     rows = [[float(c) for c in r] for r in rows]
     for r in rows:
@@ -353,7 +354,14 @@ def locate_static(val, cuts, which=None):
 
     def per_row(f):
         v = [f(r) for r in rows]
-        return v[0] if which is None else jnp.where(which, v[1], v[0])
+        if which is None:
+            return v[0]
+        if len(v) == 2:
+            return jnp.where(which, v[1], v[0])
+        out = v[0]
+        for z in range(1, len(v)):
+            out = jnp.where(which == z, v[z], out)
+        return out
 
     i = jnp.zeros(jnp.shape(val), jnp.int32)
     lo = jnp.zeros_like(val) + per_row(lambda r: r[0])

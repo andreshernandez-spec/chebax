@@ -12,8 +12,8 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammaincinv_array_table as _t
-from chebax._src.recipes import gammaincinv_kernel as _k
 from chebax._src.recipes._common import cheb_basis, locate_zones, patch_sum
+from chebax._src.recipes.gammaln import _gammaln_cj as _lgamma
 
 _LO0, _LO1, _LO2, _CE1, _CE2, _UP0, _UP1, _UP2 = range(len(_t.NAMES))
 
@@ -54,7 +54,7 @@ def start(a, ltp, ltq, z, upper):
     docstring); relatively accurate at large a, where t ~ z/sqrt(a)."""
     tab, _, _, lam = (jnp.asarray(v) for v in _tables(a.dtype.name))
     narg, offset = (jnp.asarray(v) for v in (_t.NARG, _t.OFFSET))
-    lga = _k.lgamma(a)
+    lga = _lgamma(a)
     ln_a = jnp.log(a)
 
     panel = jnp.where(a < 1.0, 0, jnp.where(a < _t.ASPLIT, 1, 2))

@@ -28,6 +28,7 @@ from chebax._src.recipes import gammainc_array as _ga
 from chebax._src.recipes import gammaincinv_start as _s
 from chebax._src.recipes import gammaincinv_kernel as _k
 from chebax._src.recipes._common import log1p
+from chebax._src.recipes.gammaln import _gammaln_cj as _lgamma
 
 # float64: one Newton step from the table's 1e-8 lands within ln P's own
 # error, so the start's residual is the check; float32: the table is within
@@ -70,7 +71,15 @@ def _solve(a, targets, ceiling=False):
     t0 = _s.start(a, ltp, ltq, z, upper)
     steps = _STEPS[a.dtype.name]
     return _k.table_solve(
-        a, *targets, log_pq, t0, steps, ceiling=ceiling, rtol=bar, start_bar=_START_BAR
+        a,
+        *targets,
+        log_pq,
+        t0,
+        steps,
+        ceiling=ceiling,
+        rtol=bar,
+        start_bar=_START_BAR,
+        lga=_lgamma(a),
     )
 
 
@@ -108,7 +117,7 @@ def _log_pdf(a, x):
     t = jnp.where(near, log1p(jnp.where(near, d, 0.0)), far)
     am = jnp.where(stir, 2.0, a)
     xm = jnp.where(stir, 1.0, x)
-    direct = (am - 1.0) * jnp.log(xm) - xm - _k.lgamma(am)
+    direct = (am - 1.0) * jnp.log(xm) - xm - _lgamma(am)
     # Stirling's form, no lnGamma
     return jnp.where(stir, _k.log_xpdf(ab, t, lga=0.0) - jnp.log(xb), direct)
 

@@ -53,14 +53,6 @@ def _a_phi(a, t):
     return jnp.where(near, st * st * s, a * (jnp.expm1(t) - t))
 
 
-def lgamma(a):
-    """chebax's gammaln for the quantile paths, imported on first use so that
-    gammainc_array, which reads log_xpdf, does not load its tables."""
-    from chebax._src.recipes.gammaln import _gammaln_cj
-
-    return _gammaln_cj(a)
-
-
 # above this a, log_xpdf takes Stirling's form; Binet's remainder to a^-13
 # truncates at 3e-17 there, and the direct form cancels ((a - 1) ln x against
 # lnGamma(a): 1e-13 in the density at a = 94)
@@ -107,7 +99,7 @@ def snap_t(a, t):
     return jnp.where(near, jnp.log1p((x - a) / a), t)
 
 
-def _start(a, ltp, ltq, z, upper, ln_a):
+def _start(a, ltp, ltq, z, upper, ln_a, lga):
     """The first t: the larger of Wilson-Hilferty and each tail's asymptotic.
     Below, P <= x^a / Gamma(a + 1) never starts above the root (WH misses a = 20,
     p = 1e-20); above, three fixed-point passes on ln Q. Starting far below the
@@ -126,9 +118,9 @@ def _start(a, ltp, ltq, z, upper, ln_a):
     t_lo = jnp.where(
         big,
         ltp / ab - 1.0 + stirling,
-        (ltp + lgamma(am) + jnp.log(am)) / am - jnp.log(am),
+        (ltp + jnp.where(big, 0.0, lga) + jnp.log(am)) / am - jnp.log(am),
     )
-    r = -ltq - lgamma(a)
+    r = -ltq - lga
     xa = jnp.maximum(r, 1.0)
     for _ in range(3):
         xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
@@ -151,6 +143,7 @@ def solve(
     rtol=None,
     small=False,
     halley=False,
+    lga=None,
 ):
     """x with ln P = ltp (ln Q = ltq on upper lanes), log_pq(x) giving both, z
     ndtri for the start, iters fixed steps. Returns (x, accepted, root below the
@@ -160,10 +153,12 @@ def solve(
     with seam on the side log_pq computes directly: the small tables' Q below
     x = 8 is 1 - P (a = 0.1, y = 1e-4 is 1.4e-3 off in float32). halley and
     small are python constants; small (a <= 10) skips the near-mode rounding and
-    the Stirling density, 8-28% of GPU time (experiments/09)."""
+    the Stirling density, 8-28% of GPU time (experiments/09). lga is lnGamma(a),
+    jax's gammaln if None (a kernel imports no other family's tables)."""
     lim = solver_limits(canon_tag())
     ln_a = jnp.log(a)
-    lga = lgamma(a)
+    if lga is None:
+        lga = jax.scipy.special.gammaln(a)
 
     def x_at(t):
         if small:
@@ -194,7 +189,7 @@ def solve(
     lo0 = jnp.broadcast_to(lim.lo - ln_a, shape)
     # at least x = a: within 4 ulps of the largest float the ceiling is below the mode
     hi0 = jnp.broadcast_to(jnp.maximum(lim.v_hi - ln_a, 0.0), shape)
-    t0 = jnp.clip(_start(a, ltp, ltq, z, upper, ln_a), lo0, hi0)
+    t0 = jnp.clip(_start(a, ltp, ltq, z, upper, ln_a, lga), lo0, hi0)
     if not small:
         t = snap(newton_bisect(f_and_df, t0, lo0, hi0, iters, snap=snap))
     else:
@@ -231,18 +226,20 @@ def table_solve(
     rtol=None,
     small=False,
     start_bar=None,
+    lga=None,
 ):
     """solve's contract from a start t0 within ~1e-8 (gammaincinv_start): steps
     Newton steps in t, the last one's residual, the previous one's result,
     being the check: inside the bar (rtol, judged as in solve), or the step
     below rounding in t. With one step the start is judged instead: residual
     within start_bar max(1, |ln target|) (python float, None for no check), or
-    the step within 64 floats in t; with none nothing is. Returns (x,
-    accepted, root below the normal floor, root above the ceiling)."""
+    the step within 64 floats in t; with none nothing is. lga as in solve.
+    Returns (x, accepted, root below the normal floor, root above the ceiling)."""
     lim = solver_limits(a.dtype.name)
     eps = jnp.finfo(a.dtype).eps
     ln_a = jnp.log(a)
-    lga = lgamma(a)
+    if lga is None:
+        lga = jax.scipy.special.gammaln(a)
     lo0 = lim.lo - ln_a
     hi0 = jnp.maximum(lim.v_hi - ln_a, 0.0)
     bar = lim.rtol if rtol is None else rtol

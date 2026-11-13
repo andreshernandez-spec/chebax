@@ -320,10 +320,10 @@ def _make_patch_sum(gpu_pack):
         zero = jax.custom_derivatives.SymbolicZero
         f, fy, fp = _patch_parts(tab, n, sy, sp, True)
         # As three results XLA keeps the gathered coefficients for the reverse pass
-        # (402 MiB at 2^18 in float64, 128 MiB packed). Packing pays for a 12 x 12
-        # float64 block, not a 7 x 7 float32 one, on the CPU (experiment 43, "other
-        # packing")
-        big = _packed if tab[0].size * tab.dtype.itemsize > _PACK_BYTES else _unpacked
+        # (402 MiB at 2^18 in float64, 128 MiB packed). On the CPU packing pays for
+        # 12 x 12 and 8 x 8 float64 blocks, not a 7 x 7 float32 one (experiments 43,
+        # "other packing", and 53)
+        big = _packed if tab[0].size * tab.dtype.itemsize >= _PACK_BYTES else _unpacked
         if gpu_pack:
             f, fy, fp = jax.lax.platform_dependent(f, fy, fp, cpu=big, default=_packed)
         else:

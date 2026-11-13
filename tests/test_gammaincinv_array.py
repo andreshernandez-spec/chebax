@@ -4,7 +4,7 @@ The inversion contract is two-sided, as in test_quantiles: the returned x
 round-trips through the 40-dps CDF on the target's own side (P for lower
 targets, Q for upper ones), relative to that side's target. Measured worst
 in float64 over a grid from a = 0.1 to 1e6 and targets from 1e-300 to
-1 - 2^-52 on both sides: 6.2e-13 for a <= 1000 (a = 640, p = 1e-30, where
+1 - 2^-52 on both sides: 5.5e-13 for a <= 1000 (a = 640, p = 1e-30, where
 the scalar path gives 9.3e-13: the gammainc tables' own accuracy), bar
 2.5e-12; 2.3e-12 above (a = 1e6, p = 1e-300, where one float step of x
 moves P by 8e-12), bar 1e-11. mpmath's series stall past a ~ 1e6, so from
@@ -20,7 +20,8 @@ over a from 0.1 to 640 in both tails: dx/da 7.4e-15, bar 3e-14; dx/dp
 loses about |ln F| eps: a = 0.1, p = 1e-5, where ln pdf = 102); forward
 and reverse mode agree to the last bit. Second derivatives, which the
 scalar path cannot take in a: d2x/dp2 1.4e-13 (bar 6e-13) against
--((a-1)/x - 1) (dx/dp)^2, d2x/da2 4.6e-12 (bar 2e-11) against a central
+-((a-1)/x - 1) (dx/dp)^2, d2x/da2 1.5e-11 on jax 0.5.3 and 6.2e-12 on 0.11
+(bar 6e-11; the 12 x 12 gammainc table gave 6.2e-12) against a central
 difference of the 60-dps first derivative. Above a = 1e3 dx/dp is the
 density in closed form at the unrounded root; its limits are in the two
 tests that cover it.
@@ -176,7 +177,7 @@ def test_gradients_against_mpmath(name):
         assert abs(rev_a[i] / _dxda(am, ti, upper) - 1) <= 3e-14, pt
         assert abs(rev_t[i] / ref_t - 1) <= 9e-14, pt
         assert abs(d2t[i] / ref_t2 - 1) <= 6e-13, pt
-        assert abs(d2a[i] / ref_a2 - 1) <= 2e-11, pt
+        assert abs(d2a[i] / ref_a2 - 1) <= 6e-11, pt
 
 
 def test_exponential_case_is_exact():
@@ -239,8 +240,9 @@ def test_huge_shape_gradients_match_the_scalar_path():
     # single Halley step from the float x left dx/dp 5.7e-6 off at
     # a = 1e30 and 2e17 times too small at a = 1e35, p = 1e-20, where x
     # rounds to a nine standard deviations from the root (review of #44).
-    # Measured worst 1.1e-13 in dx/dp and 2.2e-16 in dx/da; bars 4.4e-13
-    # and 1e-15
+    # Measured worst 3.4e-13 in dx/dp (two Halley steps from the float x;
+    # six from Wilson-Hilferty gave 1.1e-13) and 2.2e-16 in dx/da; bars
+    # 1.4e-12 and 1e-15
     shapes = [1e12, 1e20, 1e25, 1e30, 1e35]
     aa = np.repeat(shapes, 3)
     for name, scalar, ts in (
@@ -258,7 +260,7 @@ def test_huge_shape_gradients_match_the_scalar_path():
             if np.isinf(st):  # the density underflows at the root
                 assert gt[i] == st, (name, a, t, gt[i], st)
             else:
-                assert abs(gt[i] / st - 1) <= 4.4e-13, (name, a, t, gt[i], st)
+                assert abs(gt[i] / st - 1) <= 1.4e-12, (name, a, t, gt[i], st)
 
 
 def test_largest_shapes():

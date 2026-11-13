@@ -7,8 +7,8 @@ block.
 
 Each zone forms its small probability directly as a log and the other as
 log1p(-exp(direct)), or for P and Q themselves as 1 - exp(direct). That loses
-only in A0, where Q falls to 0.024 (a = 0.1, x = 1.1): ln Q 8.4e-15 there,
-7.8e-16 elsewhere (tests/test_gammainc_array.py).
+only in A0, where Q falls to 0.024 (a = 0.1, x = 1.1): ln Q 5.6e-15 there,
+8.9e-16 elsewhere (tests/test_gammainc_array.py).
 
 The Temme zone's phi = d - log1p(d), d = (x - a)/a, cancels near d = 0, so it is
 2 z^2 S(z), z = d/(2 + d), S = 1 + 2/3 z + z^2 + 4/5 z^3 + ..., and eta = 2 z sqrt(S).

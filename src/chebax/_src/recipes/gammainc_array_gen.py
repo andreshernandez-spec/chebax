@@ -29,13 +29,19 @@ x = a + 1 puts the transition at a fixed coordinate and removes the uniform
 recipe's x = 8 seam. Each zone starts as one patch, fitted at NODES x NODES
 nodes in mpmath, and a patch whose coefficients outside its leading KY x KP
 block sum to more than TOL (a relative bound on P or Q) is halved along the
-axis holding the larger tail, until every patch fits: 65 patches at 12 x 12
-(A0 1 x 2, B0 1 x 9, L1 6 x 2, U1 7 x 2, L2 5 x 3, U2 1 x 1, T 3 x 4,
+axis holding the larger tail, until every patch fits: 1088 patches at 8 x 8
+(A0 8 x 8, B0 8 x 29, L1 24 x 8, U1 29 x 6, L2 17 x 14, U2 2 x 4, T 10 x 18,
 parameter x argument intervals), B0 splitting toward t = 0 (a C-infinity
-endpoint) and L1, U1 toward a = 1. float32 reads the leading KY32 x KP32
-block, the smallest within TOL32 on every patch: 7 x 7. Regenerate with:
+endpoint) and L1, U1 toward a = 1. A halving cuts the zone's whole grid, so
+the count grows fast as the block shrinks (65 patches at 12 x 12); 8 x 8 is
+chosen for the runtime, which reads every coefficient of a block per element.
+float32 reads the leading KY32 x KP32 block, the smallest within TOL32 on
+every patch: 5 x 5. Regenerate with:
 
-    python -m chebax._src.recipes.gammainc_array_gen      # ~1 min
+    python -m chebax._src.recipes.gammainc_array_gen      # ~17 min
+
+CI rebuilds zone U2 only (zone_table, tests/test_gammainc_array.py); the whole
+module is compared with CHEBAX_FULL_REGEN=1, before releases.
 """
 
 import numpy as np
@@ -54,7 +60,7 @@ ALO = 0.1  # the uniform recipe's lower end, chebax.domains.GAMMAINC.lo
 ASPLIT = 10.0  # L1/U1 in u up to here, L2/U2 in v = ASPLIT/a above
 ELO, EHI = _glg.ELO, _glg.EHI
 NODES = 16  # per patch and direction
-KY, KP = 12, 12  # stored block: argument x parameter coefficients
+KY, KP = 8, 8  # stored block: argument x parameter coefficients
 TOL = 1e-15
 TOL32 = 1e-8  # float32 roundoff is 6e-8
 NAMES = ("A0", "B0", "L1", "U1", "L2", "U2", "T")
@@ -192,23 +198,33 @@ def _block32(absc, tol=TOL32):
     return best
 
 
+def zone_table(mp, name):
+    """(parameter cuts, argument cuts, KY x KP blocks, |coefficients|) of one zone
+    as main writes it, inside mp.workdps(DPS); the CI canary rebuilds U2 with it."""
+    _, _, zones = _zones(mp)
+    _, f, kind, pbox, ybox = next(z for z in zones if z[0] == name)
+    pc, yc, patches = _refine(mp, f, kind, pbox, ybox)
+    blocks = [[[float(c[k][j]) for j in range(KP)] for k in range(KY)] for c in patches]
+    absc = [[[float(abs(v)) for v in row] for row in c] for c in patches]
+    return pc, yc, blocks, absc
+
+
 def main(out_dir=None):
     import mpmath as mp
 
     with mp.workdps(DPS):
-        lam_lo, s_hi, zones = _zones(mp)
+        lam_lo, s_hi, _ = _zones(mp)
         blocks, absc, pcuts, ycuts, npar, narg, offset = [], [], [], [], [], [], []
-        for name, f, kind, pbox, ybox in zones:
-            pc, yc, patches = _refine(mp, f, kind, pbox, ybox)
+        for name in NAMES:
+            pc, yc, zb, za = zone_table(mp, name)
             offset.append(len(blocks))
             npar.append(len(pc) - 1)
             narg.append(len(yc) - 1)
             pcuts.append(pc)
             ycuts.append(yc)
-            for c in patches:
-                blocks.append([[float(c[k][j]) for j in range(KP)] for k in range(KY)])
-                absc.append([[float(abs(v)) for v in row] for row in c])
-            print(f"{name}: {npar[-1]} x {narg[-1]} patches")
+            blocks += zb
+            absc += za
+            print(f"{name}: {npar[-1]} x {narg[-1]} patches", flush=True)
     # float32 decides on 1e-8, far above float64's resolution of the sums
     ky32, kp32 = _block32(np.array(absc))
     # the runtime locates with the interior cuts and the last; pad by

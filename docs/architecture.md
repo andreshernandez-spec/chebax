@@ -83,9 +83,10 @@ between `_scalar` and `_array` from the parameters' shapes (increment 36).
 All fit stages in a recipe generator stay in mpmath at the recorded precision
 before one final float64 conversion. Tables record axes, parameter domains,
 node counts, working precision, mpmath version, and the generator/shared-helper
-source hash. Slow tests compare emitted modules byte for byte. The wide-beta
-and hyp1f1 tables have documented partial CI regeneration checks; use the full
-`CHEBAX_FULL_REGEN=1` checks when their omitted panels change.
+source hash. Slow tests compare emitted modules byte for byte. The wide-beta,
+hyp1f1 and per-element gammainc tables have documented partial CI regeneration
+checks; use the full `CHEBAX_FULL_REGEN=1` checks when their omitted panels
+change.
 
 A `_frozen` factory uses NumPy reconstruction and a bounded private cache.
 Its key includes normalized parameters, structural options, and canonical

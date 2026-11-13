@@ -340,6 +340,59 @@ def locate_patch(val, cuts, n):
     return k, 2.0 * (val - lo) / (hi - lo) - 1.0
 
 
+@functools.lru_cache(maxsize=16)
+def _dyadic_luts(key):
+    """Per-zone constants and the fine-cell tables for locate_zones (numpy)."""
+    cuts, ns = key
+    lo, width, fmax, base, cell, clo, chi = [], [], [], [], [], [], []
+    for row, n in zip(cuts, ns):
+        row = row[: n + 1]
+        w = row[-1] - row[0]
+        fine = 1
+        while not all(
+            abs((c - row[0]) / w * fine - round((c - row[0]) / w * fine)) < 1e-6
+            for c in row
+        ):
+            fine *= 2
+            if fine > 2**16:
+                raise ValueError(f"cuts {row} are not on a dyadic grid")
+        k = [round((c - row[0]) / w * fine) for c in row]
+        lo.append(row[0])
+        width.append(w / fine)
+        fmax.append(fine - 1.0)
+        base.append(len(cell))
+        for m in range(fine):
+            i = max(q for q in range(n) if k[q] <= m)
+            cell.append(i)
+            clo.append(row[i])
+            chi.append(row[i + 1])
+    f64 = functools.partial(np.asarray, dtype=np.float64)
+    i32 = functools.partial(np.asarray, dtype=np.int32)
+    return f64(lo), f64(width), f64(fmax), i32(base), i32(cell), f64(clo), f64(chi)
+
+
+def locate_zones(val, cuts, ns, zone):
+    """locate_patch for per-zone cut rows known when tracing (numpy cuts[z],
+    ns[z] intervals, zone an integer array): the cell from a floor on the
+    zone's dyadic grid and a small table, instead of gathering a row of cuts
+    per element (which XLA stores per element and which splits the program).
+    The coordinate comes from the cell's own cuts, as in locate_patch.
+
+    Both steps divide, not multiply by a stored reciprocal: XLA's CPU backend
+    copies a cheap chain into every consumer, and in value_and_grad programs
+    it copied this one into several loops (gammainc_array's ln Q gradient
+    1.42x slower than with the divisions, experiments/53)."""
+    key = (tuple(tuple(float(c) for c in r) for r in np.asarray(cuts)), tuple(ns))
+    lo, width, fmax, base, cell, clo, chi = (
+        jnp.asarray(v, val.dtype) if v.dtype == np.float64 else jnp.asarray(v)
+        for v in _dyadic_luts(key)
+    )
+    g = (val - lo[zone]) / width[zone]
+    m = jnp.clip(jnp.floor(g), 0.0, fmax[zone]).astype(jnp.int32) + base[zone]
+    c0, c1 = clo[m], chi[m]
+    return cell[m], 2.0 * (val - c0) / (c1 - c0) - 1.0
+
+
 def locate_static(val, cuts, which=None):
     """locate_patch for cuts known when tracing (ascending floats, padding
     repeats allowed): the interval index and val mapped onto [-1, 1], from

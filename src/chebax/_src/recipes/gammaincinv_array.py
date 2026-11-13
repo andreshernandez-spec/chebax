@@ -1,14 +1,15 @@
 """gammaincinv_array and gammainccinv_array: a table of the quantile itself
-(gammaincinv_array_gen: one 2-D patch per element, 1e-8 in x) and then Newton
-steps on gammainc_array's ln P and ln Q, one patch per step whatever the
-spread of a (the scalar path's lax.conds run every branch under vmap). Two
-steps in float64: the second's residual, the first's result, is the check;
-none in float32, where the table is within rounding.
+(gammaincinv_array_gen: one 2-D patch per element, 1e-8 in x) and then a
+Newton step on gammainc_array's ln P and ln Q, one patch whatever the spread
+of a (the scalar path's lax.conds run every branch under vmap). One step in
+float64, which from 1e-8 lands within ln P's own error, as two did; none in
+float32, where the table is within rounding.
 
-Both logs are relatively accurate, so the bar is 256 eps |ln target| (or a
-step below rounding in t, the root within one float of x), and a start the
-step does not bring inside it gives nan. a >= 0.1 (nan below, at inf and
-nan); above 1e36 (1e18 in float32) the quantile is a.
+The float64 check is the start's residual: within 1e-6 max(1, |ln target|)
+(100x the worst over a = 0.1 to 1e30, both tails), or the step within 64
+floats in t, where x cannot resolve the table's 1e-8 (a > 1e10). A start
+outside both gives nan. a >= 0.1 (nan below, at inf and nan); above 1e36
+(1e18 in float32) the quantile is a.
 
 Derivatives: implicit function theorem on the same _log_pq, dx = (d lt - L_a da)
 / L_x with L = ln P (ln Q upper), both AD modes, second order in a too. 1/pdf
@@ -25,11 +26,19 @@ from chebax._src.recipes import gammaincinv_start as _s
 from chebax._src.recipes import gammaincinv_kernel as _k
 from chebax._src.recipes._common import log1p
 
-_STEPS = {"float64": 2, "float32": 0}
+# float64: one Newton step from the table's 1e-8 lands within ln P's own
+# error, so the start's residual is the check; float32: the table is within
+# rounding
+_STEPS = {"float64": 1, "float32": 0}
+# the start's residual bar, in units of max(1, |ln target|): 100x the worst seen
+_START_BAR = 1e-6
 # above this a, 1/pdf from the closed form at the root, in _REFINE Halley steps
+# from the t the solved x stands for (Wilson-Hilferty above _WH, where x cannot
+# resolve the root and WH is within 1e-10 of it); 256 eps |ln target| is the
+# bar on the last residual there
 _CLOSED = 1e3
-_REFINE = 6
-# the residual bar, in units of eps |ln target|
+_REFINE = 2
+_WH = 1e15
 _BAR = 256.0
 # above this a, |z| / sqrt(a) < eps/4 for every p, so the quantile rounds to a;
 # solving there meets subnormal 1/a from a = 4.5e307
@@ -54,8 +63,9 @@ def _solve(a, targets, ceiling=False):
     eps = jnp.finfo(a.dtype).eps
     bar = _BAR * eps * jnp.maximum(1.0, jnp.abs(jnp.where(upper, ltq, ltp)))
     t0 = _s.start(a, ltp, ltq, z, upper)
+    steps = _STEPS[a.dtype.name]
     return _k.table_solve(
-        a, *targets, log_pq, t0, _STEPS[a.dtype.name], ceiling=ceiling, rtol=bar
+        a, *targets, log_pq, t0, steps, ceiling=ceiling, rtol=bar, start_bar=_START_BAR
     )
 
 
@@ -93,21 +103,26 @@ def _log_pdf(a, x):
     t = jnp.where(near, log1p(jnp.where(near, d, 0.0)), far)
     am = jnp.where(stir, 2.0, a)
     xm = jnp.where(stir, 1.0, x)
-    direct = (am - 1.0) * jnp.log(xm) - xm - jax.scipy.special.gammaln(am)
-    return jnp.where(stir, _k.log_xpdf(ab, t) - jnp.log(xb), direct)
+    direct = (am - 1.0) * jnp.log(xm) - xm - _k.lgamma(am)
+    # ab > 100: Stirling's form, no lnGamma
+    return jnp.where(stir, _k.log_xpdf(ab, t, lga=0.0) - jnp.log(xb), direct)
 
 
-def _closed_root(a, upper, lt, z):
+def _closed_root(a, x, upper, lt, z):
     """(1/pdf, dx/da) at the unrounded root for a > _CLOSED, nan if unconverged.
     At the float x, L_x is off by eps sqrt(a) (1 + |z|), 0.3% at a = 1e30, so the
-    root is found again in t: Halley from Wilson-Hilferty with closed-form slope
-    and curvature, at most 3 steps on 2e4 lanes per dtype."""
+    root is found again in t: Halley with closed-form slope and curvature from
+    the t of the solved x (within a float of the root) or, above _WH,
+    Wilson-Hilferty; the second step's residual is the check."""
     closed = a > _CLOSED
     ac = jnp.where(closed, a, 2.0 * _CLOSED)
     up = upper & closed
     ltc = jnp.where(closed, lt, jnp.log(0.5))
     zc = jnp.where(closed, z, 0.0)
-    t0 = 3.0 * jnp.log1p(zc / (3.0 * jnp.sqrt(ac)) - 1.0 / (9.0 * ac))
+    t_wh = 3.0 * jnp.log1p(zc / (3.0 * jnp.sqrt(ac)) - 1.0 / (9.0 * ac))
+    near = closed & (ac <= _WH)
+    xc = jnp.where(near, x, ac)
+    t0 = jnp.where(near, log1p((xc - ac) / ac), t_wh)
 
     def step(_, carry):
         t, _ = carry
@@ -118,7 +133,7 @@ def _closed_root(a, upper, lt, z):
         lp, lq = _ga._log_pq(av, av, jnp.expm1(t))
         lv = jnp.where(up, lq, lp)
         # closed-form slope: a _log_pq derivative here is most of the compile time
-        l1 = jnp.where(up, -1.0, 1.0) * jnp.exp(_k.log_xpdf(ac, t) - lv)
+        l1 = jnp.where(up, -1.0, 1.0) * jnp.exp(_k.log_xpdf(ac, t, lga=0.0) - lv)
         f = lv - ltc
         c = 1.0 - f * (-ac * jnp.expm1(t) - l1) / (2.0 * l1)
         return t - f / l1 / jnp.where(c > 0.5, c, 1.0), f
@@ -126,7 +141,7 @@ def _closed_root(a, upper, lt, z):
     start = (t0, jnp.full_like(t0, jnp.inf))
     t, f = jax.lax.fori_loop(0, _REFINE, step, start)
     bar = _BAR * jnp.finfo(ac.dtype).eps * jnp.maximum(1.0, jnp.abs(ltc))
-    inv_pdf = jnp.exp(jnp.log(ac) + t - _k.log_xpdf(ac, t))
+    inv_pdf = jnp.exp(jnp.log(ac) + t - _k.log_xpdf(ac, t, lga=0.0))
 
     # dx/da = (1 + d) - (dL/d ln a) / (dL/dd): slopes in a and x carry 1/a,
     # subnormal from a ~ 2e307
@@ -165,7 +180,7 @@ def _implicit(a, x, upper, lt, z):
     closed = a > _CLOSED
 
     def at_root():
-        inv_c, dxda_c = _closed_root(a, upper, lt, z)
+        inv_c, dxda_c = _closed_root(a, xs, upper, lt, z)
         return jnp.where(closed, inv_c, inv_pdf), jnp.where(closed, dxda_c, dxda)
 
     inv_pdf, dxda = jax.lax.cond(jnp.any(closed), at_root, lambda: (inv_pdf, dxda))

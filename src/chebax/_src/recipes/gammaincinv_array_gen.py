@@ -4,7 +4,7 @@ mpmath inside.
 gammaincinv_array used to run 8 Halley steps on gammainc_array's ln P and
 ln Q, one table patch per step. This table holds the quantile itself to
 1e-8, found by root finding in mpmath at the nodes, so the runtime reads one
-patch and takes two Newton steps in float64 (none in float32). The zones
+patch and takes one Newton step in float64 (none in float32). The zones
 follow the quantile's structure; the tabulated function is a correction to
 a closed form in each (experiments/25 chose the coordinates, 26 proved the
 start), with the parameter panel in u = ln(1 + a) below a = ASPLIT, v =

@@ -346,33 +346,33 @@ def test_masked_lanes_keep_clean_gradients():
                 assert abs(float(one) / rev[i] - 1) <= 1e-13, (argnum, i)
 
 
-def test_one_newton_step_reaches_the_floor(monkeypatch):
-    # the table start is within 1e-8 in x, so the first Newton step lands
-    # on the same tail probability as the shipped two (the second is the
-    # check). x itself can differ where it barely moves P: deep in the
-    # lower tail at small a, x ~ p^(1/a). In the probability, measured
-    # 8.9e-12 (two results inside the acceptance bar, 1.6e-10 wide at
-    # |ln p| = 690), bar 4e-11
+def test_a_second_newton_step_changes_nothing(monkeypatch):
+    # the table start is within 1e-8 in x, so the shipped single Newton step
+    # lands on the same tail probability as two, and the start check gives
+    # nan nowhere the two-step check does not. x itself can differ where it
+    # barely moves P: deep in the lower tail at small a, x ~ p^(1/a). In the
+    # probability, measured 1.0e-11 (two results inside the acceptance bar,
+    # 1.6e-10 wide at |ln p| = 690), bar 4e-11
     rng = np.random.default_rng(11)
     a = np.exp(rng.uniform(np.log(0.1), np.log(1e30), 4096))
     p = np.where(
         rng.random(4096) < 0.5, rng.random(4096), 10 ** rng.uniform(-300, 0, 4096)
     )
-    full = {k: np.asarray(f(a, p)) for k, f in FUNCS.items()}
-    monkeypatch.setitem(gia._STEPS, "float64", 1)
+    one = {k: np.asarray(f(a, p)) for k, f in FUNCS.items()}
+    monkeypatch.setitem(gia._STEPS, "float64", 2)
     for k, f in FUNCS.items():
         # the count is read at trace time, so the cached trace must go
         jax.clear_caches()
-        half = np.asarray(jax.jit(lambda a, p: f(a, p))(a, p))
-        np.testing.assert_array_equal(np.isnan(half), np.isnan(full[k]))
+        two = np.asarray(jax.jit(lambda a, p: f(a, p))(a, p))
+        np.testing.assert_array_equal(np.isnan(one[k]), np.isnan(two))
         upper = p > 0.5 if k == "inv" else p < 0.5
         side = lambda x: np.where(
             upper,
             np.asarray(chebax.log_gammaincc_array(a, x)),
             np.asarray(chebax.log_gammainc_array(a, x)),
         )
-        ok = np.isfinite(full[k]) & (full[k] > 0)
-        d = np.abs(np.expm1(side(half) - side(full[k])))[ok]
+        ok = np.isfinite(two) & (two > 0)
+        d = np.abs(np.expm1(side(one[k]) - side(two)))[ok]
         assert d.max() <= 4e-11, (k, d.max())
 
 

@@ -1,0 +1,102 @@
+$ taskset -c 0 python experiments/52_rice_speed.py
+jax 0.11.0, cpu (cpu), float64, n = 65536
+
+moderate: a on [0, 5], x on [0, 10]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1            147.3      273.1
+  chebax log_marcum_q1            147.9      216.3
+  TFP log_cdf                    1854.4     4629.7
+  TFP log_survival_function       1842.7     4654.5
+  TFP log_cdf / chebax log_marcum_p1: values 12.59x, value_and_grad 16.95x
+  TFP log_survival_function / chebax log_marcum_q1: values 12.46x, value_and_grad 21.52x
+  variants of log_marcum_p1 (this row's time / shipped):
+  no patch sum                     44.1       83.9   0.30x / 0.31x
+  no locate                       111.5      266.1   0.76x / 0.97x
+  no erfcx                        126.7      268.2   0.86x / 0.98x
+  slopes share the patch sum        147.7     1129.8   1.00x / 4.14x
+
+wide: a on [0, 50], x on [0, 60]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1            145.5      274.3
+  chebax log_marcum_q1            146.1      229.7
+  TFP log_cdf                   20589.5    43468.1
+  TFP log_survival_function      22438.6    49269.0
+  TFP log_cdf / chebax log_marcum_p1: values 141.49x, value_and_grad 158.47x
+  TFP log_survival_function / chebax log_marcum_q1: values 153.56x, value_and_grad 214.46x
+$ taskset -c 0 python experiments/52_rice_speed.py --float32
+jax 0.11.0, cpu (cpu), float32, n = 65536
+
+moderate: a on [0, 5], x on [0, 10]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1             34.9       75.2
+  chebax log_marcum_q1             37.3       70.2
+  TFP log_cdf                     419.2      950.8
+  TFP log_survival_function        408.2     1021.8
+  TFP log_cdf / chebax log_marcum_p1: values 12.00x, value_and_grad 12.65x
+  TFP log_survival_function / chebax log_marcum_q1: values 10.94x, value_and_grad 14.56x
+  variants of log_marcum_p1 (this row's time / shipped):
+  no patch sum                     12.8       20.8   0.37x / 0.28x
+  no locate                        31.2       73.7   0.89x / 0.98x
+  no erfcx                         32.5       73.3   0.93x / 0.97x
+  slopes share the patch sum         34.6      120.1   0.99x / 1.60x
+
+wide: a on [0, 50], x on [0, 60]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1             40.3       78.8
+  chebax log_marcum_q1             33.7       68.3
+  TFP log_cdf                    3024.8     6106.4
+  TFP log_survival_function       2983.7     6363.5
+  TFP log_cdf / chebax log_marcum_p1: values 74.99x, value_and_grad 77.50x
+  TFP log_survival_function / chebax log_marcum_q1: values 88.54x, value_and_grad 93.23x
+$ python experiments/52_rice_speed.py --gpu
+jax 0.11.0, gpu (NVIDIA GeForce RTX 3080 Laptop GPU), float64, n = 1048576
+
+moderate: a on [0, 5], x on [0, 10]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1              6.6        9.6
+  chebax log_marcum_q1              6.7        9.7
+  TFP log_cdf                     107.9      267.6
+  TFP log_survival_function        108.3      267.7
+  TFP log_cdf / chebax log_marcum_p1: values 16.41x, value_and_grad 27.80x
+  TFP log_survival_function / chebax log_marcum_q1: values 16.22x, value_and_grad 27.66x
+  variants of log_marcum_p1 (this row's time / shipped):
+  no patch sum                      3.1        6.9   0.48x / 0.72x
+  no locate                         6.2        9.3   0.94x / 0.96x
+  no erfcx                          6.2        9.0   0.94x / 0.93x
+  slopes own patch sum              6.8       12.9   1.04x / 1.34x
+
+wide: a on [0, 50], x on [0, 60]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1              6.6        9.5
+  chebax log_marcum_q1              6.5        9.7
+  TFP log_cdf                    1037.7     2131.7
+  TFP log_survival_function       1038.3     2136.8
+  TFP log_cdf / chebax log_marcum_p1: values 158.02x, value_and_grad 223.75x
+  TFP log_survival_function / chebax log_marcum_q1: values 158.87x, value_and_grad 220.17x
+$ python experiments/52_rice_speed.py --gpu --float32
+jax 0.11.0, gpu (NVIDIA GeForce RTX 3080 Laptop GPU), float32, n = 1048576
+
+moderate: a on [0, 5], x on [0, 10]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1              0.9        0.5
+  chebax log_marcum_q1              0.9        0.5
+  TFP log_cdf                      21.8       52.7
+  TFP log_survival_function         21.9       52.4
+  TFP log_cdf / chebax log_marcum_p1: values 23.91x, value_and_grad 105.62x
+  TFP log_survival_function / chebax log_marcum_q1: values 24.22x, value_and_grad 106.59x
+  variants of log_marcum_p1 (this row's time / shipped):
+  no patch sum                      0.2        0.4   0.20x / 0.72x
+  no locate                         0.6        0.4   0.63x / 0.82x
+  no erfcx                          0.4        0.5   0.49x / 1.04x
+  slopes own patch sum              0.9        0.7   1.03x / 1.41x
+
+wide: a on [0, 50], x on [0, 60]
+                            value ns/el  vag ns/el
+  chebax log_marcum_p1              0.9        0.5
+  chebax log_marcum_q1              0.9        0.4
+  TFP log_cdf                     168.7      348.1
+  TFP log_survival_function        168.8      348.3
+  TFP log_cdf / chebax log_marcum_p1: values 182.73x, value_and_grad 692.02x
+  TFP log_survival_function / chebax log_marcum_q1: values 180.04x, value_and_grad 852.77x
+
+tfp-nightly 0.26.0.dev20261107

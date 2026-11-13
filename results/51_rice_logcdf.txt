@@ -1,0 +1,44 @@
+3300 points; ln P from -4.73e+05 to 0, ln Q from -804 to 0
+jax 0.11.0
+                 worst  > 1e-12  > 1e-6  nonfinite   worst finite point
+rice.logcdf    2.9e-05        5       2        282   a=46.2, x=22.4, ref -289.3, got -289.4
+              ref in (-1e-300, 0]: 0 of 1508 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 0 of 1223 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 162 of 447 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 122 of 122 off by > 1e-6 or nonfinite
+rice.logsf     2.8e-02      248      85       1923   a=28.8, x=36.5, ref -32.65, got -33.56
+              ref in (-1e-300, 0]: 0 of 413 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 35 of 914 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 1815 of 1815 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 158 of 158 off by > 1e-6 or nonfinite
+ncx2.logcdf    2.9e-05        5       2        282   a=46.2, x=22.4, ref -289.3, got -289.4
+              ref in (-1e-300, 0]: 0 of 1508 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 0 of 1223 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 162 of 447 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 122 of 122 off by > 1e-6 or nonfinite
+ncx2.logsf     2.0e-04       29       6        277   a=0.0264, x=38.6, ref -743.2, got -743.1
+              ref in (-1e-300, 0]: 0 of 413 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 0 of 914 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 144 of 1815 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 139 of 158 off by > 1e-6 or nonfinite
+tfp.log_cdf    8.7e+00      224     112        518   a=5.33, x=5.18e-05, ref -34.62, got -336.6
+              ref in (-1e-300, 0]: 0 of 1508 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 97 of 1223 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 411 of 447 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 122 of 122 off by > 1e-6 or nonfinite
+tfp.log_sf     1.0e+00      399     205       1895   a=408, x=416, ref -37.17, got -0.001384
+              ref in (-1e-300, 0]: 0 of 413 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 127 of 914 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 1815 of 1815 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 158 of 158 off by > 1e-6 or nonfinite
+chebax p1      6.7e-16        0       0          0   a=10.9, x=10.8, ref -0.8166, got -0.8166
+              ref in (-1e-300, 0]: 0 of 1508 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 0 of 1223 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 0 of 447 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 0 of 122 off by > 1e-6 or nonfinite
+chebax q1      4.4e-16        0       0          0   a=10.9, x=10.8, ref -0.5833, got -0.5833
+              ref in (-1e-300, 0]: 0 of 413 off by > 1e-6 or nonfinite
+              ref in (-30, -1e-300]: 0 of 914 off by > 1e-6 or nonfinite
+              ref in (-700, -30]: 0 of 1815 off by > 1e-6 or nonfinite
+              ref in (-inf, -700]: 0 of 158 off by > 1e-6 or nonfinite
+scipy 1.18.0, mpmath 1.4.1, tfp-nightly 0.26.0.dev20261107

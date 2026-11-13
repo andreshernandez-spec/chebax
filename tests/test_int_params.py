@@ -50,6 +50,8 @@ CASES = [
     ("chi2inv", lambda p, x: chebax.chi2inv(p, x), 4, 0.3),
     ("log_skewnorm_cdf", lambda p, x: chebax.log_skewnorm_cdf(p, x), 3, -1.0),
     ("log_skewnorm_sf", lambda p, x: chebax.log_skewnorm_sf(p, x), -3, 1.0),
+    ("log_marcum_p1", lambda p, x: chebax.log_marcum_p1(p, x), 3, 1.5),
+    ("log_marcum_q1", lambda p, x: chebax.log_marcum_q1(p, x), 2, 4.0),
 ]
 
 

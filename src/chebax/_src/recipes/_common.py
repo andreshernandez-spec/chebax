@@ -202,6 +202,20 @@ def check_range(owner, name, v, lo, hi):
     return v
 
 
+# XLA's float64 log1p is up to 128 ulp off on (-0.63, -0.25) before jax 0.12
+# (increment 34); float32, and float64 from 0.12 on, are within 1.4 ulp there
+_LOG1P_EXACT = jax.__version_info__ >= (0, 12)
+
+
+def log1p(x):
+    """log1p for x in (-1, inf), as log(1 + x) below -0.25 where XLA's own is
+    off (5.5e-14 in gammainc_array's ln P, 3.7e-16 this way). XLA simplifies
+    the textbook x log(u)/(u - 1) back to log1p."""
+    if _LOG1P_EXACT or jnp.result_type(x) != jnp.float64:
+        return jnp.log1p(x)
+    return jnp.where(x < -0.25, jnp.log(1.0 + x), jnp.log1p(x))
+
+
 def nan_outside(p, lo, hi):
     """check_range for a traced p: nan where p is outside [lo, hi], so the table
     reads nan instead of extrapolating. Added, not selected: a where would give
@@ -254,7 +268,9 @@ def _patch_parts(tab, n, sy, sp, grad):
     sum into one loop. Gathering the [k, j] block for an einsum stored it per element
     and ran a batched dot over it (experiment 43)."""
     ky, kp = tab.shape[1:]
-    flat = tab.reshape(-1)
+    # Inside another custom_jvp rule (skewnorm's), jit hands the table over as a
+    # numpy constant, which a traced index cannot gather from.
+    flat = jnp.asarray(tab).reshape(-1)
     base = n * (ky * kp)
     ty, dty = _basis_and_slope(sy, ky)
     tp, dtp = _basis_and_slope(sp, kp)
@@ -322,6 +338,35 @@ def locate_patch(val, cuts, n):
     lo = jnp.take_along_axis(cuts, k[..., None], axis=-1)[..., 0]
     hi = jnp.take_along_axis(cuts, k[..., None] + 1, axis=-1)[..., 0]
     return k, 2.0 * (val - lo) / (hi - lo) - 1.0
+
+
+def locate_static(val, cuts, which=None):
+    """locate_patch for cuts known when tracing (ascending floats, padding
+    repeats allowed): the interval index and val mapped onto [-1, 1], from
+    compares with constants instead of gathering a row of cuts per element.
+    Given two rows of cuts, the boolean array which picks the second."""
+    rows = [cuts] if which is None else list(cuts)
+    rows = [[float(c) for c in r] for r in rows]
+    for r in rows:
+        while len(r) > 2 and r[-1] == r[-2]:
+            r.pop()
+
+    def per_row(f):
+        v = [f(r) for r in rows]
+        return v[0] if which is None else jnp.where(which, v[1], v[0])
+
+    i = jnp.zeros(jnp.shape(val), jnp.int32)
+    lo = jnp.zeros_like(val) + per_row(lambda r: r[0])
+    width = jnp.zeros_like(val) + per_row(lambda r: r[1] - r[0])
+    for k in range(1, max(map(len, rows)) - 1):
+        # a row with fewer intervals never passes the cuts it does not have
+        cut = per_row(lambda r: r[k] if k < len(r) - 1 else math.inf)
+        step = per_row(lambda r: r[k + 1] - r[k] if k < len(r) - 1 else 1.0)
+        up = val >= cut
+        i = i + up
+        lo = jnp.where(up, cut, lo)
+        width = jnp.where(up, step, width)
+    return i, 2.0 * (val - lo) / width - 1.0
 
 
 def newton_bisect(f_and_df, x0, lo0, hi0, iters, snap=None):

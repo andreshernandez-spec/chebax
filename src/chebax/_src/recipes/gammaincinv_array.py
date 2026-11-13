@@ -23,6 +23,7 @@ import jax.numpy as jnp
 from chebax._src.recipes import gammainc_array as _ga
 from chebax._src.recipes import gammaincinv_start as _s
 from chebax._src.recipes import gammaincinv_kernel as _k
+from chebax._src.recipes._common import log1p
 
 _STEPS = {"float64": 2, "float32": 0}
 # above this a, 1/pdf from the closed form at the root, in _REFINE Halley steps
@@ -89,7 +90,7 @@ def _log_pdf(a, x):
     d = (xb - ab) / ab
     near = jnp.abs(d) < 0.5
     far = jnp.log(jnp.where(near, 1.0, xb / ab))
-    t = jnp.where(near, _ga._log1p(jnp.where(near, d, 0.0)), far)
+    t = jnp.where(near, log1p(jnp.where(near, d, 0.0)), far)
     am = jnp.where(stir, 2.0, a)
     xm = jnp.where(stir, 1.0, x)
     direct = (am - 1.0) * jnp.log(xm) - xm - jax.scipy.special.gammaln(am)

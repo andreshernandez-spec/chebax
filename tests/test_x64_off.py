@@ -64,6 +64,8 @@ CASES = {
     "gammaln": ("chebax.gammaln(2.5)", 0.2846828704729192),
     "digamma": ("chebax.digamma(2.5)", 0.7031566406452432),
     "ndtri_exp": ("chebax.ndtri_exp(-3.0)", -1.6469217205277148),
+    "log_skewnorm_cdf": ("chebax.log_skewnorm_cdf(3.0, -1.0)", -9.7858034780095318),
+    "log_skewnorm_sf": ("chebax.log_skewnorm_sf(-2.0, -0.5)", -0.89575000947333306),
     "lambertw": ("chebax.lambertw(3.0, 0)", 1.04990889496404),
     "spherical_jn": ("chebax.spherical_jn_frozen(2)(4.0)", 0.27628368577135016),
     "gammainc_at_inf": ("chebax.gammainc_scalar(2.0, jnp.inf)", 1.0),

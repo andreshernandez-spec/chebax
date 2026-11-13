@@ -41,7 +41,9 @@ and one name per path for callers who know which path they want:
 The plain name picks `_scalar` for a parameter holding one value and `_array`
 for an array, from the shape, so the choice is fixed at trace time. Only
 gammainc and its inverses have an `_array` path so far; for the other
-families an array of parameters raises and names `chebax.pergroup`. Log forms are `log_name...`.
+families an array of parameters raises and names `chebax.pergroup`. A few
+direct functions broadcast a parameter instead (Tweedie's mean and dispersion,
+the skew-normal shape), as their rows say. Log forms are `log_name...`.
 The 0.4 spellings (`besselk_fn`, the one-argument `besselk(nu)`) still work
 for now, with a DeprecationWarning naming the replacement.
 
@@ -64,6 +66,7 @@ for now, with a DeprecationWarning naming the replacement.
 | erf family | `dawsn`, `erfcx` | — | — (no params) | recent jax ships both; kept as a worked parameter-free recipe (plain functions, so not `bake` inputs: bake takes Recipe instances) |
 | gamma | `gammaln(x)`, `digamma(x)` | — | — (no params) | x ≥ 0 (nan below 0, where jax's reflect); both keep relative accuracy next to their zeros (lgamma's at 1 and 2, digamma's at 1.4616), where jax's are only absolutely accurate; gammaln's derivative is digamma, from its own table. Against jax's on one CPU core in float64: gammaln 3.6x on values and 4.1x on value_and_grad, digamma 2.8x and 3.4x; on the GPU in float64, 2.4x / 2.2x and 2.7x / 6.0x (`experiments/44`) |
 | normal quantile | `ndtri_exp(y)` | — | — (no params) | ndtri(e^y) for a log-probability y ≤ 0, what PyMC's TruncatedNormal icdf calls; relative accuracy from the smallest normal y to the largest float, next to the median's zero too, where jax's ndtri(exp(y)) is -inf below y = -745 and inf or off by up to 1% within 1e-3 of 0; the derivative from its own table. Against jax's ndtri(exp(y)): value_and_grad 2.0–2.4x on one CPU core and 3.2–4.0x on the GPU; values 0.92–1.10x on the CPU and 1.1–1.9x on the GPU (`experiments/45`) |
+| skew normal | `log_skewnorm_cdf(a, x)`, `log_skewnorm_sf(a, x)` | — | via `grad` (closed forms) | shape a and x broadcast, any finite a; what PyMC's SkewNormal lacks for Censored and Truncated. The textbook ln(Φ(x) − 2T(x, a)) cancels for x < 0 < a (off from x = −0.68 at a = 10, scipy's skewnorm.logcdf from −1.5); here 7.8e-16 against mpmath for a to 1e8 and x to ±1e3. Against that textbook form in jax at 2^20 elements: 1.00x values and 0.96x value_and_grad on one CPU core in float64, 1.10x and 1.02x on the GPU, float32 1.02x / 0.80x and 2.13x / 1.35x (`experiments/49`; what each design choice is worth, `experiments/50`) |
 | Lambert W | `lambertw(x, k)` | — | — | both real branches, jax#13680 |
 | Tweedie | `tweedie_logpdf(p, mu, phi, y)`, `log_wright_bessel0(rho, z)` | — | via `grad` | power p ∈ [1.05, 1.95] (uniform per call), μ, φ > 0 and y ≥ 0 broadcast, the zero mass included; Wright's Φ(ρ, 0; z) with ρ = (2−p)/(p−1) ∈ [1/19, 19]; 89–130x scipy's `log_wright_bessel` on one CPU core, 254–331x on the GPU (`experiments/21`) |
 

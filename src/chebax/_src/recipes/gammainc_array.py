@@ -26,7 +26,7 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_array_table as _t
-from chebax._src.recipes._common import edge_slope, locate_patch, patch_sum
+from chebax._src.recipes._common import edge_slope, locate_patch, log1p, patch_sum
 from chebax._src.recipes.erf_family import erfcx
 from chebax._src.recipes.gammaincinv_kernel import log_xpdf
 
@@ -48,13 +48,6 @@ def _tables(dtype):
 _locate = locate_patch
 
 
-def _log1p(x):
-    """log1p for x in (-1, inf). XLA's float64 log1p is up to 128 ulp off on
-    (-0.63, -0.25) (jax 0.11 CPU, increment 34; 5.5e-14 in ln P); log(1 + x) there
-    gives 3.7e-16. XLA simplifies the textbook x log(u)/(u - 1) back to log1p."""
-    return jnp.where(x < -0.25, jnp.log(1.0 + x), jnp.log1p(x))
-
-
 def _phi_eta(d):
     """phi = d - log1p(d) and eta = sign(d) sqrt(2 phi), smooth through 0."""
     z = d / (2.0 + d)
@@ -65,7 +58,7 @@ def _phi_eta(d):
         s = s * zs + c
     # direct lanes only; the dummy keeps log1p and sqrt off 0
     dd = jnp.where(ser, 1.0, d)
-    phi_d = dd - _log1p(dd)
+    phi_d = dd - log1p(dd)
     eta_d = jnp.where(dd < 0.0, -1.0, 1.0) * jnp.sqrt(2.0 * phi_d)
     return (
         jnp.where(ser, 2.0 * zs * zs * s, phi_d),
@@ -197,11 +190,11 @@ def _log_pq(a, x, d=None):
         d_lu = jnp.where(is_low | is_up, d, 0.0)
         lam_lo = jnp.where(is_low, 1.0 + d_lu, 1.0)
         lam_up = jnp.where(is_up, 1.0 / (1.0 + d_lu), 1.0)
-        ln_lam = _log1p(d_lu)
+        ln_lam = log1p(d_lu)
         x_less_a = a * d_lu
     phi_t, eta = _phi_eta(d_t)
 
-    par = jnp.select([uses_u, in_t], [_log1p(a), 1.0 / a], _t.ASPLIT / a)
+    par = jnp.select([uses_u, in_t], [log1p(a), 1.0 / a], _t.ASPLIT / a)
     arg = jnp.select(
         [in_a0, in_b0, is_low, is_up],
         # _over: plain division's AD poisons the second a-derivative at
@@ -245,10 +238,10 @@ def _log_pq(a, x, d=None):
     )
     is_p = in_a0 | is_low | (in_t & (y < 0.0))
     if d is None:
-        other = _log1p(-_exp_cdf(direct, a, xx, jnp.where(is_p, 1.0, -1.0)))
+        other = log1p(-_exp_cdf(direct, a, xx, jnp.where(is_p, 1.0, -1.0)))
     else:
         # the quantile's derivative: its x tangent is not the whole one
-        other = _log1p(-_exp0(direct))
+        other = log1p(-_exp0(direct))
     lp = jnp.where(is_p, direct, other)
     lq = jnp.where(is_p, other, direct)
 

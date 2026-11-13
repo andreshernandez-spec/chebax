@@ -181,13 +181,13 @@ def _refine(mp, f, kind, pbox, ybox, *, block=None, tol=None, n_nodes=None, a_of
     return pc, yc, patches
 
 
-def _block32(absc):
-    """Smallest (ky, kp) whose outside sum is <= TOL32 on every patch."""
+def _block32(absc, tol=TOL32):
+    """Smallest (ky, kp) whose outside sum is <= tol (TOL32) on every patch."""
     best = (KY, KP)
     for ky in range(1, KY + 1):
         for kp in range(1, KP + 1):
             out = absc.sum(axis=(1, 2)) - absc[:, :ky, :kp].sum(axis=(1, 2))
-            if np.all(out <= TOL32) and ky * kp < best[0] * best[1]:
+            if np.all(out <= tol) and ky * kp < best[0] * best[1]:
                 best = (ky, kp)
     return best
 

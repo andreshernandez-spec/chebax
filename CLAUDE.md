@@ -103,6 +103,7 @@ python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice t
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
 python -m chebax._src.recipes.tweedie_gen         # regenerate the Tweedie tail table (~25 s)
+python -m chebax._src.recipes.skewnorm_gen        # regenerate the skew-normal patches (~16 min)
 ```
 
 Tests run on whatever backend jax picks; the accuracy contract is

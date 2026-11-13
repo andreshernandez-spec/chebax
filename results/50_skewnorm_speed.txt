@@ -1,0 +1,69 @@
+$ taskset -c 0 python experiments/50_skewnorm_speed.py
+jax 0.11.0, cpu (cpu), float64, n = 65536
+unchanged copy equals chebax.log_skewnorm_cdf bit for bit: True
+variant                     value ns/el  vag ns/el  value vs shipped  vag vs shipped
+as shipped                       218.80     213.79             1.00x           1.00x
+no patch sum                      72.17     130.27             0.33x           0.61x
+no locate                        214.17     184.64             0.98x           0.86x
+no erfcx                         197.45     199.35             0.90x           0.93x
+plain jnp.log1p                  194.99     216.50             0.89x           1.01x
+lax.erf                          279.43     238.53             1.28x           1.12x
+log(erf + exp(lk))              1002.54     198.50             4.58x           0.93x
+gathered cuts                    178.23     241.70             0.81x           1.13x
+erfcx(mu) in the value           231.31     226.71             1.06x           1.06x
+barrier                          208.77     219.29             0.95x           1.03x
+textbook ln(ndtr - 2 T)          180.56     203.05             0.83x           0.95x
+(vs shipped = this row's time / the shipped time: above 1 is slower than shipped)
+
+$ taskset -c 0 python experiments/50_skewnorm_speed.py --float32
+jax 0.11.0, cpu (cpu), float32, n = 65536
+unchanged copy equals chebax.log_skewnorm_cdf bit for bit: True
+variant                     value ns/el  vag ns/el  value vs shipped  vag vs shipped
+as shipped                        37.71      48.71             1.00x           1.00x
+no patch sum                      19.23      30.35             0.51x           0.62x
+no locate                         35.93      47.86             0.95x           0.98x
+no erfcx                          34.62      42.22             0.92x           0.87x
+plain jnp.log1p                   37.59      48.80             1.00x           1.00x
+lax.erf                           35.43      47.79             0.94x           0.98x
+log(erf + exp(lk))                81.17      46.66             2.15x           0.96x
+gathered cuts                     46.93      58.37             1.24x           1.20x
+erfcx(mu) in the value            40.02      53.95             1.06x           1.11x
+barrier                           37.69      49.39             1.00x           1.01x
+float32 7 x 7 blocks              44.62      55.60             1.18x           1.14x
+textbook ln(ndtr - 2 T)           25.17      26.87             0.67x           0.55x
+(vs shipped = this row's time / the shipped time: above 1 is slower than shipped)
+
+$ python experiments/50_skewnorm_speed.py --gpu
+jax 0.11.0, gpu (NVIDIA GeForce RTX 3080 Laptop GPU), float64, n = 1048576
+unchanged copy equals chebax.log_skewnorm_cdf bit for bit: True
+variant                     value ns/el  vag ns/el  value vs shipped  vag vs shipped
+as shipped                         7.88       9.57             1.00x           1.00x
+no patch sum                       4.37       7.06             0.55x           0.74x
+no locate                          7.07       9.46             0.90x           0.99x
+no erfcx                           7.33       8.20             0.93x           0.86x
+plain jnp.log1p                    7.46       8.75             0.95x           0.91x
+lax.erf                            7.92       9.44             1.01x           0.99x
+log(erf + exp(lk))                 7.75       9.17             0.98x           0.96x
+gathered cuts                      7.77       9.58             0.99x           1.00x
+erfcx(mu) in the value             8.93       9.21             1.13x           0.96x
+barrier                            8.56      10.72             1.09x           1.12x
+textbook ln(ndtr - 2 T)            8.85       9.97             1.12x           1.04x
+(vs shipped = this row's time / the shipped time: above 1 is slower than shipped)
+
+$ python experiments/50_skewnorm_speed.py --gpu --float32
+jax 0.11.0, gpu (NVIDIA GeForce RTX 3080 Laptop GPU), float32, n = 1048576
+unchanged copy equals chebax.log_skewnorm_cdf bit for bit: True
+variant                     value ns/el  vag ns/el  value vs shipped  vag vs shipped
+as shipped                         0.24       0.48             1.00x           1.00x
+no patch sum                       0.10       0.34             0.40x           0.73x
+no locate                          0.18       0.33             0.75x           0.69x
+no erfcx                           0.21       0.45             0.90x           0.95x
+plain jnp.log1p                    0.28       0.47             1.18x           0.99x
+lax.erf                            0.25       0.44             1.05x           0.92x
+log(erf + exp(lk))                 0.24       0.40             1.02x           0.83x
+gathered cuts                      0.52       0.48             2.17x           1.01x
+erfcx(mu) in the value             0.24       0.43             1.00x           0.90x
+barrier                            0.22       0.51             0.92x           1.07x
+float32 7 x 7 blocks               0.74       0.48             3.10x           1.01x
+textbook ln(ndtr - 2 T)            0.49       0.52             2.05x           1.09x
+(vs shipped = this row's time / the shipped time: above 1 is slower than shipped)

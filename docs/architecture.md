@@ -106,8 +106,9 @@ a concrete host array. `astype` and `truncate` return new objects.
 Table parameters are uniform per call: a scalar or an array containing one
 value. Normalize them through `canon_param`; reject larger arrays with the
 parameter name and guidance to `pergroup`. Evaluation points may be arrays.
-Some direct functions, notably Tweedie, additionally broadcast parameters such
-as mean and dispersion; their own docstrings state which arguments broadcast.
+Some direct functions additionally broadcast parameters, such as Tweedie's
+mean and dispersion and the skew-normal shape; their own docstrings state which
+arguments broadcast.
 gammainc's `_array` functions, and its inverses', broadcast a with x on
 purpose: they are a separate path with its own table, and every `_scalar`
 function keeps refusing per-element arrays.

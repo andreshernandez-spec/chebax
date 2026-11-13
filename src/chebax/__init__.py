@@ -105,6 +105,7 @@ _LAZY = {
         "log_hyp1f1_scalar",
     ),
     "chebax._src.recipes.skewnorm": ("log_skewnorm_cdf", "log_skewnorm_sf"),
+    "chebax._src.recipes.marcum": ("log_marcum_p1", "log_marcum_q1"),
     "chebax._src.recipes.stdtr": ("log_stdtr", "log_stdtr_sf", "stdtr", "stdtrit"),
     "chebax._src.recipes.tweedie": ("log_wright_bessel0", "tweedie_logpdf"),
     "chebax._src.recipes.vonmises": ("vonmises_cdf", "vonmises_icdf"),
@@ -180,6 +181,8 @@ __all__ = [
     "log_hyp1f1_scalar",
     "log_skewnorm_cdf",
     "log_skewnorm_sf",
+    "log_marcum_p1",
+    "log_marcum_q1",
     "log_stdtr",
     "log_stdtr_sf",
     "log_wright_bessel0",
@@ -330,6 +333,7 @@ if TYPE_CHECKING:
         log_hyp1f1_scalar,
     )
     from chebax._src.recipes.skewnorm import log_skewnorm_cdf, log_skewnorm_sf
+    from chebax._src.recipes.marcum import log_marcum_p1, log_marcum_q1
     from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf, stdtr, stdtrit
     from chebax._src.recipes.tweedie import log_wright_bessel0, tweedie_logpdf
     from chebax._src.recipes.vonmises import vonmises_cdf, vonmises_icdf

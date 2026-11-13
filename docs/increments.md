@@ -2161,3 +2161,72 @@ gather from (jax.jit(jax.hessian(...)) failed). gammainc_array_gen's
 `_block32` takes the float32 tolerance as an argument.
 
 Not done: a pytensor op for PyMC to lower, and the Rice CDF (Marcum Q).
+
+## 59. log_marcum_q1 and log_marcum_p1 (2026-11-13)
+
+`chebax.log_marcum_q1(a, b)` is ln Q and `log_marcum_p1(a, b)` ln P, Q =
+Q_1(a, b) the Marcum Q-function of order 1 and P = 1 - Q: for the standard
+Rice distribution, shape a = nu/sigma at b = value/sigma, the log survival
+function and log CDF. Below, x is the point b. PyMC's Rice has no logcdf. scipy's
+rice.logcdf (chndtr) and ncx2.logcdf/logsf (Boost) are good while ln F >
+-30 and fail on 8-36% of the points between -700 and -30; scipy's rice.logsf
+is 1 - CDF and TFP's NoncentralChi2 (jax) sums A&S 26.4.25 and zeroes the CDF
+below eps, failing from ln F > -30 already (experiments/51). jax and
+pytensor have no Marcum Q.
+
+With xi = a x and d = x - a, on x >= a Q = e^(-d^2/2) S_Q and on x < a P =
+e^(-d^2/2) S_P, S_Q and S_P sums of rho^k e^(-xi) I_k(xi) with every term
+positive (rho = a/x or x/a). On x < a P <= 1/2 always; on x >= a Q is the
+smaller except near x = a, where both are near 1/2, and at small x, where a
+fourth chart gives P (CORNER, x <= sqrt(2 ln 2), where P <= 1/2). The other
+probability is log1mexp of the one formed.
+
+ln S comes from one 12 x 12 patch per element of a table over three charts
+per side, the P and Q functions of a chart sharing their cuts (marcum_gen's
+docstring has the formulas): BULK over (rho, xi), xi <= 4; MEDIAN over (eps =
+xi^(-1/2), eta = |d| sqrt(rho)), eta < 2; TAIL over (rho, t = 1/(1+eta)). The
+last two hold the ratio to erfcx(eta/sqrt 2)/2, which S tends to as xi grows.
+In TAIL the corner (eps, t) -> (0, 0) holds every rho, since eta enters at
+O(1) and rho at O(eps^2); in (rho, t), eps = (1 - rho) t/(1 - t) is smooth.
+The cost is at moderate xi, where ln I_0 has branch points at xi = +-2.405i:
+with the seam at xi = 4 the Q side takes 14 + 18 + 36 patches, at 9 44 + 12
++ 15, at 25 85 + 12 + 4, and a sqrt(xi) axis did not help (90 at 25). The
+table has 138 patches, 486 KB, and builds in ~6 minutes from the cuts found.
+float32 reads 6 x 6 blocks.
+
+The generator's references are the series (Miller's recurrence, below xi =
+400) and an integral in v = sqrt(xi) 2 sin(theta/2) of the generating
+function (above). The tests use two other forms: the Poisson mixture of
+regularized gammas (max(a^2, a x) <= 2000) and rays out of the mean of the
+bivariate normal (above); the two pairs agree to 5e-39. Against them on
+964 points: ln P 1.0e-15, ln Q 7.8e-16, slopes 6.7e-15 (closed forms dP/dx
+= x e^(-d^2/2) i0e(xi), dP/da = -x e^(-d^2/2) i1e(xi), e^(-d^2/2) left out
+of both logs where the probability is the scaled tail), second derivatives
+2.3e-12, float32 7.0e-7 and slopes 7.0e-6.
+
+Found while building it: ln S_P/(rho xi) and ln S_Q as a function of xi
+need degree ~29 on [0, 4] and ~37 on [4, 25] for 1e-16, with or without the
+log; the first runtime added d^2/2 back into a log difference and lost 0.48
+in the slopes at a = 1e8; x^2/2 under ln underflowed below x = 1e-154 (now 2
+ln x - ln 2); and d/da through a = 0 needs the slope as the x-slope times
+I_1/I_0, not exp(ln i1e), whose masked -inf AD reads as constant.
+
+Shared change: `_common.locate_static` takes more than two rows of cuts,
+picked by an integer chart index.
+
+Speed (experiments/52), against TFP's NoncentralChi2, the other Rice CDF
+in jax, whose loop runs until every element's series has converged: with a
+on [0, 5] and b on [0, 10], chebax's values are 12-13x faster and
+value_and_grad 17-22x on one CPU core in float64 (147-148 and 216-273 ns per
+element), 11-12x and 13-15x in float32, 16x and 28x on the GPU in float64,
+24x and 106-107x in float32. With a to 50 and b to 60 TFP is 75-214x slower
+on the CPU and 158-853x on the GPU, chebax's cost unchanged. The patch sum is
+~70% of chebax's float64 CPU time. On the CPU the slopes read their own patch
+sum, from the negated table: sharing the value's, XLA's value_and_grad
+program gathered each of the 144 coefficients in its own loop through memory
+(164 fusions against 21), 4.1x slower in float64 and 1.6x in float32. On the
+GPU a second sum costs 1.3x and 1.4x, so there they share
+(platform_dependent).
+
+Not done: the pytensor op for PyMC, and a CI-sized regeneration check (the
+full one takes ~6 minutes).

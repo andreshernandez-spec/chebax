@@ -2230,3 +2230,75 @@ GPU a second sum costs 1.3x and 1.4x, so there they share
 
 Not done: the pytensor op for PyMC, and a CI-sized regeneration check (the
 full one takes ~6 minutes).
+
+## 60. gammainc_array and gammaincinv_array speed (2026-11-13)
+
+Speed work on the per-element paths, at the accuracy they had or within the
+test bars (experiments/53 times every change against main on one CPU core
+and on the GPU, in ten regions of a and the tail, with each tree's accuracy
+against mpmath on the same compiled programs).
+
+Patch lookup. gammainc_array found each element's patch by gathering its
+zone's row of cuts, which XLA kept per element and which split the value
+program into about thirty loops. The generator only halves, so every zone's
+cuts lie on a dyadic grid: `_common.locate_zones` takes the cell from a
+floor on that grid and a small table, and the coordinate from the cell's own
+cuts, so ln P and ln Q are bit-identical. Both steps divide: written as a
+multiply by a stored reciprocal the chain stayed cheap, and XLA's CPU
+backend copied it into several loops of the value_and_grad program, which
+then ran slower than with the old lookup. `locate_static` with one row per
+zone was as fast for values and 3x slower for value_and_grad.
+
+P and Q take one exp of the zone's direct log, the other side as 1 - e,
+instead of exp(log1p(-exp(direct))).
+
+Table. The patches are 8 x 8 (5 x 5 in float32) instead of 12 x 12 (7 x 7):
+every element reads its whole block, one gather per coefficient, so 64
+coefficients instead of 144. The refinement cuts a zone's whole grid, so the
+same TOL takes 1088 patches instead of 65, and generation about 17 minutes
+instead of one. CI rebuilds zone U2 (`zone_table`); the module is compared
+whole with CHEBAX_FULL_REGEN=1 before releases. patch_sum now packs 512-byte
+blocks, the 8 x 8 float64 ones, and gammainc_array's packs on the GPU in
+float32 too (`patch_sum_gpu_packed`); the quantile's forward-mode slopes keep
+the CPU rule (`gpu_pack=False`), which packed ran slower.
+
+Quantile. One Newton step in float64 instead of two: from the table's 1e-8
+the first already lands within ln P's error, so the second was a check. The
+start's residual is the check now, within 1e-6 max(1, |ln target|) or a step
+within 64 floats where x cannot resolve the start. The start's patch sum
+goes through patch_sum on the CPU (the einsum stays on the GPU), and lnGamma
+comes from chebax's gammaln once per element. For the derivatives, dx/dp
+alone takes L_x = pdf/F in closed form from one ln F at the root instead of
+a batched jvp of _log_pq; with a differentiated both slopes still come from
+the table, whose errors cancel in L_a / L_x. Above a = 1e3 the unrounded
+root comes from one Newton step from the float x instead of six Halley
+steps from Wilson-Hilferty, which stay only above a = 1e11 (1e4 in float32).
+log_xpdf takes Stirling's form from a = 10 with Binet's remainder to a^-13;
+the direct form lost 1e-13 to cancellation at a = 94.
+
+Speed against main, ranges over the ten regions (results/53_gamma_speed_
+table_cpu.txt and _gpu.txt, main 765853d against d4f46a4):
+
+| | CPU f64 | CPU f32 | GPU f64 | GPU f32 |
+|---|---|---|---|---|
+| P | 1.68-1.82x | 2.87-3.06x | 1.44-1.50x | 1.91-2.17x |
+| P value_and_grad | 1.58-1.77x | 1.60-1.72x | 1.23-1.38x | 1.62-1.65x |
+| ln Q value_and_grad | 1.49-1.64x | 1.44-1.56x | 1.11-1.16x | 1.56-1.61x |
+| quantile | 2.43-2.50x | 2.70-2.83x | 1.82-1.88x | 1.19-1.24x |
+| quantile, dx/dp | 3.08-11.0x | 2.50-4.95x | 1.16-2.40x | 1.64-4.21x |
+| quantile, dx/da and dx/dp | 2.02-5.56x | 1.58-2.33x | 2.49-3.41x | 1.05-2.52x |
+
+The quantile's gradients gain most where a > 20: main re-solved the root for
+every element whenever any a in the array exceeded 1e3.
+
+Accuracy (tests/test_gammainc_array.py and test_gammaincinv_array.py, larger
+of jax 0.11 and 0.5.3): ln P 7.2e-16 (was 8.4e-16 on the same points), ln Q
+5.6e-15 (5.0e-15; 8.9e-16 outside A0, was 6.5e-16), d/da 2.3e-14 (1.3e-13);
+float32 ln Q 1.7e-6 (2.2e-6). The closed-form density loses about |ln F|
+eps, so the quantile's dx/dp bar goes from 3e-14 to 9e-14 (measured 2.2e-14)
+and above a = 1e3 from 8e-13 to 1.3e-12 (3.2e-13); d2x/da2 measures 1.5e-11
+on jax 0.5.3 (bar 2e-11 to 6e-11), dx/dp at huge a 3.4e-13 (bar 4.4e-13 to
+1.4e-12).
+
+Not done: a refinement that splits one patch instead of a grid line (fewer
+patches, faster generation).

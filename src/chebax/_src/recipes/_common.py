@@ -297,38 +297,61 @@ def _basis_and_slope(s, n):
     return t[:n], dt[:n]
 
 
-@jax.custom_jvp
-def patch_sum(tab, n, sy, sp):
-    """The 2-D Chebyshev series of patch n of tab ([patch, k, j] coefficients, k in
-    sy, j in sp) at sy, sp in [-1, 1], n integer, all broadcast together."""
-    return _patch_parts(tab, n, sy, sp, False)[0]
-
-
 _PACK_BYTES = 512
 
 
-def _patch_sum_jvp(primals, tangents):
-    tab, n, sy, sp = primals
-    dtab, _, dsy, dsp = tangents
-    zero = jax.custom_derivatives.SymbolicZero
-    f, fy, fp = _patch_parts(tab, n, sy, sp, True)
-    if tab[0].size * tab.dtype.itemsize > _PACK_BYTES:
-        # As three results XLA keeps the gathered coefficients for the reverse pass (402
-        # MiB at 2^18 in float64, 128 MiB packed). Packing pays for a 12 x 12 float64
-        # block, not a 7 x 7 float32 one, on the CPU (experiment 43, "other packing").
-        parts = jax.lax.optimization_barrier(jnp.stack((f, fy, fp), axis=-1))
-        f, fy, fp = parts[..., 0], parts[..., 1], parts[..., 2]
-    out = jnp.zeros_like(f)
-    if not isinstance(dsy, zero):
-        out = out + fy * dsy
-    if not isinstance(dsp, zero):
-        out = out + fp * dsp
-    if not isinstance(dtab, zero):
-        out = out + patch_sum(dtab, n, sy, sp)
-    return f, out
+def _packed(f, fy, fp):
+    parts = jax.lax.optimization_barrier(jnp.stack((f, fy, fp), axis=-1))
+    return parts[..., 0], parts[..., 1], parts[..., 2]
 
 
-patch_sum.defjvp(_patch_sum_jvp, symbolic_zeros=True)
+def _unpacked(f, fy, fp):
+    return f, fy, fp
+
+
+def _make_patch_sum(gpu_pack):
+    @jax.custom_jvp
+    def fn(tab, n, sy, sp):
+        return _patch_parts(tab, n, sy, sp, False)[0]
+
+    def rule(primals, tangents):
+        tab, n, sy, sp = primals
+        dtab, _, dsy, dsp = tangents
+        zero = jax.custom_derivatives.SymbolicZero
+        f, fy, fp = _patch_parts(tab, n, sy, sp, True)
+        # As three results XLA keeps the gathered coefficients for the reverse pass
+        # (402 MiB at 2^18 in float64, 128 MiB packed). Packing pays for a 12 x 12
+        # float64 block, not a 7 x 7 float32 one, on the CPU (experiment 43, "other
+        # packing")
+        big = _packed if tab[0].size * tab.dtype.itemsize > _PACK_BYTES else _unpacked
+        if gpu_pack:
+            f, fy, fp = jax.lax.platform_dependent(f, fy, fp, cpu=big, default=_packed)
+        else:
+            f, fy, fp = big(f, fy, fp)
+        out = jnp.zeros_like(f)
+        if not isinstance(dsy, zero):
+            out = out + fy * dsy
+        if not isinstance(dsp, zero):
+            out = out + fp * dsp
+        if not isinstance(dtab, zero):
+            out = out + fn(dtab, n, sy, sp)
+        return f, out
+
+    fn.defjvp(rule, symbolic_zeros=True)
+    return fn
+
+
+patch_sum = _make_patch_sum(False)
+patch_sum.__doc__ = """The 2-D Chebyshev series of patch n of tab ([patch, k, j]
+coefficients, k in sy, j in sp) at sy, sp in [-1, 1], n integer, all broadcast
+together."""
+
+patch_sum_gpu_packed = _make_patch_sum(True)
+patch_sum_gpu_packed.__doc__ = """patch_sum whose derivative also packs its three
+results off the CPU whatever the block size. On the GPU in float32,
+gammainc_array's value_and_grad of ln Q runs 1.38-1.40x main's so, against 0.92x
+unpacked; gammaincinv_array's forward-mode slopes stay unpacked, which packed took
+its gradient in a and p from 1.00-2.34x main's to 0.77-1.66x (experiments/53)."""
 
 
 def locate_patch(val, cuts, n):

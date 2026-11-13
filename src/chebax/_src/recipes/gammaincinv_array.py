@@ -163,7 +163,7 @@ def _closed_root(a, x, upper, lt, z, lv, need_da):
     d = jnp.expm1(t)
 
     def side(aa, dd):
-        lp, lq = _ga._log_pq(aa, aa, dd)
+        lp, lq = _ga._log_pq(aa, aa, dd, gpu_pack=False)
         return jnp.where(up, lq, lp)
 
     zero = jnp.zeros_like(ac)
@@ -181,7 +181,7 @@ def _implicit(a, x, upper, lt, z, need_da):
     xs = jnp.where(interior, x, a)
 
     def side(aa, xx):
-        lp, lq = _ga._log_pq(aa, xx)
+        lp, lq = _ga._log_pq(aa, xx, gpu_pack=False)
         return jnp.where(upper, lq, lp)
 
     # 1/pdf takes its value from exp(lt) / |L_x| (the pdf at the float x moved

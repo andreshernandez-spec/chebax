@@ -27,7 +27,8 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_array_table as _t
-from chebax._src.recipes._common import edge_slope, locate_zones, log1p, patch_sum
+from chebax._src.recipes._common import edge_slope, locate_zones, log1p
+from chebax._src.recipes._common import patch_sum, patch_sum_gpu_packed
 from chebax._src.recipes.erf_family import erfcx
 from chebax._src.recipes.gammaincinv_kernel import log_xpdf
 
@@ -142,9 +143,9 @@ def _exp_cdf_jvp(primals, tangents):
     )
 
 
-def _direct(a, x, d=None):
+def _direct(a, x, d=None, gpu_pack=True):
     """(the zone's direct log, True where it is ln P, a and x with invalid lanes
-    moved inside); a and x of one shape. d as in _log_pq."""
+    moved inside); a and x of one shape. d and gpu_pack as in _log_pq."""
     tab = jnp.asarray(_table(a.dtype.name))
     narg, offset = (jnp.asarray(v) for v in (_t.NARG, _t.OFFSET))
 
@@ -201,7 +202,8 @@ def _direct(a, x, d=None):
     )
     i, sp = locate_zones(par, _t.PCUTS, _t.NPAR, zone)
     j, sy = locate_zones(arg, _t.YCUTS, _t.NARG, zone)
-    f = patch_sum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
+    psum = patch_sum_gpu_packed if gpu_pack else patch_sum
+    f = psum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
 
     ln_a = jnp.log(a)
     half_ln_2pi_a = 0.5 * (ln_a + _LN2PI)
@@ -245,11 +247,13 @@ def _ends(a, x, v, at_inf, at_zero):
     return jnp.where(bad, jnp.nan, v)
 
 
-def _log_pq(a, x, d=None):
+def _log_pq(a, x, d=None, gpu_pack=True):
     """(ln P, ln Q) for a, x of one shape; no x = 0 slope. d, if given, is x/a - 1
     held exactly, read instead of x for a >= 1 (gammaincinv_array's derivative
-    needs it where one float step of x spans the distribution, a ~ 1e35)."""
-    direct, is_p, am, xx = _direct(a, x, d)
+    needs it where one float step of x spans the distribution, a ~ 1e35).
+    gpu_pack False keeps patch_sum's CPU packing on the GPU too, for
+    gammaincinv_array's forward-mode slopes (python bool)."""
+    direct, is_p, am, xx = _direct(a, x, d, gpu_pack)
     if d is None:
         other = log1p(-_exp_cdf(direct, am, xx, jnp.where(is_p, 1.0, -1.0)))
     else:

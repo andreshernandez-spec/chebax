@@ -1,0 +1,310 @@
+run final-gpu: main = 765853d, branch = dedabd5, k8 = 
+k8 = branch dedabd5 with gammainc_array_gen at KY = KP = 8 (1088 patches, KY32 = KP32 = 5) and patch_sum packing at >= 512 bytes
+jax: branch 0.11.0, k8 0.11.0, main 0.11.0
+ratio = main ns / variant ns (above 1: faster)
+
+## gpu float64, ns per element (N = 1048576)
+| op | region | main | branch | k8 | branch ratio | k8 ratio |
+|---|---|---|---|---|---|---|
+| P | a<1 lower | 9.9 | 8.7 | 11.3 | 1.15x | 0.88x |
+| P | a<1 bulk | 10.1 | 8.7 | 11.3 | 1.16x | 0.90x |
+| P | a<1 upper | 9.9 | 8.8 | 11.3 | 1.13x | 0.88x |
+| P | a1-20 lower | 9.9 | 8.8 | 11.1 | 1.12x | 0.89x |
+| P | a1-20 bulk | 10.1 | 8.9 | 11.3 | 1.15x | 0.90x |
+| P | a1-20 upper | 9.8 | 8.8 | 11.2 | 1.12x | 0.88x |
+| P | a>20 lower | 10.0 | 8.7 | 11.3 | 1.14x | 0.88x |
+| P | a>20 bulk | 9.8 | 8.3 | 10.9 | 1.18x | 0.89x |
+| P | a>20 upper | 9.7 | 8.5 | 11.0 | 1.14x | 0.88x |
+| P | mixed | 10.4 | 9.1 | 11.5 | 1.14x | 0.91x |
+| P vg | a<1 lower | 17.0 | 16.0 | 21.7 | 1.06x | 0.79x |
+| P vg | a<1 bulk | 17.4 | 16.1 | 21.9 | 1.08x | 0.79x |
+| P vg | a<1 upper | 17.0 | 15.9 | 21.7 | 1.07x | 0.78x |
+| P vg | a1-20 lower | 16.9 | 16.0 | 21.6 | 1.06x | 0.78x |
+| P vg | a1-20 bulk | 17.6 | 16.4 | 22.0 | 1.07x | 0.80x |
+| P vg | a1-20 upper | 17.1 | 16.3 | 21.9 | 1.05x | 0.78x |
+| P vg | a>20 lower | 17.3 | 16.4 | 21.9 | 1.05x | 0.79x |
+| P vg | a>20 bulk | 16.9 | 15.7 | 21.3 | 1.07x | 0.79x |
+| P vg | a>20 upper | 16.8 | 15.9 | 21.5 | 1.05x | 0.78x |
+| P vg | mixed | 24.6 | 20.1 | 18.3 | 1.22x | 1.34x |
+| lnQ | a<1 lower | 9.8 | 9.2 | 11.7 | 1.06x | 0.84x |
+| lnQ | a<1 bulk | 10.2 | 9.5 | 11.8 | 1.07x | 0.86x |
+| lnQ | a<1 upper | 10.0 | 9.4 | 11.7 | 1.06x | 0.85x |
+| lnQ | a1-20 lower | 9.7 | 9.2 | 11.5 | 1.06x | 0.84x |
+| lnQ | a1-20 bulk | 10.1 | 9.5 | 11.8 | 1.06x | 0.85x |
+| lnQ | a1-20 upper | 9.7 | 9.2 | 7.1 | 1.05x | 1.37x |
+| lnQ | a>20 lower | 9.8 | 9.2 | 7.3 | 1.06x | 1.35x |
+| lnQ | a>20 bulk | 9.7 | 9.0 | 11.5 | 1.08x | 0.84x |
+| lnQ | a>20 upper | 9.6 | 8.9 | 11.4 | 1.07x | 0.84x |
+| lnQ | mixed | 10.2 | 9.7 | 12.2 | 1.06x | 0.84x |
+| lnQ vg | a<1 lower | 16.6 | 16.7 | 23.7 | 0.99x | 0.70x |
+| lnQ vg | a<1 bulk | 17.1 | 17.2 | 24.1 | 0.99x | 0.71x |
+| lnQ vg | a<1 upper | 16.7 | 16.8 | 23.7 | 0.99x | 0.70x |
+| lnQ vg | a1-20 lower | 16.6 | 16.7 | 14.7 | 0.99x | 1.13x |
+| lnQ vg | a1-20 bulk | 17.3 | 17.3 | 24.3 | 1.00x | 0.71x |
+| lnQ vg | a1-20 upper | 16.9 | 17.0 | 23.9 | 0.99x | 0.71x |
+| lnQ vg | a>20 lower | 16.9 | 17.0 | 23.9 | 0.99x | 0.71x |
+| lnQ vg | a>20 bulk | 16.7 | 16.6 | 23.5 | 1.01x | 0.71x |
+| lnQ vg | a>20 upper | 16.6 | 16.7 | 23.5 | 0.99x | 0.71x |
+| lnQ vg | mixed | 20.9 | 21.0 | 30.3 | 1.00x | 0.69x |
+| inv | a<1 lower | 39.1 | 23.0 | 33.9 | 1.70x | 1.16x |
+| inv | a<1 bulk | 40.4 | 24.2 | 22.4 | 1.67x | 1.80x |
+| inv | a<1 upper | 39.4 | 23.4 | 34.1 | 1.68x | 1.15x |
+| inv | a1-20 lower | 39.3 | 22.9 | 33.7 | 1.71x | 1.17x |
+| inv | a1-20 bulk | 40.7 | 23.8 | 22.1 | 1.71x | 1.85x |
+| inv | a1-20 upper | 39.7 | 23.4 | 33.9 | 1.70x | 1.17x |
+| inv | a>20 lower | 39.9 | 23.6 | 34.0 | 1.69x | 1.17x |
+| inv | a>20 bulk | 39.1 | 23.0 | 33.6 | 1.70x | 1.16x |
+| inv | a>20 upper | 39.5 | 23.3 | 33.8 | 1.70x | 1.17x |
+| inv | mixed | 40.9 | 24.3 | 35.9 | 1.68x | 1.14x |
+| inv vg_p | a<1 lower | 60.8 | 45.1 | 66.2 | 1.35x | 0.92x |
+| inv vg_p | a<1 bulk | 62.3 | 46.1 | 67.3 | 1.35x | 0.92x |
+| inv vg_p | a<1 upper | 61.1 | 45.4 | 41.3 | 1.35x | 1.48x |
+| inv vg_p | a1-20 lower | 61.1 | 44.9 | 40.6 | 1.36x | 1.50x |
+| inv vg_p | a1-20 bulk | 62.7 | 45.9 | 41.9 | 1.37x | 1.50x |
+| inv vg_p | a1-20 upper | 61.5 | 45.3 | 41.0 | 1.36x | 1.50x |
+| inv vg_p | a>20 lower | 128.8 | 68.6 | 59.2 | 1.88x | 2.17x |
+| inv vg_p | a>20 bulk | 127.0 | 66.7 | 57.4 | 1.90x | 2.21x |
+| inv vg_p | a>20 upper | 127.3 | 67.2 | 57.9 | 1.89x | 2.20x |
+| inv vg_p | mixed | 63.6 | 46.8 | 42.6 | 1.36x | 1.49x |
+| inv vg | a<1 lower | 104.2 | 72.7 | 41.0 | 1.43x | 2.54x |
+| inv vg | a<1 bulk | 108.6 | 47.3 | 42.1 | 2.30x | 2.58x |
+| inv vg | a<1 upper | 106.3 | 73.1 | 41.4 | 1.45x | 2.57x |
+| inv vg | a1-20 lower | 107.1 | 72.5 | 40.8 | 1.48x | 2.62x |
+| inv vg | a1-20 bulk | 111.6 | 47.2 | 42.0 | 2.37x | 2.66x |
+| inv vg | a1-20 upper | 107.9 | 72.9 | 41.2 | 1.48x | 2.62x |
+| inv vg | a>20 lower | 196.8 | 137.8 | 73.4 | 1.43x | 2.68x |
+| inv vg | a>20 bulk | 193.9 | 134.7 | 71.5 | 1.44x | 2.71x |
+| inv vg | a>20 upper | 194.4 | 136.7 | 71.9 | 1.42x | 2.70x |
+| inv vg | mixed | 112.2 | 48.3 | 42.7 | 2.32x | 2.63x |
+
+compile s / temp MiB (gpu float64, largest over passes)
+  P: main 0.3 / 490.0; branch 2.7 / 458.0; k8 1.6 / 262.0
+  P vg: main 0.8 / 373.0; branch 4.7 / 378.0; k8 2.2 / 534.0
+  lnQ: main 0.3 / 490.0; branch 2.8 / 458.0; k8 1.8 / 262.0
+  lnQ vg: main 0.7 / 373.0; branch 5.1 / 377.0; k8 2.2 / 533.0
+  inv: main 0.7 / 586.0; branch 3.6 / 530.0; k8 3.1 / 334.0
+  inv vg_p: main 3.0 / 725.0; branch 13.8 / 701.0; k8 10.7 / 681.0
+  inv vg: main 3.4 / 1053.0; branch 17.6 / 994.0; k8 9.9 / 675.0
+
+accuracy, worst per region (gpu float64)
+  P: P
+        main: worst 1.4e-15 | 3e-16 4e-16 1e-16 5e-16 5e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+      branch: worst 1.4e-15 | 3e-16 4e-16 1e-16 5e-16 5e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+          k8: worst 1.4e-15 | 3e-16 5e-16 4e-16 4e-16 6e-16 1e-16 1e-15 6e-16 1e-16 8e-16
+  P vg: dP/da
+        main: worst 6.7e-14 | 7e-15 9e-16 7e-15 1e-14 6e-14 8e-15 4e-14 1e-15 2e-14 7e-14
+      branch: worst 6.7e-14 | 7e-15 9e-16 7e-15 1e-14 6e-14 8e-15 4e-14 1e-15 2e-14 7e-14
+          k8: worst 6.8e-14 | 7e-15 8e-15 6e-15 1e-14 4e-14 2e-14 4e-14 1e-15 2e-14 7e-14
+  P vg: dP/dx
+        main: worst 1.3e-13 | 2e-14 2e-15 2e-14 1e-14 2e-14 1e-14 5e-14 1e-15 2e-14 1e-13
+      branch: worst 1.3e-13 | 2e-14 2e-15 2e-14 1e-14 2e-14 1e-14 5e-14 1e-15 2e-14 1e-13
+          k8: worst 1.3e-13 | 2e-14 1e-14 2e-14 1e-14 4e-14 1e-14 5e-14 2e-15 2e-14 1e-13
+  lnQ: lnQ
+        main: worst 1.3e-15 | 1e-17 1e-15 4e-16 6e-17 5e-16 4e-16 9e-18 6e-16 6e-16 9e-16
+      branch: worst 1.3e-15 | 1e-17 1e-15 4e-16 6e-17 5e-16 4e-16 9e-18 6e-16 6e-16 9e-16
+          k8: worst 2.7e-15 | 2e-17 2e-15 2e-15 5e-17 7e-16 4e-16 3e-17 6e-16 6e-16 3e-15
+  lnQ vg: dlnQ/da
+        main: worst 5.6e-14 | 1e-16 3e-15 7e-15 6e-17 6e-14 4e-15 7e-18 2e-16 4e-16 3e-14
+      branch: worst 5.6e-14 | 1e-16 3e-15 7e-15 6e-17 6e-14 4e-15 7e-18 2e-16 4e-16 3e-14
+          k8: worst 3.7e-14 | 1e-16 8e-15 6e-15 8e-17 3e-14 2e-14 1e-17 2e-16 4e-16 4e-14
+  lnQ vg: dlnQ/dx
+        main: worst 3.7e-13 | 3e-14 5e-15 2e-14 1e-14 2e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+      branch: worst 3.7e-13 | 3e-14 5e-15 2e-14 1e-14 2e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+          k8: worst 3.7e-13 | 3e-14 9e-15 1e-14 1e-14 4e-14 7e-15 5e-14 2e-15 7e-15 4e-13
+  inv: x
+        main: worst 1.3e-15 | 2e-16 1e-15 7e-16 5e-16 9e-16 5e-16 5e-16 2e-16 4e-16 5e-16
+      branch: worst 9.9e-16 | 3e-16 1e-15 5e-16 4e-16 6e-16 5e-16 6e-16 2e-16 2e-16 6e-16
+          k8: worst 1.6e-15 | 3e-16 2e-15 5e-16 4e-16 7e-16 5e-16 6e-16 2e-16 2e-16 6e-16
+  inv vg_p: dx/dp
+        main: worst 7.2e-14 | 7e-14 4e-15 5e-15 7e-15 2e-14 5e-15 3e-14 1e-15 2e-14 6e-14
+      branch: worst 7.2e-14 | 7e-14 5e-15 5e-15 9e-15 2e-14 5e-15 3e-14 2e-15 2e-14 1e-14
+          k8: worst 7.2e-14 | 7e-14 2e-14 3e-14 9e-15 6e-14 5e-15 3e-14 2e-15 2e-14 2e-14
+  inv vg: dx/da
+        main: worst 5.8e-14 | 3e-14 3e-15 3e-15 2e-14 2e-14 5e-15 6e-16 6e-16 6e-16 6e-14
+      branch: worst 3.4e-14 | 3e-14 5e-15 3e-15 2e-14 2e-14 5e-15 8e-16 6e-16 6e-16 3e-14
+          k8: worst 5.1e-14 | 3e-14 2e-14 2e-14 2e-14 5e-14 2e-14 8e-16 6e-16 7e-16 1e-14
+  inv vg: dx/dp
+        main: worst 7.2e-14 | 7e-14 4e-15 5e-15 7e-15 2e-14 5e-15 3e-14 1e-15 2e-14 6e-14
+      branch: worst 7.2e-14 | 7e-14 5e-15 5e-15 9e-15 2e-14 5e-15 3e-14 2e-15 2e-14 1e-14
+          k8: worst 7.2e-14 | 7e-14 2e-14 3e-14 9e-15 6e-14 5e-15 3e-14 2e-15 2e-14 2e-14
+
+## gpu float32, ns per element (N = 4194304)
+| op | region | main | branch | k8 | branch ratio | k8 ratio |
+|---|---|---|---|---|---|---|
+| P | a<1 lower | 0.9 | 0.5 | 0.4 | 1.91x | 2.18x |
+| P | a<1 bulk | 0.9 | 0.5 | 0.4 | 1.93x | 2.09x |
+| P | a<1 upper | 0.9 | 0.5 | 0.4 | 1.94x | 2.07x |
+| P | a1-20 lower | 0.9 | 0.5 | 0.5 | 1.83x | 1.99x |
+| P | a1-20 bulk | 0.9 | 0.5 | 0.4 | 1.87x | 2.07x |
+| P | a1-20 upper | 0.9 | 0.5 | 0.5 | 1.75x | 1.99x |
+| P | a>20 lower | 0.9 | 0.5 | 0.4 | 1.91x | 2.11x |
+| P | a>20 bulk | 0.9 | 0.5 | 0.4 | 1.91x | 2.12x |
+| P | a>20 upper | 0.9 | 0.5 | 0.4 | 1.96x | 2.18x |
+| P | mixed | 0.9 | 0.6 | 0.5 | 1.69x | 1.95x |
+| P vg | a<1 lower | 2.4 | 2.3 | 1.4 | 1.02x | 1.67x |
+| P vg | a<1 bulk | 2.4 | 2.3 | 1.4 | 1.02x | 1.67x |
+| P vg | a<1 upper | 2.4 | 2.3 | 1.4 | 1.01x | 1.67x |
+| P vg | a1-20 lower | 2.4 | 2.3 | 1.4 | 1.03x | 1.68x |
+| P vg | a1-20 bulk | 2.4 | 2.3 | 1.4 | 1.01x | 1.65x |
+| P vg | a1-20 upper | 2.4 | 2.4 | 1.4 | 1.01x | 1.65x |
+| P vg | a>20 lower | 2.4 | 2.3 | 1.4 | 1.02x | 1.66x |
+| P vg | a>20 bulk | 2.4 | 2.3 | 1.4 | 1.02x | 1.65x |
+| P vg | a>20 upper | 2.4 | 2.3 | 1.4 | 1.02x | 1.66x |
+| P vg | mixed | 2.6 | 2.4 | 1.5 | 1.06x | 1.68x |
+| lnQ | a<1 lower | 0.9 | 0.5 | 0.4 | 1.94x | 2.14x |
+| lnQ | a<1 bulk | 0.9 | 0.5 | 0.4 | 1.90x | 2.19x |
+| lnQ | a<1 upper | 0.9 | 0.5 | 0.4 | 1.98x | 2.13x |
+| lnQ | a1-20 lower | 0.9 | 0.5 | 0.4 | 1.95x | 2.07x |
+| lnQ | a1-20 bulk | 0.9 | 0.5 | 0.4 | 1.95x | 2.10x |
+| lnQ | a1-20 upper | 0.9 | 0.5 | 0.4 | 1.81x | 2.09x |
+| lnQ | a>20 lower | 0.9 | 0.5 | 0.4 | 1.89x | 2.18x |
+| lnQ | a>20 bulk | 0.9 | 0.5 | 0.4 | 1.97x | 2.13x |
+| lnQ | a>20 upper | 0.9 | 0.5 | 0.4 | 1.95x | 2.15x |
+| lnQ | mixed | 0.9 | 0.5 | 0.5 | 1.71x | 2.01x |
+| lnQ vg | a<1 lower | 3.1 | 3.4 | 2.1 | 0.92x | 1.49x |
+| lnQ vg | a<1 bulk | 3.1 | 3.4 | 2.1 | 0.92x | 1.50x |
+| lnQ vg | a<1 upper | 3.1 | 3.4 | 2.1 | 0.92x | 1.48x |
+| lnQ vg | a1-20 lower | 3.1 | 3.4 | 2.1 | 0.93x | 1.50x |
+| lnQ vg | a1-20 bulk | 3.1 | 3.4 | 2.1 | 0.92x | 1.50x |
+| lnQ vg | a1-20 upper | 3.1 | 3.4 | 2.1 | 0.92x | 1.50x |
+| lnQ vg | a>20 lower | 3.1 | 3.4 | 2.1 | 0.92x | 1.48x |
+| lnQ vg | a>20 bulk | 3.1 | 3.4 | 2.1 | 0.92x | 1.49x |
+| lnQ vg | a>20 upper | 3.1 | 3.4 | 2.1 | 0.92x | 1.50x |
+| lnQ vg | mixed | 3.2 | 3.5 | 2.2 | 0.93x | 1.45x |
+| inv | a<1 lower | 1.2 | 1.0 | 1.0 | 1.18x | 1.20x |
+| inv | a<1 bulk | 1.2 | 1.0 | 0.9 | 1.21x | 1.24x |
+| inv | a<1 upper | 1.2 | 1.0 | 1.0 | 1.23x | 1.22x |
+| inv | a1-20 lower | 1.2 | 0.9 | 1.0 | 1.23x | 1.22x |
+| inv | a1-20 bulk | 1.2 | 1.0 | 1.0 | 1.20x | 1.21x |
+| inv | a1-20 upper | 1.2 | 0.9 | 1.0 | 1.23x | 1.22x |
+| inv | a>20 lower | 1.2 | 1.0 | 1.0 | 1.20x | 1.21x |
+| inv | a>20 bulk | 1.2 | 0.9 | 1.0 | 1.24x | 1.22x |
+| inv | a>20 upper | 1.2 | 1.0 | 1.0 | 1.22x | 1.22x |
+| inv | mixed | 1.2 | 0.9 | 1.0 | 1.25x | 1.21x |
+| inv vg_p | a<1 lower | 2.6 | 2.6 | 2.5 | 1.02x | 1.07x |
+| inv vg_p | a<1 bulk | 2.6 | 2.6 | 2.5 | 1.01x | 1.07x |
+| inv vg_p | a<1 upper | 2.6 | 2.6 | 2.5 | 1.01x | 1.07x |
+| inv vg_p | a1-20 lower | 2.6 | 2.6 | 2.5 | 1.01x | 1.08x |
+| inv vg_p | a1-20 bulk | 2.6 | 2.6 | 2.5 | 1.01x | 1.07x |
+| inv vg_p | a1-20 upper | 2.6 | 2.6 | 2.4 | 1.00x | 1.07x |
+| inv vg_p | a>20 lower | 7.6 | 4.4 | 4.3 | 1.72x | 1.77x |
+| inv vg_p | a>20 bulk | 7.6 | 4.4 | 4.3 | 1.72x | 1.78x |
+| inv vg_p | a>20 upper | 7.6 | 4.4 | 4.3 | 1.72x | 1.78x |
+| inv vg_p | mixed | 2.6 | 2.6 | 2.5 | 1.01x | 1.07x |
+| inv vg | a<1 lower | 2.7 | 2.7 | 2.5 | 1.01x | 1.07x |
+| inv vg | a<1 bulk | 2.7 | 2.7 | 2.5 | 1.02x | 1.08x |
+| inv vg | a<1 upper | 2.7 | 2.7 | 2.5 | 1.02x | 1.07x |
+| inv vg | a1-20 lower | 2.7 | 2.7 | 2.5 | 1.02x | 1.08x |
+| inv vg | a1-20 bulk | 2.7 | 2.7 | 2.5 | 1.02x | 1.07x |
+| inv vg | a1-20 upper | 2.7 | 2.7 | 2.5 | 1.02x | 1.07x |
+| inv vg | a>20 lower | 9.4 | 6.7 | 6.3 | 1.42x | 1.50x |
+| inv vg | a>20 bulk | 9.5 | 6.6 | 6.3 | 1.42x | 1.50x |
+| inv vg | a>20 upper | 9.4 | 6.6 | 6.3 | 1.42x | 1.49x |
+| inv vg | mixed | 2.7 | 2.7 | 2.5 | 1.03x | 1.08x |
+
+compile s / temp MiB (gpu float32, largest over passes)
+  P: main 0.3 / 484.0; branch 1.6 / 140.0; k8 1.3 / 124.0
+  P vg: main 0.6 / 1180.0; branch 3.3 / 1204.0; k8 2.7 / 776.0
+  lnQ: main 0.2 / 484.0; branch 1.7 / 140.0; k8 1.2 / 124.0
+  lnQ vg: main 0.4 / 1152.0; branch 7.4 / 1224.0; k8 6.7 / 792.0
+  inv: main 0.2 / 264.0; branch 0.9 / 232.0; k8 0.3 / 232.0
+  inv vg_p: main 1.7 / 660.0; branch 6.3 / 636.0; k8 4.9 / 636.0
+  inv vg: main 1.7 / 916.0; branch 8.2 / 1232.0; k8 6.5 / 1060.0
+
+accuracy, worst per region (gpu float32)
+  P: P
+        main: worst 4.5e-07 | 1e-07 3e-07 7e-08 2e-07 4e-07 8e-08 4e-07 5e-07 7e-08 3e-07
+      branch: worst 4.5e-07 | 1e-07 3e-07 4e-08 2e-07 4e-07 3e-08 4e-07 5e-07 5e-08 3e-07
+          k8: worst 4.5e-07 | 1e-07 2e-07 3e-08 2e-07 3e-07 3e-08 4e-07 5e-07 5e-08 3e-07
+  P vg: dP/da
+        main: worst 1.2e-05 | 3e-06 7e-07 5e-06 6e-06 8e-07 5e-06 1e-05 8e-07 1e-05 9e-06
+      branch: worst 1.2e-05 | 3e-06 7e-07 5e-06 6e-06 8e-07 5e-06 1e-05 6e-07 1e-05 9e-06
+          k8: worst 1.2e-05 | 3e-06 3e-07 5e-06 6e-06 8e-07 5e-06 1e-05 6e-07 1e-05 9e-06
+  P vg: dP/dx
+        main: worst 1.4e-05 | 4e-06 2e-06 5e-06 6e-06 8e-07 6e-06 1e-05 8e-07 1e-05 9e-06
+      branch: worst 1.4e-05 | 4e-06 2e-06 5e-06 6e-06 8e-07 6e-06 1e-05 6e-07 1e-05 9e-06
+          k8: worst 1.4e-05 | 3e-06 1e-06 5e-06 6e-06 8e-07 6e-06 1e-05 6e-07 1e-05 9e-06
+  lnQ: lnQ
+        main: worst 7.4e-07 | 8e-09 7e-07 3e-07 1e-08 3e-07 2e-07 1e-08 4e-07 3e-07 5e-07
+      branch: worst 7.4e-07 | 8e-09 7e-07 3e-07 1e-08 3e-07 2e-07 1e-08 4e-07 3e-07 5e-07
+          k8: worst 6.7e-07 | 8e-09 7e-07 2e-07 1e-08 3e-07 2e-07 1e-08 4e-07 3e-07 5e-07
+  lnQ vg: dlnQ/da
+        main: worst 2e-06 | 2e-07 1e-06 8e-07 1e-08 8e-07 5e-07 2e-09 7e-08 3e-07 2e-06
+      branch: worst 2e-06 | 2e-07 1e-06 8e-07 1e-08 8e-07 5e-07 2e-09 7e-08 3e-07 2e-06
+          k8: worst 1.8e-06 | 2e-07 1e-06 2e-07 2e-08 7e-07 4e-07 2e-09 7e-08 3e-07 2e-06
+  lnQ vg: dlnQ/dx
+        main: worst 1.4e-05 | 4e-06 3e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+      branch: worst 1.4e-05 | 4e-06 3e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+          k8: worst 1.4e-05 | 3e-06 2e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+  inv: x
+        main: worst 5e-06 | 3e-07 5e-06 4e-07 5e-07 2e-06 4e-07 1e-06 9e-08 2e-07 1e-06
+      branch: worst 1e-06 | 2e-07 5e-07 4e-07 4e-07 3e-07 4e-07 1e-06 9e-08 2e-07 4e-07
+          k8: worst 1e-06 | 2e-07 5e-07 4e-07 4e-07 3e-07 4e-07 1e-06 9e-08 2e-07 4e-07
+  inv vg_p: dx/dp
+        main: worst 1.8e-05 | 1e-05 1e-05 9e-06 3e-06 3e-06 8e-07 2e-05 1e-06 4e-06 1e-05
+      branch: worst 1.8e-05 | 1e-05 2e-06 1e-05 3e-06 5e-07 8e-07 2e-05 1e-06 4e-06 2e-06
+          k8: worst 1.8e-05 | 1e-05 2e-06 5e-06 3e-06 5e-07 8e-07 2e-05 1e-06 4e-06 2e-06
+  inv vg: dx/da
+        main: worst 1.2e-05 | 1e-05 1e-05 2e-06 3e-06 1e-06 6e-07 7e-07 3e-07 3e-07 8e-06
+      branch: worst 9.7e-06 | 1e-05 2e-06 2e-06 3e-06 3e-07 6e-07 5e-07 3e-07 3e-07 3e-06
+          k8: worst 9.7e-06 | 1e-05 2e-06 1e-06 3e-06 3e-07 6e-07 5e-07 3e-07 3e-07 3e-06
+  inv vg: dx/dp
+        main: worst 1.8e-05 | 1e-05 1e-05 9e-06 3e-06 3e-06 8e-07 2e-05 1e-06 4e-06 1e-05
+      branch: worst 1.8e-05 | 1e-05 2e-06 1e-05 3e-06 5e-07 8e-07 2e-05 1e-06 4e-06 2e-06
+          k8: worst 1.8e-05 | 1e-05 2e-06 5e-06 3e-06 5e-07 8e-07 2e-05 1e-06 4e-06 2e-06
+
+regions: a<1 lower, a<1 bulk, a<1 upper, a1-20 lower, a1-20 bulk, a1-20 upper, a>20 lower, a>20 bulk, a>20 upper, mixed
+passes differing by more than 1.25x: 
+  gpu float64 P a<1 lower k8: 15.7, 6.8
+  gpu float64 P a<1 bulk k8: 15.8, 6.8
+  gpu float64 P a<1 upper k8: 15.8, 6.8
+  gpu float64 P a1-20 lower k8: 15.6, 6.7
+  gpu float64 P a1-20 bulk k8: 15.8, 6.9
+  gpu float64 P a1-20 upper k8: 15.6, 6.7
+  gpu float64 P a>20 lower k8: 15.7, 6.8
+  gpu float64 P a>20 bulk k8: 15.4, 6.5
+  gpu float64 P a>20 upper k8: 15.5, 6.6
+  gpu float64 P mixed k8: 15.9, 7.0
+  gpu float64 P vg a<1 lower k8: 29.5, 13.8
+  gpu float64 P vg a<1 bulk k8: 29.7, 14.0
+  gpu float64 P vg a<1 upper k8: 29.6, 13.9
+  gpu float64 P vg a1-20 lower k8: 29.5, 13.8
+  gpu float64 P vg a1-20 bulk k8: 29.7, 14.2
+  gpu float64 P vg a1-20 upper k8: 29.7, 14.1
+  gpu float64 P vg a>20 lower k8: 29.6, 14.1
+  gpu float64 P vg a>20 bulk k8: 29.1, 13.4
+  gpu float64 P vg a>20 upper k8: 29.2, 13.7
+  gpu float64 lnQ a<1 lower k8: 16.1, 7.2
+  gpu float64 lnQ a<1 bulk k8: 16.3, 7.4
+  gpu float64 lnQ a<1 upper k8: 16.2, 7.3
+  gpu float64 lnQ a1-20 lower k8: 16.0, 7.0
+  gpu float64 lnQ a1-20 bulk k8: 16.3, 7.3
+  gpu float64 lnQ a>20 bulk k8: 15.9, 7.0
+  gpu float64 lnQ a>20 upper k8: 15.9, 7.0
+  gpu float64 lnQ mixed k8: 16.6, 7.7
+  gpu float64 lnQ vg a<1 lower k8: 32.7, 14.6
+  gpu float64 lnQ vg a<1 bulk k8: 33.2, 15.1
+  gpu float64 lnQ vg a<1 upper k8: 32.8, 14.7
+  gpu float64 lnQ vg a1-20 bulk k8: 33.2, 15.3
+  gpu float64 lnQ vg a1-20 upper k8: 32.9, 14.8
+  gpu float64 lnQ vg a>20 lower k8: 32.8, 14.9
+  gpu float64 lnQ vg a>20 bulk k8: 32.5, 14.4
+  gpu float64 lnQ vg a>20 upper k8: 32.5, 14.5
+  gpu float64 lnQ vg mixed k8: 41.6, 19.0
+  gpu float64 inv a<1 lower k8: 46.3, 21.4
+  gpu float64 inv a<1 upper k8: 46.6, 21.6
+  gpu float64 inv a1-20 lower k8: 46.2, 21.2
+  gpu float64 inv a1-20 upper k8: 46.4, 21.4
+  gpu float64 inv a>20 lower k8: 46.5, 21.5
+  gpu float64 inv a>20 bulk k8: 46.1, 21.2
+  gpu float64 inv a>20 upper k8: 46.3, 21.3
+  gpu float64 inv mixed k8: 49.6, 22.3
+  gpu float64 inv vg_p a<1 lower k8: 91.4, 41.1
+  gpu float64 inv vg_p a<1 bulk k8: 92.4, 42.2
+  gpu float64 inv vg a<1 lower branch: 100.1, 45.3
+  gpu float64 inv vg a<1 upper branch: 100.4, 45.8
+  gpu float64 inv vg a1-20 lower branch: 99.8, 45.3
+  gpu float64 inv vg a1-20 upper branch: 100.2, 45.6
+  gpu float64 inv vg a>20 lower branch: 187.2, 88.4
+  gpu float64 inv vg a>20 bulk branch: 182.9, 86.4
+  gpu float64 inv vg a>20 upper branch: 186.6, 86.8

@@ -53,20 +53,33 @@ def _a_phi(a, t):
     return jnp.where(near, st * st * s, a * (jnp.expm1(t) - t))
 
 
-def log_xpdf(a, t, small=False):
-    """ln(x pdf(x)) of Gamma(a, 1) at x = a e^t. Above a = 100, against the
-    cancellation, -a (e^t - 1 - t) + ln(a / (2 pi))/2 - S(a), S Stirling's to
-    a^-5; small (python constant) means a <= 100 everywhere."""
+# above this a, log_xpdf takes Stirling's form; Binet's remainder to a^-13
+# truncates at 3e-17 there, and the direct form cancels ((a - 1) ln x against
+# lnGamma(a): 1e-13 in the density at a = 94)
+_STIR = 10.0
+_BINET = (1 / 12, -1 / 360, 1 / 1260, -1 / 1680, 1 / 1188, -691 / 360360, 1 / 156)
+
+
+def log_xpdf(a, t, small=False, lga=None):
+    """ln(x pdf(x)) of Gamma(a, 1) at x = a e^t. Above _STIR, against the
+    cancellation, -a (e^t - 1 - t) + ln(a / (2 pi))/2 - S(a), S Binet's
+    remainder; small (python constant) means a <= 100 everywhere, direct form.
+    lga is lnGamma(a) if the caller has it (jax's gammaln otherwise; unread
+    above _STIR)."""
+    if lga is None:
+        am = a if small else jnp.where(a > _STIR, 1.0, a)
+        lga = jax.scipy.special.gammaln(am)
     if small:
-        return a * (t + jnp.log(a)) - a * jnp.exp(t) - jax.scipy.special.gammaln(a)
-    stir = a > 100.0
+        return a * (t + jnp.log(a)) - a * jnp.exp(t) - lga
+    stir = a > _STIR
     ab = jnp.where(stir, a, 1000.0)
     ai2 = 1.0 / (ab * ab)
-    rem = (1.0 / 12.0 - ai2 * (1.0 / 360.0 - ai2 / 1260.0)) / ab
-    lead = 0.5 * jnp.log(ab / (2.0 * math.pi)) - rem
+    rem = _BINET[-1]
+    for c in _BINET[-2::-1]:
+        rem = rem * ai2 + c
+    lead = 0.5 * jnp.log(ab / (2.0 * math.pi)) - rem / ab
     am = jnp.where(stir, 1.0, a)
-    lga = jax.scipy.special.gammaln(am)
-    direct = am * (t + jnp.log(am)) - am * jnp.exp(t) - lga
+    direct = am * (t + jnp.log(am)) - am * jnp.exp(t) - jnp.where(stir, 0.0, lga)
     return jnp.where(stir, lead - _a_phi(ab, t), direct)
 
 
@@ -86,13 +99,12 @@ def snap_t(a, t):
     return jnp.where(near, jnp.log1p((x - a) / a), t)
 
 
-def _start(a, ltp, ltq, z, upper, ln_a):
+def _start(a, ltp, ltq, z, upper, ln_a, lga):
     """The first t: the larger of Wilson-Hilferty and each tail's asymptotic.
     Below, P <= x^a / Gamma(a + 1) never starts above the root (WH misses a = 20,
     p = 1e-20); above, three fixed-point passes on ln Q. Starting far below the
     root is the costly miss: Newton crawls an e-fold a step (a = 50, y = 1e-8
     stopped 5.8e-10 short); overshoot costs a few steps."""
-    gammaln = jax.scipy.special.gammaln
     # WH is x = a (1 + c)^3, taken as a log so it keeps its digits at large a
     c = z / (3.0 * jnp.sqrt(a)) - 1.0 / (9.0 * a)
     pos = c > -1.0
@@ -106,9 +118,9 @@ def _start(a, ltp, ltq, z, upper, ln_a):
     t_lo = jnp.where(
         big,
         ltp / ab - 1.0 + stirling,
-        (ltp + gammaln(am + 1.0)) / am - jnp.log(am),
+        (ltp + jnp.where(big, 0.0, lga) + jnp.log(am)) / am - jnp.log(am),
     )
-    r = -ltq - gammaln(a)
+    r = -ltq - lga
     xa = jnp.maximum(r, 1.0)
     for _ in range(3):
         xa = jnp.maximum(r + (a - 1.0) * jnp.log(xa), 1e-3)
@@ -131,6 +143,7 @@ def solve(
     rtol=None,
     small=False,
     halley=False,
+    lga=None,
 ):
     """x with ln P = ltp (ln Q = ltq on upper lanes), log_pq(x) giving both, z
     ndtri for the start, iters fixed steps. Returns (x, accepted, root below the
@@ -140,9 +153,12 @@ def solve(
     with seam on the side log_pq computes directly: the small tables' Q below
     x = 8 is 1 - P (a = 0.1, y = 1e-4 is 1.4e-3 off in float32). halley and
     small are python constants; small (a <= 10) skips the near-mode rounding and
-    the Stirling density, 8-28% of GPU time (experiments/09)."""
+    the Stirling density, 8-28% of GPU time (experiments/09). lga is lnGamma(a),
+    jax's gammaln if None (a kernel imports no other family's tables)."""
     lim = solver_limits(canon_tag())
     ln_a = jnp.log(a)
+    if lga is None:
+        lga = jax.scipy.special.gammaln(a)
 
     def x_at(t):
         if small:
@@ -160,7 +176,7 @@ def solve(
         x, _ = x_at(t)
         f, side = residual(x)
         # the slope of either residual in t is x pdf / (its own probability)
-        df = jnp.exp(log_xpdf(a, t, small) - side)
+        df = jnp.exp(log_xpdf(a, t, small, lga) - side)
         if not halley:
             return f, df
         # Halley as Newton with slope df c, exact curvature S'' = S' (g' - S'),
@@ -173,7 +189,7 @@ def solve(
     lo0 = jnp.broadcast_to(lim.lo - ln_a, shape)
     # at least x = a: within 4 ulps of the largest float the ceiling is below the mode
     hi0 = jnp.broadcast_to(jnp.maximum(lim.v_hi - ln_a, 0.0), shape)
-    t0 = jnp.clip(_start(a, ltp, ltq, z, upper, ln_a), lo0, hi0)
+    t0 = jnp.clip(_start(a, ltp, ltq, z, upper, ln_a, lga), lo0, hi0)
     if not small:
         t = snap(newton_bisect(f_and_df, t0, lo0, hi0, iters, snap=snap))
     else:
@@ -190,7 +206,7 @@ def solve(
     accepted = (jnp.abs(jnp.expm1(judged)) <= bar) | sign_change
     above = f[3] < 0.0 if ceiling else jnp.zeros(shape, bool)
     # root below the smallest normal x, where P = x^a / Gamma(a + 1) to rounding
-    lp_floor = a * lim.lo - jax.scipy.special.gammaln(a + 1.0)
+    lp_floor = a * lim.lo - lga - ln_a
     below = ~upper & (lp_floor > ltp)
     return x, accepted, below, above
 
@@ -209,15 +225,21 @@ def table_solve(
     seam=None,
     rtol=None,
     small=False,
+    start_bar=None,
+    lga=None,
 ):
     """solve's contract from a start t0 within ~1e-8 (gammaincinv_start): steps
     Newton steps in t, the last one's residual, the previous one's result,
     being the check: inside the bar (rtol, judged as in solve), or the step
-    below rounding in t. With one step or none nothing is judged. Returns
-    (x, accepted, root below the normal floor, root above the ceiling)."""
+    below rounding in t. With one step the start is judged instead: residual
+    within start_bar max(1, |ln target|) (python float, None for no check), or
+    the step within 64 floats in t; with none nothing is. lga as in solve.
+    Returns (x, accepted, root below the normal floor, root above the ceiling)."""
     lim = solver_limits(a.dtype.name)
     eps = jnp.finfo(a.dtype).eps
     ln_a = jnp.log(a)
+    if lga is None:
+        lga = jax.scipy.special.gammaln(a)
     lo0 = lim.lo - ln_a
     hi0 = jnp.maximum(lim.v_hi - ln_a, 0.0)
     bar = lim.rtol if rtol is None else rtol
@@ -236,19 +258,25 @@ def table_solve(
         x = x_at(t)
         lp, lq = log_pq(x)
         f = jnp.where(upper, ltq - lq, lp - ltp)
-        dt = f / jnp.exp(log_xpdf(a, t, small) - jnp.where(upper, lq, lp))
+        dt = f / jnp.exp(log_xpdf(a, t, small, lga) - jnp.where(upper, lq, lp))
+        judged = f if seam is None else jnp.where(x > seam, ltq - lq, lp - ltp)
         if k > 0:
-            judged = f if seam is None else jnp.where(x > seam, ltq - lq, lp - ltp)
             accepted = (jnp.abs(jnp.expm1(judged)) <= bar) | (
                 jnp.abs(dt) <= 2.0 * eps * jnp.maximum(1.0, jnp.abs(t))
             )
+        elif steps == 1 and start_bar is not None:
+            # where x cannot resolve the start's 1e-8 (a > 1e10), within 64 floats
+            lt = jnp.where(upper, ltq, ltp)
+            accepted = (
+                jnp.abs(judged) <= start_bar * jnp.maximum(1.0, jnp.abs(lt))
+            ) | (jnp.abs(dt) <= 64.0 * eps * jnp.maximum(1.0, jnp.abs(t)))
         t = t - dt
         if ceiling:
             above = above | (t > hi0)
         t = jnp.clip(t, lo0, hi0)
     x = x_at(t if small else snap_t(a, t))
     # root below the smallest normal x, where P = x^a / Gamma(a + 1) to rounding
-    lp_floor = a * lim.lo - jax.scipy.special.gammaln(a + 1.0)
+    lp_floor = a * lim.lo - lga - ln_a
     below = ~upper & (lp_floor > ltp)
     return x, accepted, below, above
 

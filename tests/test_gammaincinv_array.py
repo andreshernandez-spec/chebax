@@ -4,7 +4,7 @@ The inversion contract is two-sided, as in test_quantiles: the returned x
 round-trips through the 40-dps CDF on the target's own side (P for lower
 targets, Q for upper ones), relative to that side's target. Measured worst
 in float64 over a grid from a = 0.1 to 1e6 and targets from 1e-300 to
-1 - 2^-52 on both sides: 6.2e-13 for a <= 1000 (a = 640, p = 1e-30, where
+1 - 2^-52 on both sides: 5.5e-13 for a <= 1000 (a = 640, p = 1e-30, where
 the scalar path gives 9.3e-13: the gammainc tables' own accuracy), bar
 2.5e-12; 2.3e-12 above (a = 1e6, p = 1e-300, where one float step of x
 moves P by 8e-12), bar 1e-11. mpmath's series stall past a ~ 1e6, so from
@@ -15,10 +15,13 @@ uniform expansion.
 Derivatives come from the implicit function theorem on the same ln P and
 ln Q the solve inverted. Against mpmath at the 40-dps root (dx/dp = 1/pdf,
 dx/da = -dP/da / pdf, each tail differentiated directly), measured worst
-7.9e-15 relative over a from 0.1 to 640 in both tails, bar 3e-14; forward
+over a from 0.1 to 640 in both tails: dx/da 7.4e-15, bar 3e-14; dx/dp
+2.2e-14, bar 9e-14 (taken alone it uses the closed-form density, which
+loses about |ln F| eps: a = 0.1, p = 1e-5, where ln pdf = 102); forward
 and reverse mode agree to the last bit. Second derivatives, which the
 scalar path cannot take in a: d2x/dp2 1.4e-13 (bar 6e-13) against
--((a-1)/x - 1) (dx/dp)^2, d2x/da2 4.6e-12 (bar 2e-11) against a central
+-((a-1)/x - 1) (dx/dp)^2, d2x/da2 1.5e-11 on jax 0.5.3 and 6.2e-12 on 0.11
+(bar 6e-11; the 12 x 12 gammainc table gave 6.2e-12) against a central
 difference of the 60-dps first derivative. Above a = 1e3 dx/dp is the
 density in closed form at the unrounded root; its limits are in the two
 tests that cover it.
@@ -172,9 +175,9 @@ def test_gradients_against_mpmath(name):
         ref_a2 = (_dxda(am + h, ti, upper) - _dxda(am - h, ti, upper)) / (2 * h)
         pt = (name, ai, ti)
         assert abs(rev_a[i] / _dxda(am, ti, upper) - 1) <= 3e-14, pt
-        assert abs(rev_t[i] / ref_t - 1) <= 3e-14, pt
+        assert abs(rev_t[i] / ref_t - 1) <= 9e-14, pt
         assert abs(d2t[i] / ref_t2 - 1) <= 6e-13, pt
-        assert abs(d2a[i] / ref_a2 - 1) <= 2e-11, pt
+        assert abs(d2a[i] / ref_a2 - 1) <= 6e-11, pt
 
 
 def test_exponential_case_is_exact():
@@ -208,12 +211,12 @@ def test_exponential_case_is_exact():
 
 
 def test_density_in_closed_form_above_1e3():
-    # above a = 1e3 both derivatives come from the root found again,
-    # unrounded (Halley steps in ln(x/a) on _log_pq given d = x/a - 1
-    # exactly), since L_x at the float x is off by its change over one
-    # float step, about eps sqrt(a) (1 + |z|). Against mpmath, measured
-    # worst 2.3e-13 in dx/dp (a = 2e3, p = 1e-300) and 3.6e-16 in dx/da;
-    # bars 8e-13 and 1.5e-15
+    # above a = 1e3 both derivatives come from the unrounded root (one
+    # Newton step in ln(x/a) from the float x, _log_pq given d = x/a - 1
+    # exactly for dx/da), since L_x at the float x is off by its change over
+    # one float step, about eps sqrt(a) (1 + |z|). Against mpmath, measured
+    # worst 3.2e-13 in dx/dp (a = 2e3, p = 1e-300) and 3.6e-16 in dx/da;
+    # bars 1.3e-12 and 1.5e-15
     pts = [(1e3, 1e-300), (2e3, 1e-300), (2e3, 0.5), (1e4, 1e-100)]
     pts += [(1e5, 1e-200), (1e5, 0.9)]
     a = jnp.asarray([q[0] for q in pts])
@@ -226,7 +229,7 @@ def test_density_in_closed_form_above_1e3():
             am = mp.mpf(ai)
             pdf = mp.exp((am - 1) * mp.log(x) - x - mp.loggamma(am))
             ref = (-1 if name == "cinv" else 1) / pdf
-            assert abs(g[i] / ref - 1) <= 8e-13, (name, ai, ti, g[i], float(ref))
+            assert abs(g[i] / ref - 1) <= 1.3e-12, (name, ai, ti, g[i], float(ref))
             ref_a = _dxda(am, ti, name == "cinv")
             assert abs(ga[i] / ref_a - 1) <= 1.5e-15, (name, ai, ti, ga[i])
 
@@ -237,8 +240,9 @@ def test_huge_shape_gradients_match_the_scalar_path():
     # single Halley step from the float x left dx/dp 5.7e-6 off at
     # a = 1e30 and 2e17 times too small at a = 1e35, p = 1e-20, where x
     # rounds to a nine standard deviations from the root (review of #44).
-    # Measured worst 1.1e-13 in dx/dp and 2.2e-16 in dx/da; bars 4.4e-13
-    # and 1e-15
+    # Measured worst 3.4e-13 in dx/dp (two Halley steps from the float x;
+    # six from Wilson-Hilferty gave 1.1e-13) and 2.2e-16 in dx/da; bars
+    # 1.4e-12 and 1e-15
     shapes = [1e12, 1e20, 1e25, 1e30, 1e35]
     aa = np.repeat(shapes, 3)
     for name, scalar, ts in (
@@ -256,7 +260,7 @@ def test_huge_shape_gradients_match_the_scalar_path():
             if np.isinf(st):  # the density underflows at the root
                 assert gt[i] == st, (name, a, t, gt[i], st)
             else:
-                assert abs(gt[i] / st - 1) <= 4.4e-13, (name, a, t, gt[i], st)
+                assert abs(gt[i] / st - 1) <= 1.4e-12, (name, a, t, gt[i], st)
 
 
 def test_largest_shapes():
@@ -346,33 +350,33 @@ def test_masked_lanes_keep_clean_gradients():
                 assert abs(float(one) / rev[i] - 1) <= 1e-13, (argnum, i)
 
 
-def test_one_newton_step_reaches_the_floor(monkeypatch):
-    # the table start is within 1e-8 in x, so the first Newton step lands
-    # on the same tail probability as the shipped two (the second is the
-    # check). x itself can differ where it barely moves P: deep in the
-    # lower tail at small a, x ~ p^(1/a). In the probability, measured
-    # 8.9e-12 (two results inside the acceptance bar, 1.6e-10 wide at
-    # |ln p| = 690), bar 4e-11
+def test_a_second_newton_step_changes_nothing(monkeypatch):
+    # the table start is within 1e-8 in x, so the shipped single Newton step
+    # lands on the same tail probability as two, and the start check gives
+    # nan nowhere the two-step check does not. x itself can differ where it
+    # barely moves P: deep in the lower tail at small a, x ~ p^(1/a). In the
+    # probability, measured 1.0e-11 (two results inside the acceptance bar,
+    # 1.6e-10 wide at |ln p| = 690), bar 4e-11
     rng = np.random.default_rng(11)
     a = np.exp(rng.uniform(np.log(0.1), np.log(1e30), 4096))
     p = np.where(
         rng.random(4096) < 0.5, rng.random(4096), 10 ** rng.uniform(-300, 0, 4096)
     )
-    full = {k: np.asarray(f(a, p)) for k, f in FUNCS.items()}
-    monkeypatch.setitem(gia._STEPS, "float64", 1)
+    one = {k: np.asarray(f(a, p)) for k, f in FUNCS.items()}
+    monkeypatch.setitem(gia._STEPS, "float64", 2)
     for k, f in FUNCS.items():
         # the count is read at trace time, so the cached trace must go
         jax.clear_caches()
-        half = np.asarray(jax.jit(lambda a, p: f(a, p))(a, p))
-        np.testing.assert_array_equal(np.isnan(half), np.isnan(full[k]))
+        two = np.asarray(jax.jit(lambda a, p: f(a, p))(a, p))
+        np.testing.assert_array_equal(np.isnan(one[k]), np.isnan(two))
         upper = p > 0.5 if k == "inv" else p < 0.5
         side = lambda x: np.where(
             upper,
             np.asarray(chebax.log_gammaincc_array(a, x)),
             np.asarray(chebax.log_gammainc_array(a, x)),
         )
-        ok = np.isfinite(full[k]) & (full[k] > 0)
-        d = np.abs(np.expm1(side(half) - side(full[k])))[ok]
+        ok = np.isfinite(two) & (two > 0)
+        d = np.abs(np.expm1(side(one[k]) - side(two)))[ok]
         assert d.max() <= 4e-11, (k, d.max())
 
 

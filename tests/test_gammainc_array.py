@@ -9,29 +9,29 @@ The logs use |ln F - ref| / max(1, |ref|): relative in F where |ln F| <= 1,
 relative in ln F beyond. P and Q are absolute (the CDF contract).
 
 Measured worst, float64, the larger of jax 0.11 and 0.5.3 (CI's floor):
-ln P 8.9e-16, ln Q 8.4e-15, bars 3.5e-15 and 3.5e-14. ln Q's floor is the
+ln P 7.2e-16, ln Q 5.6e-15, bars 3.5e-15 and 3.5e-14. ln Q's floor is the
 far side of A0 (a < 1, x <= a + 1), where Q = 1 - P and Q can be as small
 as 0.024 (a = 0.1, x = 1.1), so P's rounding shows up ~40x in Q; outside
-A0 ln Q is 7.8e-16. P, Q absolute 8.4e-16, bar 3.5e-15. float32, against
-references at the float32-rounded inputs: ln P 4.5e-7, ln Q 2.9e-6 (the
-same far side), bars 2e-6 and 1.2e-5; P, Q absolute 4.0e-7, bar 1.6e-6.
+A0 ln Q is 8.9e-16. P, Q absolute 6.7e-16, bar 3.5e-15. float32, against
+references at the float32-rounded inputs: ln P 3.9e-7, ln Q 1.7e-6 (the
+same far side), bars 2e-6 and 1.2e-5; P, Q absolute 2.4e-7, bar 1.6e-6.
 
 d/dx against the Gamma density (d ln P/dx = density/P, d ln Q/dx =
 -density/Q, formed in mpmath), relative: 2.0e-13, bar 8e-13. d/da against
-mp.diff, 10 points per zone, |g - ref| / max(1, |ref|): 1.3e-13, bar
+mp.diff, 10 points per zone, |g - ref| / max(1, |ref|): 2.3e-14, bar
 5e-13. The far tails, past the random points, have their own check
 against mpmath with the precision raised for |ln F| (x up to 1e300, and
-x/a underflowing): float64 2.2e-16, bar 1e-15; float32 1.0e-7, bar 4e-7,
+x/a underflowing): float64 2.2e-16, bar 1e-15; float32 1.2e-7, bar 4e-7,
 in forward and reverse mode. The ends of each dtype's range are checked
 for nan in both modes. The IEEE endpoints and the x = 0 slopes are exact,
 so those tests assert equality.
 
 _common.patch_sum, the per-element patch sum, against numpy's chebval2d and
-chebder on 300 random patches and points, for the table's 12 x 12 blocks (its
-derivatives packed) and their leading 7 x 7 (not packed), |err| / max(1, |ref|):
-values and coordinate derivatives, forward and reverse, 2.2e-16, bar 1e-15; a
-random table tangent forward 6.4e-15, bar 2.5e-14; the table gradient in reverse
-against its exact scatter 7.8e-16, bar 2.5e-14 (one bar for both table checks).
+chebder on 300 random patches and points, for the table's 8 x 8 blocks (its
+derivatives packed) and their leading 5 x 5 (not packed), |err| / max(1, |ref|):
+values and coordinate derivatives, forward and reverse, 4.0e-16, bar 1e-15; a
+random table tangent forward 5.3e-15, bar 2.5e-14; the table gradient in reverse
+against its exact scatter 4.4e-16, bar 2.5e-14 (one bar for both table checks).
 """
 
 import os
@@ -196,7 +196,7 @@ def _x64_off(tmp_path, body, **arrays):
 
 
 def test_float32(refs, tmp_path):
-    """float32 is the default runtime (x64 off): the leading 7 x 7 block of
+    """float32 is the default runtime (x64 off): the leading 5 x 5 block of
     the same patches, with erfcx and every prefactor in float32 too, on the
     float32-rounded points."""
     a, x = refs[:2]
@@ -453,6 +453,28 @@ def test_lower_end_is_the_family_domain():
 
 
 @pytest.mark.slow
+def test_zone_u2_regenerates_exact():
+    # the CI-affordable regeneration canary: zone U2 rebuilds bit-exactly
+    # through the generator's own refinement and fit. The whole module takes
+    # ~17 min and is compared only with CHEBAX_FULL_REGEN=1 (test below);
+    # policy in CLAUDE.md.
+    import mpmath as mpm
+    from chebax._src.recipes._gen_common import DPS
+
+    z = t.NAMES.index("U2")
+    with mpm.workdps(DPS):
+        pc, yc, blocks, _ = gammainc_array_gen.zone_table(mpm, "U2")
+    n = t.NPAR[z] * t.NARG[z]
+    assert np.array_equal(np.array(blocks), t.TABLE[t.OFFSET[z] : t.OFFSET[z] + n])
+    assert np.array_equal(pc, t.PCUTS[z, : t.NPAR[z] + 1])
+    assert np.array_equal(yc, t.YCUTS[z, : t.NARG[z] + 1])
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not os.environ.get("CHEBAX_FULL_REGEN"),
+    reason="~17 min; set CHEBAX_FULL_REGEN=1 (pre-release)",
+)
 def test_table_regenerates_bit_for_bit(tmp_path):
     gammainc_array_gen.main(tmp_path)
     assert (tmp_path / "gammainc_array_table.py").read_text() == pathlib.Path(
@@ -513,7 +535,7 @@ def test_density_in_mixed_underflow_lanes():
             )
 
 
-@pytest.mark.parametrize("ky", [12, 7])
+@pytest.mark.parametrize("ky", [8, 5])
 def test_patch_sum_against_chebval2d(ky):
     from numpy.polynomial import chebyshev
 

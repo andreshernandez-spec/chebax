@@ -92,7 +92,9 @@ python -m chebax._src.recipes.betainc_wide_gen    # regenerate the wide panels (
                                                   #  tests/test_betainc.py -m slow)
 python -m chebax._src.recipes.gammainc_gen        # regenerate the gammainc log-tables
 python -m chebax._src.recipes.gammainc_large_gen  # regenerate the Temme-zone tables (~4 s)
-python -m chebax._src.recipes.gammainc_array_gen  # regenerate the per-element patches (~1 min)
+python -m chebax._src.recipes.gammainc_array_gen  # regenerate the per-element patches (~17 min;
+                                                  #  CI regen-checks only zone U2; full check
+                                                  #  behind CHEBAX_FULL_REGEN=1)
 python -m chebax._src.recipes.gammaincinv_array_gen # regenerate the quantile table (~2.5 min)
 python -m chebax._src.recipes.gammaln_gen         # regenerate the gammaln tables (~3 s)
 python -m chebax._src.recipes.ndtri_exp_gen       # regenerate the ndtri_exp table (~13 s)
@@ -118,7 +120,8 @@ compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
    (`chebax.__version__` reads the installed metadata).
 2. Before tagging: the tests run on main is green for the merge commit, and
    so is the full regeneration CI skips, `CHEBAX_FULL_REGEN=1 python -m pytest
-   -m slow tests/test_betainc.py tests/test_hyp1f1.py` (~35 min).
+   -m slow tests/test_betainc.py tests/test_hyp1f1.py tests/test_gammainc_array.py`
+   (~50 min).
 3. `git tag -a vX.Y.Z <merge commit>` and push the tag; that push is the
    release, so it is Andres's. `.github/workflows/release.yml` checks the tag
    against the version and the tests run, builds, checks what the sdist and

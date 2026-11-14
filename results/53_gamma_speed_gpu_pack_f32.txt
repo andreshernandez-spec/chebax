@@ -1,0 +1,87 @@
+run gpu-pack-f32: main = 765853d, branch = bbcbe30, pack_all = 
+branch = bbcbe30 plus the patch sum packed on the GPU for gammainc_array only (gpu_pack); pack_all = bbcbe30 with the patch sum packed on the GPU everywhere, the quantile's forward-mode slopes too
+jax: branch 0.11.0, main 0.11.0, pack_all 0.11.0
+ratio = main ns / variant ns (above 1: faster)
+
+## gpu float32, ns per element (N = 4194304)
+| op | region | main | branch | pack_all | branch ratio | pack_all ratio |
+|---|---|---|---|---|---|---|
+| P vg | a<1 lower | 2.4 | 1.7 | 1.7 | 1.37x | 1.37x |
+| P vg | a<1 bulk | 2.4 | 1.7 | 1.7 | 1.37x | 1.36x |
+| P vg | a<1 upper | 2.4 | 1.7 | 1.7 | 1.36x | 1.37x |
+| P vg | a1-20 lower | 2.4 | 1.7 | 1.7 | 1.37x | 1.37x |
+| P vg | a1-20 bulk | 2.4 | 1.7 | 1.7 | 1.38x | 1.37x |
+| P vg | a1-20 upper | 2.4 | 1.7 | 1.7 | 1.37x | 1.37x |
+| P vg | a>20 lower | 2.4 | 1.7 | 1.7 | 1.37x | 1.37x |
+| P vg | a>20 bulk | 2.4 | 1.7 | 1.7 | 1.38x | 1.37x |
+| P vg | a>20 upper | 2.4 | 1.7 | 1.7 | 1.37x | 1.38x |
+| P vg | mixed | 2.5 | 1.8 | 1.8 | 1.39x | 1.41x |
+| lnQ vg | a<1 lower | 3.1 | 2.2 | 2.2 | 1.40x | 1.40x |
+| lnQ vg | a<1 bulk | 3.1 | 2.2 | 2.2 | 1.40x | 1.41x |
+| lnQ vg | a<1 upper | 3.1 | 2.2 | 2.2 | 1.40x | 1.39x |
+| lnQ vg | a1-20 lower | 3.1 | 2.2 | 2.2 | 1.40x | 1.39x |
+| lnQ vg | a1-20 bulk | 3.1 | 2.2 | 2.2 | 1.39x | 1.39x |
+| lnQ vg | a1-20 upper | 3.1 | 2.2 | 2.2 | 1.40x | 1.39x |
+| lnQ vg | a>20 lower | 3.1 | 2.2 | 2.2 | 1.40x | 1.40x |
+| lnQ vg | a>20 bulk | 3.1 | 2.2 | 2.2 | 1.40x | 1.40x |
+| lnQ vg | a>20 upper | 3.1 | 2.2 | 2.2 | 1.39x | 1.40x |
+| lnQ vg | mixed | 3.2 | 2.3 | 2.3 | 1.38x | 1.38x |
+| inv vg_p | a<1 lower | 2.6 | 1.6 | 1.6 | 1.62x | 1.63x |
+| inv vg_p | a<1 bulk | 2.6 | 1.6 | 1.6 | 1.62x | 1.62x |
+| inv vg_p | a<1 upper | 2.6 | 1.6 | 1.6 | 1.63x | 1.61x |
+| inv vg_p | a1-20 lower | 2.6 | 1.6 | 1.6 | 1.62x | 1.60x |
+| inv vg_p | a1-20 bulk | 2.6 | 1.6 | 1.6 | 1.61x | 1.61x |
+| inv vg_p | a1-20 upper | 2.6 | 1.6 | 1.6 | 1.62x | 1.61x |
+| inv vg_p | a>20 lower | 7.5 | 1.8 | 1.8 | 4.06x | 4.04x |
+| inv vg_p | a>20 bulk | 7.5 | 1.9 | 1.8 | 4.02x | 4.08x |
+| inv vg_p | a>20 upper | 7.5 | 1.8 | 1.8 | 4.05x | 4.05x |
+| inv vg_p | mixed | 2.6 | 1.6 | 1.6 | 1.61x | 1.62x |
+| inv vg | a<1 lower | 2.7 | 2.7 | 3.5 | 1.01x | 0.77x |
+| inv vg | a<1 bulk | 2.7 | 2.7 | 3.5 | 1.00x | 0.77x |
+| inv vg | a<1 upper | 2.7 | 2.7 | 3.5 | 1.01x | 0.77x |
+| inv vg | a1-20 lower | 2.7 | 2.7 | 3.5 | 1.00x | 0.77x |
+| inv vg | a1-20 bulk | 2.7 | 2.7 | 3.5 | 1.01x | 0.77x |
+| inv vg | a1-20 upper | 2.7 | 2.7 | 3.5 | 1.01x | 0.77x |
+| inv vg | a>20 lower | 9.3 | 4.0 | 5.6 | 2.34x | 1.65x |
+| inv vg | a>20 bulk | 9.3 | 4.0 | 5.6 | 2.34x | 1.66x |
+| inv vg | a>20 upper | 9.3 | 4.0 | 5.6 | 2.34x | 1.66x |
+| inv vg | mixed | 2.7 | 2.7 | 3.5 | 1.01x | 0.77x |
+
+compile s / temp MiB (gpu float32, largest over passes)
+  P vg: main 1.0 / 1180.0; branch 0.8 / 912.0; pack_all 0.8 / 912.0
+  lnQ vg: main 0.6 / 1152.0; branch 0.7 / 928.0; pack_all 0.7 / 928.0
+  inv vg_p: main 2.0 / 660.0; branch 1.8 / 688.0; pack_all 1.6 / 688.0
+  inv vg: main 2.6 / 916.0; branch 2.6 / 688.0; pack_all 13.1 / 1236.0
+
+accuracy, worst per region (gpu float32)
+  P vg: dP/da
+        main: worst 1.2e-05 | 3e-06 7e-07 5e-06 6e-06 8e-07 5e-06 1e-05 8e-07 1e-05 9e-06
+      branch: worst 1.2e-05 | 3e-06 7e-07 5e-06 6e-06 8e-07 5e-06 1e-05 6e-07 1e-05 9e-06
+    pack_all: worst 1.2e-05 | 3e-06 7e-07 5e-06 6e-06 8e-07 5e-06 1e-05 6e-07 1e-05 9e-06
+  P vg: dP/dx
+        main: worst 1.4e-05 | 4e-06 2e-06 5e-06 6e-06 8e-07 6e-06 1e-05 8e-07 1e-05 9e-06
+      branch: worst 1.4e-05 | 4e-06 2e-06 5e-06 6e-06 8e-07 6e-06 1e-05 6e-07 1e-05 9e-06
+    pack_all: worst 1.4e-05 | 4e-06 2e-06 5e-06 6e-06 8e-07 6e-06 1e-05 6e-07 1e-05 9e-06
+  lnQ vg: dlnQ/da
+        main: worst 2e-06 | 2e-07 1e-06 8e-07 1e-08 8e-07 5e-07 2e-09 7e-08 3e-07 2e-06
+      branch: worst 2e-06 | 2e-07 1e-06 8e-07 1e-08 8e-07 5e-07 2e-09 7e-08 3e-07 2e-06
+    pack_all: worst 2e-06 | 2e-07 1e-06 8e-07 1e-08 8e-07 5e-07 2e-09 7e-08 3e-07 2e-06
+  lnQ vg: dlnQ/dx
+        main: worst 1.4e-05 | 4e-06 3e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+      branch: worst 1.4e-05 | 4e-06 3e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+    pack_all: worst 1.4e-05 | 4e-06 3e-06 1e-06 6e-06 8e-07 3e-07 1e-05 8e-07 3e-07 9e-06
+  inv vg_p: dx/dp
+        main: worst 1.8e-05 | 1e-05 1e-05 9e-06 3e-06 3e-06 8e-07 2e-05 1e-06 4e-06 1e-05
+      branch: worst 1.5e-05 | 1e-05 2e-06 9e-06 7e-06 2e-06 3e-06 1e-05 2e-06 6e-06 8e-06
+    pack_all: worst 1.5e-05 | 1e-05 2e-06 9e-06 7e-06 2e-06 3e-06 1e-05 2e-06 6e-06 8e-06
+  inv vg: dx/da
+        main: worst 1.2e-05 | 1e-05 1e-05 2e-06 3e-06 1e-06 6e-07 7e-07 3e-07 3e-07 8e-06
+      branch: worst 9.7e-06 | 1e-05 2e-06 2e-06 3e-06 3e-07 6e-07 5e-07 3e-07 3e-07 3e-06
+    pack_all: worst 9.7e-06 | 1e-05 2e-06 2e-06 3e-06 3e-07 6e-07 5e-07 3e-07 3e-07 3e-06
+  inv vg: dx/dp
+        main: worst 1.8e-05 | 1e-05 1e-05 9e-06 3e-06 3e-06 8e-07 2e-05 1e-06 4e-06 1e-05
+      branch: worst 1.2e-05 | 1e-05 2e-06 1e-05 3e-06 5e-07 8e-07 1e-05 1e-06 5e-06 2e-06
+    pack_all: worst 1.2e-05 | 1e-05 2e-06 1e-05 3e-06 5e-07 8e-07 1e-05 1e-06 5e-06 2e-06
+
+regions: a<1 lower, a<1 bulk, a<1 upper, a1-20 lower, a1-20 bulk, a1-20 upper, a>20 lower, a>20 bulk, a>20 upper, mixed
+passes differing by more than 1.25x: none

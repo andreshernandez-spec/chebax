@@ -1,13 +1,14 @@
 """Per-element gammainc: P, Q and their logs with a different a >= 0.1 on every
 element (chebax.gammainc_array; inputs normalized in gammainc.py). Per element:
-pick the zone, locate one 2-D Chebyshev patch of gammainc_array_gen's table
-(zones and formulas in its docstring), sum its KY x KP block (_common.patch_sum),
+pick the zone, find its patch of gammainc_array_gen's table on the zone's
+dyadic grid (_common.locate_zones), sum its KY x KP block (_common.patch_sum),
 add the zone's prefactor. No lgamma, no loop. float32 uses the leading KY32 x KP32
 block.
 
 Each zone forms its small probability directly as a log and the other as
-log1p(-exp(direct)). That loses only in A0, where Q falls to 0.024 (a = 0.1,
-x = 1.1): ln Q 8.4e-15 there, 7.8e-16 elsewhere (tests/test_gammainc_array.py).
+log1p(-exp(direct)), or for P and Q themselves as 1 - exp(direct). That loses
+only in A0, where Q falls to 0.024 (a = 0.1, x = 1.1): ln Q 5.6e-15 there,
+8.9e-16 elsewhere (tests/test_gammainc_array.py).
 
 The Temme zone's phi = d - log1p(d), d = (x - a)/a, cancels near d = 0, so it is
 2 z^2 S(z), z = d/(2 + d), S = 1 + 2/3 z + z^2 + 4/5 z^3 + ..., and eta = 2 z sqrt(S).
@@ -26,7 +27,8 @@ import jax
 import jax.numpy as jnp
 
 from chebax._src.recipes import gammainc_array_table as _t
-from chebax._src.recipes._common import edge_slope, locate_patch, log1p, patch_sum
+from chebax._src.recipes._common import edge_slope, locate_zones, log1p
+from chebax._src.recipes._common import patch_sum, patch_sum_gpu_packed
 from chebax._src.recipes.erf_family import erfcx
 from chebax._src.recipes.gammaincinv_kernel import log_xpdf
 
@@ -38,14 +40,11 @@ _S = tuple(1.0 if k % 2 == 0 else (k + 1) / (k + 2) for k in range(25))
 
 
 @functools.lru_cache(maxsize=2)
-def _tables(dtype):
-    """(patch blocks, parameter cuts, argument cuts) in the compute dtype."""
+def _table(dtype):
+    """The patch blocks in the compute dtype."""
     dt = np.dtype(dtype)
     tab = _t.TABLE if dt == np.float64 else _t.TABLE[:, : _t.KY32, : _t.KP32]
-    return np.ascontiguousarray(tab, dt), _t.PCUTS.astype(dt), _t.YCUTS.astype(dt)
-
-
-_locate = locate_patch
+    return np.ascontiguousarray(tab, dt)
 
 
 def _phi_eta(d):
@@ -144,12 +143,11 @@ def _exp_cdf_jvp(primals, tangents):
     )
 
 
-def _log_pq(a, x, d=None):
-    """(ln P, ln Q) for a, x of one shape; no x = 0 slope. d, if given, is x/a - 1
-    held exactly, read instead of x for a >= 1 (gammaincinv_array's derivative
-    needs it where one float step of x spans the distribution, a ~ 1e35)."""
-    tab, pcuts, ycuts = (jnp.asarray(v) for v in _tables(a.dtype.name))
-    npar, narg, offset = (jnp.asarray(v) for v in (_t.NPAR, _t.NARG, _t.OFFSET))
+def _direct(a, x, d=None, gpu_pack=True):
+    """(the zone's direct log, True where it is ln P, a and x with invalid lanes
+    moved inside); a and x of one shape. d and gpu_pack as in _log_pq."""
+    tab = jnp.asarray(_table(a.dtype.name))
+    narg, offset = (jnp.asarray(v) for v in (_t.NARG, _t.OFFSET))
 
     good_a = (a >= _t.ALO) & (a < jnp.inf)
     a = jnp.where(good_a, a, 1.0)
@@ -202,9 +200,10 @@ def _log_pq(a, x, d=None):
         [_over(x_a0, a + 1.0), _over(a + 1.0, x_b0), lam_lo, lam_up],
         eta,
     )
-    i, sp = _locate(par, pcuts[zone], npar[zone])
-    j, sy = _locate(arg, ycuts[zone], narg[zone])
-    f = patch_sum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
+    i, sp = locate_zones(par, _t.PCUTS, _t.NPAR, zone)
+    j, sy = locate_zones(arg, _t.YCUTS, _t.NARG, zone)
+    psum = patch_sum_gpu_packed if gpu_pack else patch_sum
+    f = psum(tab, offset[zone] + i * narg[zone] + j, sy, sp)
 
     ln_a = jnp.log(a)
     half_ln_2pi_a = 0.5 * (ln_a + _LN2PI)
@@ -237,19 +236,41 @@ def _log_pq(a, x, d=None):
         temme,
     )
     is_p = in_a0 | is_low | (in_t & (y < 0.0))
+    return direct, is_p, a, xx
+
+
+def _ends(a, x, v, at_inf, at_zero):
+    """v with the x = 0 and x = inf values and nan for invalid a or x."""
+    ok = (x > 0.0) & (x < jnp.inf)
+    v = jnp.where(ok, v, jnp.where(x == jnp.inf, at_inf, at_zero))
+    bad = jnp.isnan(x) | ~((a >= _t.ALO) & (a < jnp.inf))
+    return jnp.where(bad, jnp.nan, v)
+
+
+def _log_pq(a, x, d=None, gpu_pack=True):
+    """(ln P, ln Q) for a, x of one shape; no x = 0 slope. d, if given, is x/a - 1
+    held exactly, read instead of x for a >= 1 (gammaincinv_array's derivative
+    needs it where one float step of x spans the distribution, a ~ 1e35).
+    gpu_pack False keeps patch_sum's CPU packing on the GPU too, for
+    gammaincinv_array's forward-mode slopes (python bool)."""
+    direct, is_p, am, xx = _direct(a, x, d, gpu_pack)
     if d is None:
-        other = log1p(-_exp_cdf(direct, a, xx, jnp.where(is_p, 1.0, -1.0)))
+        other = log1p(-_exp_cdf(direct, am, xx, jnp.where(is_p, 1.0, -1.0)))
     else:
         # the quantile's derivative: its x tangent is not the whole one
         other = log1p(-_exp0(direct))
     lp = jnp.where(is_p, direct, other)
     lq = jnp.where(is_p, other, direct)
+    return _ends(a, x, lp, 0.0, -jnp.inf), _ends(a, x, lq, -jnp.inf, 0.0)
 
-    top = x == jnp.inf
-    lp = jnp.where(ok, lp, jnp.where(top, 0.0, -jnp.inf))
-    lq = jnp.where(ok, lq, jnp.where(top, -jnp.inf, 0.0))
-    bad = jnp.isnan(x) | ~good_a
-    return jnp.where(bad, jnp.nan, lp), jnp.where(bad, jnp.nan, lq)
+
+def _cdf(a, x, lower):
+    """P (lower) or Q from one exp of the direct log: the other side is 1 - it,
+    exact where it is above 1/2 and at least 1/2 otherwise."""
+    direct, is_p, am, xx = _direct(a, x)
+    e = _exp_cdf(direct, am, xx, jnp.where(is_p, 1.0, -1.0))
+    v = jnp.where(is_p == lower, e, 1.0 - e)
+    return _ends(a, x, v, 1.0 if lower else 0.0, 0.0 if lower else 1.0)
 
 
 def _density0(a):
@@ -258,17 +279,11 @@ def _density0(a):
 
 
 def p(a, x):
-    lp, _ = _log_pq(a, x)
-    return _exp_cdf(lp, a, x, 1.0) + edge_slope(
-        jnp.where(x == 0.0, _density0(a), 0.0), x
-    )
+    return _cdf(a, x, True) + edge_slope(jnp.where(x == 0.0, _density0(a), 0.0), x)
 
 
 def q(a, x):
-    _, lq = _log_pq(a, x)
-    return _exp_cdf(lq, a, x, -1.0) + edge_slope(
-        jnp.where(x == 0.0, -_density0(a), 0.0), x
-    )
+    return _cdf(a, x, False) + edge_slope(jnp.where(x == 0.0, -_density0(a), 0.0), x)
 
 
 def log_p(a, x):

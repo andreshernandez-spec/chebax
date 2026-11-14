@@ -131,9 +131,11 @@ def test_names_load_only_their_tables(module):
 # calling one gammainc or gammaincinv path loads its own tables and not
 # the other path's
 _GAMMA_ARRAY = {"gammainc_array_table", "erf_table"}
-_GAMMA_ARRAY_INV = _GAMMA_ARRAY | {"gammaincinv_array_table"}
-# both quantile paths start from the quantile table (gammaincinv_start)
-_GAMMA_INV = _GAMMA | {"gammaincinv_array_table"}
+# both quantile paths start from the quantile table (gammaincinv_start) and
+# take lnGamma from chebax's gammaln
+_QUANTILE = {"gammaincinv_array_table", "gammaln_table"}
+_GAMMA_ARRAY_INV = _GAMMA_ARRAY | _QUANTILE
+_GAMMA_INV = _GAMMA | _QUANTILE
 _GAMMA_PATHS = {
     "gammainc_scalar(2.5, 3.0)": _GAMMA,
     "gammainc_frozen(2.5)(3.0)": _GAMMA,

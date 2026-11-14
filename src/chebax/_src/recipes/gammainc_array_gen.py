@@ -1,7 +1,7 @@
 """Generator for the per-element gammainc table. Build-time only; mpmath inside.
 
 gammainc_array takes a per element, so instead of collapsing a 2-D table's
-a-axis per element (~4,300 coefficients) each element evaluates one KY x KP
+a-axis per element (~4,300 coefficients) each element evaluates one BLOCK
 patch of a tensor grid over its zone. Zones (lambda = x/a, phi = lambda - 1
 - ln lambda, eta = sign(lambda - 1) sqrt(2 phi), Gc(a) = lnGamma(a+1) minus
 its Stirling form); each table folds the a-only prefactor in, so the runtime
@@ -27,7 +27,7 @@ u = ln(1 + a) moves the pole of 1F1(1; a+1; .) at a = -1 to infinity
 (degree 17 in u against 53 in a at x -> 0, experiments/03); the split at
 x = a + 1 puts the transition at a fixed coordinate and removes the uniform
 recipe's x = 8 seam. Each zone starts as one patch, fitted at NODES x NODES
-nodes in mpmath, and a patch whose coefficients outside its leading KY x KP
+nodes in mpmath, and a patch whose coefficients outside its leading BLOCK
 block sum to more than TOL (a relative bound on P or Q) is halved along the
 axis holding the larger tail, until every patch fits: 1088 patches at 8 x 8
 (A0 8 x 8, B0 8 x 29, L1 24 x 8, U1 29 x 6, L2 17 x 14, U2 2 x 4, T 10 x 18,
@@ -60,7 +60,9 @@ ALO = 0.1  # the uniform recipe's lower end, chebax.domains.GAMMAINC.lo
 ASPLIT = 10.0  # L1/U1 in u up to here, L2/U2 in v = ASPLIT/a above
 ELO, EHI = _glg.ELO, _glg.EHI
 NODES = 16  # per patch and direction
-KY, KP = 8, 8  # stored block: argument x parameter coefficients
+# the block marcum_gen and skewnorm_gen take from here: argument x parameter
+KY, KP = 12, 12
+BLOCK = (8, 8)  # this table's
 TOL = 1e-15
 TOL32 = 1e-8  # float32 roundoff is 6e-8
 NAMES = ("A0", "B0", "L1", "U1", "L2", "U2", "T")
@@ -187,11 +189,12 @@ def _refine(mp, f, kind, pbox, ybox, *, block=None, tol=None, n_nodes=None, a_of
     return pc, yc, patches
 
 
-def _block32(absc, tol=TOL32):
-    """Smallest (ky, kp) whose outside sum is <= tol (TOL32) on every patch."""
-    best = (KY, KP)
-    for ky in range(1, KY + 1):
-        for kp in range(1, KP + 1):
+def _block32(absc, tol=TOL32, block=None):
+    """Smallest (ky, kp) within block (KY x KP by default) whose outside sum is
+    <= tol (TOL32) on every patch."""
+    best = (KY, KP) if block is None else block
+    for ky in range(1, best[0] + 1):
+        for kp in range(1, best[1] + 1):
             out = absc.sum(axis=(1, 2)) - absc[:, :ky, :kp].sum(axis=(1, 2))
             if np.all(out <= tol) and ky * kp < best[0] * best[1]:
                 best = (ky, kp)
@@ -199,12 +202,13 @@ def _block32(absc, tol=TOL32):
 
 
 def zone_table(mp, name):
-    """(parameter cuts, argument cuts, KY x KP blocks, |coefficients|) of one zone
+    """(parameter cuts, argument cuts, BLOCK blocks, |coefficients|) of one zone
     as main writes it, inside mp.workdps(DPS); the CI canary rebuilds U2 with it."""
     _, _, zones = _zones(mp)
     _, f, kind, pbox, ybox = next(z for z in zones if z[0] == name)
-    pc, yc, patches = _refine(mp, f, kind, pbox, ybox)
-    blocks = [[[float(c[k][j]) for j in range(KP)] for k in range(KY)] for c in patches]
+    pc, yc, patches = _refine(mp, f, kind, pbox, ybox, block=BLOCK)
+    ky, kp = BLOCK
+    blocks = [[[float(c[k][j]) for j in range(kp)] for k in range(ky)] for c in patches]
     absc = [[[float(abs(v)) for v in row] for row in c] for c in patches]
     return pc, yc, blocks, absc
 
@@ -226,7 +230,7 @@ def main(out_dir=None):
             absc += za
             print(f"{name}: {npar[-1]} x {narg[-1]} patches", flush=True)
     # float32 decides on 1e-8, far above float64's resolution of the sums
-    ky32, kp32 = _block32(np.array(absc))
+    ky32, kp32 = _block32(np.array(absc), block=BLOCK)
     # the runtime locates with the interior cuts and the last; pad by
     # repeating the last so every zone's row has the same length
     pad = max(map(len, pcuts)), max(map(len, ycuts))

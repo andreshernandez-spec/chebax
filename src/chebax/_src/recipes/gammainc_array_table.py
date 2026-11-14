@@ -6,7 +6,7 @@ Axes: TABLE[n, k, j] = j-th parameter coefficient of the k-th argument coefficie
 
 import numpy as np
 
-META = {'nodes': 16, 'tol': 1e-15, 'tol32': 1e-08, 'alo': 0.1, 'asplit': 10.0, 'elo': -0.7, 'ehi': 2.6, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '184228cb25bdccb1'}
+META = {'nodes': 16, 'tol': 1e-15, 'tol32': 1e-08, 'alo': 0.1, 'asplit': 10.0, 'elo': -0.7, 'ehi': 2.6, 'dps': 40, 'mpmath': '1.4.1', 'generator_sha256': '2f2df3c46c221975'}
 NAMES = ('A0', 'B0', 'L1', 'U1', 'L2', 'U2', 'T')
 ALO = 0.1
 ASPLIT = 10.0

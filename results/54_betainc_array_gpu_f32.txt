@@ -1,0 +1,8 @@
+jax 0.11.0 on cuda:0, float32, N = 1048576 (vmap betainc_scalar N = 256); ns per element, min of 2 passes
+| op | a, b in [0.1, 1] | [1, 10] | [10, 100] | box |
+|---|---|---|---|---|
+| betainc_array | 1.8 | 1.8 | 1.9 | 2.1 |
+| betainc_array v+g | 2.5 | 2.4 | 2.6 | 2.9 |
+| log_betainc_array | 1.9 | 1.8 | 1.8 | 2.2 |
+| log_betainc_array v+g | 2.5 | 2.5 | 2.6 | 2.8 |
+| jax.scipy betainc | 25.1 | 25.2 | 25.1 | 25.2 |

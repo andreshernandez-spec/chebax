@@ -296,7 +296,8 @@ def test_besseli_ratio_joint_gradient():
     """value_and_grad in nu and x together never finished compiling on the
     CPU while inf and nan had their own mask (nu or x alone: seconds). At
     64 points it takes ~11 s now; a subprocess fails a stall at 300 s. The
-    joint gradient equals the two single ones, and is 0 in x at inf."""
+    joint gradient matches the two single ones (to 1 eps in x on jax 0.12.1,
+    bitwise before), and is 0 in x at inf."""
     import os
     import subprocess
     import sys
@@ -306,8 +307,8 @@ import jax, jax.numpy as jnp, numpy as np, chebax
 x=jnp.concatenate([jnp.linspace(0.0,50.0,62),jnp.asarray([1e35,jnp.inf])])
 f=lambda n,x:jnp.sum(chebax.besseli_ratio(n,x))
 _,(gn,gx)=jax.jit(jax.value_and_grad(f,(0,1)))(2.0,x)
-assert float(gn)==float(jax.jit(jax.grad(f,0))(2.0,x))
-assert np.array_equal(np.asarray(gx),np.asarray(jax.jit(jax.grad(f,1))(2.0,x)))
+np.testing.assert_allclose(float(gn),float(jax.jit(jax.grad(f,0))(2.0,x)),rtol=1e-15)
+np.testing.assert_allclose(np.asarray(gx),np.asarray(jax.jit(jax.grad(f,1))(2.0,x)),rtol=1e-15)
 assert np.all(np.isfinite(np.asarray(gx))) and float(gx[-1])==0.0
 """
     env = {**os.environ, "JAX_PLATFORMS": "cpu", "JAX_ENABLE_X64": "true"}

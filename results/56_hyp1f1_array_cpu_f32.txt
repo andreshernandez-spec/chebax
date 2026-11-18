@@ -1,0 +1,9 @@
+jax 0.11.0 on cpu:0, float32, N = 65536 (vmap hyp1f1_scalar N = 256); ns per element, min of 2 passes
+| op | noncentral t | box, x <= X_S | box, tail | box, mixed |
+|---|---|---|---|---|
+| hyp1f1_array | 133.2 | 135.8 | 134.2 | 134.5 |
+| hyp1f1_array v+g | 154.0 | 158.3 | 151.9 | 152.6 |
+| log_hyp1f1_array | 125.4 | 127.3 | 124.8 | 126.7 |
+| log_hyp1f1_array v+g | 153.5 | 156.4 | 147.9 | 153.8 |
+| jax.scipy hyp1f1 | 207.5 | 355.3 | 537.2 | 531.6 |
+| jax.scipy hyp1f1 v+g | 1158.3 | 2200.8 | 5201.6 | 5106.8 |

@@ -1,0 +1,9 @@
+jax 0.11.0 on cuda:0, float32, N = 1048576 (vmap hyp1f1_scalar N = 256); ns per element, min of 2 passes
+| op | noncentral t | box, x <= X_S | box, tail | box, mixed |
+|---|---|---|---|---|
+| hyp1f1_array | 2.3 | 2.4 | 2.3 | 2.4 |
+| hyp1f1_array v+g | 4.5 | 4.7 | 4.5 | 4.7 |
+| log_hyp1f1_array | 2.2 | 2.4 | 2.3 | 2.4 |
+| log_hyp1f1_array v+g | 3.3 | 3.5 | 3.3 | 3.4 |
+| jax.scipy hyp1f1 | 15.1 | 26.7 | 42.7 | 41.9 |
+| jax.scipy hyp1f1 v+g | 38.4 | 69.6 | 123.8 | 124.6 |

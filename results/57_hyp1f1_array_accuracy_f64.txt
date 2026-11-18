@@ -1,0 +1,10 @@
+jax 0.11.0, float64, N = 4000 per regime; worst |ln M - ref| / max(1, |ref|)
+| regime | hyp1f1_array | (a, b, x) at worst | hyp1f1_scalar | jax.scipy hyp1f1 |
+|---|---|---|---|---|
+| x ~ U(0, X_S) | 3.33e-16 | (0.1898, 1.259, 2.855) | 3.7e-13 (400 pts) | 1.2e-15 |
+| x log-uniform 1e-8..X_S | 3.05e-16 | (3.077, 2.649, 1.283) | 6.2e-15 (400 pts) | 8.9e-16 |
+| x within 50% of b | 3.33e-16 | (0.2798, 4.335, 6.47) | 2.6e-13 (400 pts) | 8.1e-16 |
+| x within 1e-3 of X_S | 2.32e-16 | (0.1049, 0.1362, 8.004) | 1.5e-14 (400 pts) | 4.0e-16 |
+| x log-uniform X_S..1e5 | 2.47e-16 | (2.353, 8.341, 74.38) | 4.8e-15 (400 pts) | inf |
+| noncentral t | 3.01e-16 | (9.186, 0.5, 9.727) | 2.4e-15 (400 pts) | 4.4e-16 |
+| cell corners | 6.01e-16 | (1.778, 5.623, 3) | 5.2e-15 (400 pts) | 1.2e-15 |

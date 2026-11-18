@@ -26,6 +26,7 @@ from chebax._src.recipes._common import (
     check_range,
     deprecated_factory,
     frozen_cache,
+    per_element,
 )
 from chebax._src.series import ChebSeries, _chebval
 
@@ -131,31 +132,48 @@ def _traced_series(a, b):
 def hyp1f1_scalar(a, b, x):
     """M(a, b, x), a and b traced scalars in [0.1, 10] (unchecked under trace),
     differentiable in all three."""
-    a = canon_param(a, "hyp1f1_scalar", "a")
-    b = canon_param(b, "hyp1f1_scalar", "b")
+    a = canon_param(a, "hyp1f1_scalar", "a", array="hyp1f1_array")
+    b = canon_param(b, "hyp1f1_scalar", "b", array="hyp1f1_array")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=False)
 
 
 def log_hyp1f1_scalar(a, b, x):
     """ln M(a, b, x) as hyp1f1_scalar, with no overflow at large x."""
-    a = canon_param(a, "log_hyp1f1_scalar", "a")
-    b = canon_param(b, "log_hyp1f1_scalar", "b")
+    a = canon_param(a, "log_hyp1f1_scalar", "a", array="log_hyp1f1_array")
+    b = canon_param(b, "log_hyp1f1_scalar", "b", array="log_hyp1f1_array")
     lnr, ltail = _traced_series(a, b)
     return eval_hyp1f1(a, b, jnp.asarray(x), lnr, ltail, log=True)
 
 
 def hyp1f1(a, b, x=None):
-    """M(a, b, x) for one pair (a, b) in [0.1, 10]^2 (hyp1f1_scalar). Without
-    x it is the deprecated 0.4 factory. chebax.pergroup gives one pair per group."""
+    """M(a, b, x) for (a, b) in [0.1, 10]^2: hyp1f1_scalar when a and b hold one
+    value each, else hyp1f1_array. Without x it is the deprecated 0.4 factory."""
     if x is None:
         return deprecated_factory("hyp1f1", hyp1f1_frozen, a, b)
-    return hyp1f1_scalar(a, b, x)
+    return hyp1f1_array(a, b, x) if per_element(a, b) else hyp1f1_scalar(a, b, x)
 
 
 def log_hyp1f1(a, b, x):
-    """ln M(a, b, x) for one pair (a, b) in [0.1, 10]^2: log_hyp1f1_scalar."""
+    """ln M(a, b, x), dispatched like hyp1f1."""
+    if per_element(a, b):
+        return log_hyp1f1_array(a, b, x)
     return log_hyp1f1_scalar(a, b, x)
+
+
+def hyp1f1_array(a, b, x):
+    """M(a, b, x) with a and b per element in [0.1, 10] (nan outside),
+    broadcast with x >= 0; differentiable in all three."""
+    from chebax._src.recipes import hyp1f1_array as _array
+
+    return _array.hyp1f1_array(a, b, x)
+
+
+def log_hyp1f1_array(a, b, x):
+    """ln M(a, b, x) as hyp1f1_array, with no overflow at large x."""
+    from chebax._src.recipes import hyp1f1_array as _array
+
+    return _array.log_hyp1f1_array(a, b, x)
 
 
 def hyp1f1_frozen(a, b):

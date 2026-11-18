@@ -69,6 +69,7 @@ _LAZY = {
         "log_betainc",
         "log_betainc_scalar",
     ),
+    "chebax._src.recipes.betainc_array": ("betainc_array", "log_betainc_array"),
     "chebax._src.recipes.betaincinv": ("betaincinv",),
     "chebax._src.recipes.gammainc": (
         "gammainc",
@@ -137,6 +138,7 @@ __all__ = [
     "bessely_dnu_frozen",
     "bessely_frozen",
     "betainc",
+    "betainc_array",
     "betainc_frozen",
     "betainc_scalar",
     "betaincinv",
@@ -170,6 +172,7 @@ __all__ = [
     "log_besselk",
     "log_besselk_scalar",
     "log_betainc",
+    "log_betainc_array",
     "log_betainc_scalar",
     "log_gammainc",
     "log_gammainc_array",
@@ -297,6 +300,7 @@ if TYPE_CHECKING:
         log_betainc,
         log_betainc_scalar,
     )
+    from chebax._src.recipes.betainc_array import betainc_array, log_betainc_array
     from chebax._src.recipes.betaincinv import betaincinv
     from chebax._src.recipes.gammainc import (
         gammainc,

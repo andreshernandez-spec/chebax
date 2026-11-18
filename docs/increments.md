@@ -2303,6 +2303,99 @@ on jax 0.5.3 (bar 2e-11 to 6e-11), dx/dp at huge a 3.4e-13 (bar 4.4e-13 to
 Not done: a refinement that splits one patch instead of a grid line (fewer
 patches, faster generation).
 
+## 61. betainc_array: a and b per element (2026-11-18)
+
+betainc's tables contract an (x, a, b) tensor once per call, so a and b per
+element (Beta regressions, Binomial and NegativeBinomial counts, which is
+what PyMC's elementwise betainc sees) cost a contraction per element: 2.3 ms
+through vmap on one CPU core. `betainc_array` and `log_betainc_array` take a
+and b per element on the same box, [0.1, 100], nan outside, differentiable
+in all three (`betainc_array_gen.py`, `betainc_array.py`).
+
+Form. In one orientation (p, q, t), ln I_t(p, q) = -(p phi(u) + q phi(v)) +
+T(ln p, ln q, s): the first term is Temme's -nu eta^2/2 with u = (t nu -
+p)/p, v = -(t nu - p)/q, and T holds every (p, q)-only term (Stirling's
+remainders folded in, so no lgamma or psi per element). Written as a ln x +
+b ln(1 - x) - ln a - ln B + L, as betainc_scalar does, those terms cancel to
+O(1) from size a + b: with T exact, the folded form is within 1.7-14 eps of
+mpmath where that form loses 7-4167 eps (a, b to 1000). The x coordinate is
+s = ln(1 - t)/ln(1 - x_s), which moves I's branch point at t = 1 to s = inf
+(9-33 coefficients in s across the box against 63+ in t).
+
+Table. Along ln a and ln b the coefficients decay like rho = 14.5/w per
+degree on cells of width w, everywhere: a singularity at a fixed distance
+(~3.6) from the real ln a axis, consistent with I's poles at a + b = -n.
+Folding mu(a + b) out of T or tabulating exp(T) does not change it, and
+neither does fixing x instead of s. So the cells are uniform, 16 per log
+axis, each column halving its s-interval until the coefficients outside the
+total-degree set i + j + k <= 14 sum to 2e-16. Every cell shares one
+ordering of that set by the largest coefficient over all cells; float64
+keeps the shortest prefix within 2e-16 of every cell (656 of 680), float32
+within 4e-7 (73; see float32 below). A full 14-degree block would be 3375
+coefficients per cell. 1236 cells, 6.5 MB of float64, ~18 minutes on six cores; CI rebuilds
+one column, the module is compared whole with CHEBAX_FULL_REGEN=1.
+
+Erfcx in closed form (T - ln(erfcx(y)/2), Temme's leading term) was tried to
+take the fast part out of T next to the seam; it is singular at s = 0, where
+y ~ sqrt(-p ln t), and did not converge.
+
+The seam. Split at x_s, lanes just above it with small b reported I = 1 -
+I_t with I_t ~ 0.97, which multiplied I_t's rounding by up to 30 (5.7e-15 in
+ln I at b = 0.11). Each column now keeps the lower orientation up to its
+S_SPLIT, the largest s with I = 0.45 over the column plus 10% (1 to 6.5),
+so the reflected side reports I >= ~0.45. Where t passes x0, log1p(v) comes
+from one log of (1 - t) nu/q.
+
+float32. Turned at S_SPLIT, float32 was 6.4e-7 in I and 6.5e-7 in ln I on
+48,947 points, 7.6e-7 and 7.7e-7 on jax 0.5.3 (the test's 615 points had
+shown 1.9e-7 and 2.8e-7): at large a, b the quarter steps keep lanes in the
+lower orientation up to I ~ 0.95, where T cancels a first term of O(1) (both
+~1.4 at a = 75, b = 27, x = 0.805). float32 now turns at S_SPLIT32, the
+largest s with I = 0.5 over a 9 x 9 sample of the column, within [1,
+S_SPLIT]: 2.3e-7 and 4.1e-7 (experiments/55, larger of the two jax). What is
+left is float32 arithmetic spread over every piece (the table sum, the first
+term, the three coordinates, the coefficients' rounding), so under 1e-7 would
+need double-float throughout. The target is 5e-7, and below it speed
+decides how many coefficients float32 reads: the dropped-sum bound is loose,
+the error stays ~3 ulps down to 65 and passes 5e-7 at 60, and 73 (TOL32 =
+4e-7) is the fastest value_and_grad on the GPU of those: 1.6-1.9 ns
+against 2.5-3.0 with 105, and on one CPU core 275 ns against 626-632
+(experiments/55).
+
+Rounding. T's slope in s reaches ~7 next to the seam at large a, b, so the
+table's inputs need about an ulp, and five things each cost 1e-15 or more:
+ln(1 - x_s) as the log of a rounded ratio near 1 (7e-15 at x_s = 0.015; now
+from exact sums and the division's exact residual), s rounded near 1 (now
+from 1 - s, an exact difference), t q - (1 - t) p (XLA folded (1 - x) - 1
+into -x under jit, which zeroed the exact low part of 1 - x; a barrier stops
+it, and the products come from exact half-width parts, which fused or not
+need no rounding), ln t + ln(nu/p) where t << x0 (one log of the product),
+and the patch sum, flat over ~650 terms (now nested k in j in i, each level
+smallest-first: 5-7 eps to under 2).
+
+Accuracy (tests/test_betainc_array.py, larger of jax 0.11 and 0.5.3):
+float64 ln I 7.2e-16, I 6.7e-16 absolute; float32 I 1.5e-7, ln I 2.5e-7
+on the test's points and 2.3e-7, 4.1e-7 on experiments/55's 48,947 (~3
+float32 ulps; subnormal float32 x is flushed to 0 by XLA). Slopes relative to mpmath: 2.6e-14 on the test's
+points, 1.0e-13 worst on 3,000 probe points. betainc_scalar, on the same
+points, is off by up to 7.5e-13 at a = 70, b = 4.
+
+Speed (experiments/54, ns per element; jax's betainc has no a or b
+gradient, jax#38610):
+
+| | GPU f64 | GPU f32 | one CPU core f64 |
+|---|---|---|---|
+| betainc_array | 21-30 | 1.7-1.8 | 1021-1080 |
+| betainc_array value_and_grad | 45-68 | 1.7-1.9 | 9648-10644 |
+| jax.scipy betainc (value) | 298-299 | 25 | 2672-2812 |
+| vmap(betainc_scalar) value_and_grad | 107,400-107,700 | | 7.8e6-8.4e6 |
+
+Not done: the CPU value_and_grad costs ~10x the value. The four sums (T and
+its three partials) come out of one fusion with the 656 gathers (5 MiB of
+temps), but stacked behind the barrier the loop evaluates them per
+component; unstacked, a tuple barrier, or the slopes from a second read of
+the negated table were slower (16-20 us).
+
 ## 62. hyp1f1_array: a and b per element (2026-11-18)
 
 hyp1f1's tables contract an (x, a, b) tensor once per call, so a and b per

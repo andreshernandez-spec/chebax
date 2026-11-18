@@ -52,6 +52,8 @@ EXPECTED = {
     },
     "chebax._src.recipes.betainc": _BETA,
     "chebax._src.recipes.betaincinv": _BETA,
+    # the per-element path has its own table, none of betainc's
+    "chebax._src.recipes.betainc_array": {"betainc_array_table"},
     # each gammainc and gammaincinv path imports its implementation when
     # first called (test_gammainc_paths_load_only_their_tables)
     "chebax._src.recipes.gammainc": set(),

@@ -28,14 +28,22 @@ the total-degree set i + j + k <= DMAX (i in ln p, j in ln q, k in s) sum to
 at most TOL. One ordering of that set by the largest |coefficient| over all
 cells is shared by every cell: float64 keeps its shortest prefix whose
 dropped coefficients sum to at most TOL on every cell, float32 the shortest
-within TOL32.
+within TOL32. That sum is a loose bound: float32's error stays its own
+arithmetic (~3 ulps) down to 65 coefficients and passes 5e-7 at 60; TOL32
+keeps 73, the fastest float32 value_and_grad on the GPU of those under 5e-7
+(experiments/55).
 
 A lane stays in the lower orientation up to s = S_SPLIT of its column rather
 than x_s (s = 1): where I(x_s) is small (q below ~3), the reflected side's
 I = 1 - I_t multiplied I_t's rounding by I_t/I, up to ~30 at b = 0.11.
 S_SPLIT is the largest s with I = I_SPLIT over a 5 x 5 sample of the column,
 plus 10%, up to a quarter, and at least 1, so the reflected side reports
-I >= ~I_SPLIT. Each fit uses NODES^3 Chebyshev nodes, values and DCTs in
+I >= ~I_SPLIT. float32 turns at S_SPLIT32 instead, the largest s with I =
+I_SPLIT32 over a 9 x 9 sample, within [1, S_SPLIT]: at large p, q the
+quarter steps put lanes in the lower orientation up to I ~ 0.95, where T
+cancels a first term of O(1) and float32 lost ~6 ulps (experiments/55).
+Any split in [1, S_SPLIT] is covered: past x_s the reflected s = ln x/ln x_s
+is below 1. Each fit uses NODES^3 Chebyshev nodes, values and DCTs in
 mpmath, columns in a process pool (the output does not depend on its size).
 Regenerate with:
 
@@ -63,9 +71,10 @@ NAB = 16  # cells per log axis
 NODES = 16  # per cell and direction
 DMAX = 14  # total degree of the candidate set
 TOL = 2e-16
-TOL32 = 2e-8
+TOL32 = 4e-7
 SDEPTH = 7  # deepest s halving, relative to the column's [0, S_SPLIT]
 I_SPLIT = 0.45  # I at a column's split, at least
+I_SPLIT32 = 0.5  # float32's split
 
 
 def _lnab_box(i):
@@ -155,6 +164,36 @@ def split_s(mp, ia, ib):
     return math.ceil(float(worst) * 1.1 * 4) / 4
 
 
+def split_s32(ia, ib, top):
+    """S_SPLIT32 of column (ia, ib), whose S_SPLIT is top: see the module
+    docstring."""
+    if top <= 1.0:
+        return 1.0
+    import mpmath as mp
+
+    with mp.workdps(DPS):
+        worst, hi = mp.mpf(1), mp.mpf(top)
+        for ua in np.linspace(*_lnab_box(ia), 9):
+            for ub in np.linspace(*_lnab_box(ib), 9):
+                p, q = mp.exp(mp.mpf(float(ua))), mp.exp(mp.mpf(float(ub)))
+                ls = mp.log((q + 1) / (p + q + 2))
+                f = (
+                    lambda s_: mp.betainc(p, q, 0, -mp.expm1(s_ * ls), regularized=True)
+                    - I_SPLIT32
+                )
+                if f(mp.mpf(1)) >= 0:
+                    continue
+                if f(hi) < 0:
+                    return float(top)
+                root = mp.findroot(f, (mp.mpf(1), hi), solver="bisect", tol=1e-6)
+                worst = max(worst, root)
+    return min(math.ceil(float(worst) * 1024) / 1024, float(top))
+
+
+def _split32_job(args):
+    return split_s32(*args)
+
+
 def _simplex():
     return [
         (i, j, k)
@@ -212,12 +251,14 @@ def _column_job(ij):
 
 
 def build(procs=None):
-    """Every column's cuts and cells, columns in (ia, ib) row-major order; the
-    result does not depend on procs."""
+    """Every column's (cuts, cells) and S_SPLIT32, columns in (ia, ib)
+    row-major order; the result does not depend on procs."""
     cols = [(ia, ib) for ia in range(NAB) for ib in range(NAB)]
     procs = procs or max(1, (os.cpu_count() or 2) // 2)
     with ProcessPoolExecutor(procs) as ex:
-        return list(ex.map(_column_job, cols))
+        out = list(ex.map(_column_job, cols))
+        tops = [(ia, ib, cuts[-1]) for (ia, ib), (cuts, _) in zip(cols, out)]
+        return out, list(ex.map(_split32_job, tops))
 
 
 def order_and_prefix(cells):
@@ -246,7 +287,7 @@ def order_and_prefix(cells):
 def main(out_dir=None, procs=None):
     import mpmath as mp
 
-    cols = build(procs)
+    cols, s_split32 = build(procs)
     cells = [cell for _, cs in cols for cell in cs]
     order, nkeep, nkeep32 = order_and_prefix(cells)
     simp = _simplex()
@@ -270,14 +311,14 @@ def main(out_dir=None, procs=None):
             "T_k(s) on cell n; column (ia, ib) = ia NAB + ib holds cells "
             "BASE[col] + l over s interval l (SCUTS[col, l:l+2]), ln p and ln q "
             "on NAB uniform intervals of [ln ALO, ln AHI], s in [0, S_SPLIT[col]]; "
-            "float32 reads "
-            "TABLE[:, :NKEEP32]",
+            "float32 reads TABLE[:, :NKEEP32] and turns at S_SPLIT32[col]",
             {
                 "nodes": NODES,
                 "dmax": DMAX,
                 "tol": TOL,
                 "tol32": TOL32,
                 "i_split": I_SPLIT,
+                "i_split32": I_SPLIT32,
                 "ab_domain": (ALO, AHI),
             },
             {
@@ -287,6 +328,7 @@ def main(out_dir=None, procs=None):
                 "NKEEP32": nkeep32,
                 "NS": ns,
                 "S_SPLIT": s_split,
+                "S_SPLIT32": tuple(s_split32),
                 "BASE": base,
                 "IDX": idx,
             },

@@ -19,8 +19,9 @@ was 1e-15 or more in ln I before.
 Endpoints as in betainc_scalar (I = 0 at x <= 0, 1 at x >= 1, the endpoint
 density as the x-slope there). One table read per element whichever the
 orientation; float32 reads the leading NKEEP32 coefficients of each cell, and
-XLA flushes subnormal float32 x to 0. Measured accuracy and speed:
-tests/test_betainc_array.py, experiments/54.
+XLA flushes subnormal float32 x to 0. float32 also turns orientation at
+S_SPLIT32 (I ~ 0.5), not S_SPLIT. Measured accuracy and speed:
+tests/test_betainc_array.py, experiments/54 and 55.
 """
 
 import functools
@@ -204,7 +205,7 @@ def _lane(a, b, x):
     its exact value), ln t, ln(1 - t), d = t q - (1 - t) p to a few ulps of d,
     1 - x_s as rh + rl and ln(1 - x_s), the column and its coordinates. The
     lower orientation runs to s = S_SPLIT of (a, b)'s column. Invalid lanes
-    get x = 1/4."""
+    get x = 1/4. float32 lanes turn at S_SPLIT32 instead."""
     inside = (x > 0.0) & (x < 1.0)
     xi = jnp.where(inside, x, 0.25)
     # 1 - x = y + ey exactly (Fast2Sum, |1| >= |x|); the barrier stops XLA
@@ -222,7 +223,9 @@ def _lane(a, b, x):
     ls_ab = jnp.log(rh_ab) + rl_ab / rh_ab
     la, lb = jnp.log(a), jnp.log(b)
     col_ab, za_ab, zb_ab = _col(la, lb)
-    split = jnp.asarray(_t.S_SPLIT, xi.dtype)[col_ab]
+    # float32 turns near I = 0.5: past it T cancels an O(1) first term
+    turn = _t.S_SPLIT if xi.dtype == jnp.float64 else _t.S_SPLIT32
+    split = jnp.asarray(turn, xi.dtype)[col_ab]
     lower = l1x >= split * ls_ab  # s <= S_SPLIT, ls < 0
     sel = lambda u, v: jnp.where(lower, u, v)
     p, q = sel(a, b), sel(b, a)
@@ -401,15 +404,17 @@ def _args(a, b, x):
 def betainc_array(a, b, x):
     """I_x(a, b) with a and b per element in [0.1, 100] (nan outside, with nan
     derivatives), broadcast with x; differentiable in all three. Absolute
-    error 6.7e-16 in float64, 1.9e-7 in float32 (tests/test_betainc_array.py);
-    for the upper tail to relative accuracy use betainc_array(b, a, 1 - x)."""
+    error 6.7e-16 in float64 (tests/test_betainc_array.py), 2.3e-7 in float32
+    (experiments/55); for the upper tail to relative accuracy use
+    betainc_array(b, a, 1 - x)."""
     a, b, x = _args(a, b, x)
     return _cdf(a, b, x) + edge_slope(_edge_density(a, b, x), x)
 
 
 def log_betainc_array(a, b, x):
     """ln I_x(a, b) as betainc_array, no underflow floor: 7.2e-16 in float64
-    relative to max(1, |ln I|). On the reflected side, where I >= ~0.45, it is
+    and 4.1e-7 in float32 relative to max(1, |ln I|) (tests/test_betainc_array.py,
+    experiments/55). On the reflected side, where I >= ~0.45, it is
     log1p(-I_t); for the upper tail use log_betainc_array(b, a, 1 - x)."""
     a, b, x = _args(a, b, x)
     # d ln I/dx = density/I is inf at x = 0 and the density at x = 1

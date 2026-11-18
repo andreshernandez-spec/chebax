@@ -8,11 +8,11 @@ lower tail (x down to 1e-40 x_s) and the upper tail (1 - x down to 1e-15
 in the lower orientation (up to s = 7). ln I uses |ln I - ref| / max(1,
 |ref|); I is absolute (the CDF contract).
 
-Measured worst, float64, the larger of jax 0.11 and 0.5.3 (CI's floor):
+Measured worst, the larger of jax 0.11 and 0.5.3 (CI's floor): float64
 ln I 7.2e-16, I 6.7e-16, bars 3e-15. float32 on the float32-rounded points
-with x in its normal range: I 1.9e-7, ln I 2.8e-7 (where I > 1e-30), bars
-8e-7 and 1.2e-6; at I ~ 0.85 that is ~3 float32 ulps, from rounding the
-s-coordinate where T moves fast (T's s-slope reaches ~5).
+with x in its normal range: I 1.5e-7, ln I 2.5e-7 (where I > 1e-30), bars
+6e-7 and 1e-6. On 48,947 float32 points experiments/55 has I 2.3e-7 and
+ln I 4.1e-7, ~3 float32 ulps, all float32 arithmetic (the target is 5).
 
 dI/da, dI/db against mp.diff of the smaller side and dI/dx against the Beta
 density, relative, on 76 points: 2.6e-14; bar 4e-13, 4x the 1.0e-13 that
@@ -146,9 +146,9 @@ def test_float32(refs, tmp_path):
         x=x,
     )
     ln_i, i = _mp_ref(*(v.astype(np.float64) for v in (a, b, x)))
-    assert np.max(np.abs(got["i"] - i)) <= 8e-7
+    assert np.max(np.abs(got["i"] - i)) <= 6e-7
     live = i > 1e-30  # float32's normal range
-    assert np.max(_err(got["l"][live], ln_i[live])) <= 1.2e-6
+    assert np.max(_err(got["l"][live], ln_i[live])) <= 1e-6
 
 
 def test_slopes_against_mpmath(refs):
@@ -235,6 +235,7 @@ def test_column_regenerates_exact():
     pos = [simplex.index(ijk) for ijk in t.IDX]
     for n, (_, c) in enumerate(cells):
         assert [c[m] for m in pos] == list(t.TABLE[t.BASE[col] + n])
+    assert t.S_SPLIT32[col] == betainc_array_gen.split_s32(ia, ib, cuts[-1])
 
 
 @pytest.mark.slow

@@ -104,6 +104,9 @@ python -m chebax._src.recipes.ndtri_exp_gen       # regenerate the ndtri_exp tab
 python -m chebax._src.recipes.hyp1f1_gen          # regenerate the hyp1f1 log-tables (~11 min;
                                                   #  CI regen-checks only the tail table; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)
+python -m chebax._src.recipes.hh_gen              # regenerate the Hh patches (~16 min on six
+                                                  #  cores; CI regen-checks one base box; full
+                                                  #  check behind CHEBAX_FULL_REGEN=1)
 python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice tables (~4 min)
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table
@@ -124,7 +127,7 @@ compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
 2. Before tagging: the tests run on main is green for the merge commit, and
    so is the full regeneration CI skips, `CHEBAX_FULL_REGEN=1 python -m pytest
    -m slow tests/test_betainc.py tests/test_hyp1f1.py tests/test_gammainc_array.py
-   tests/test_betainc_array.py` (~70 min).
+   tests/test_betainc_array.py tests/test_hh.py` (~85 min).
 3. `git tag -a vX.Y.Z <merge commit>` and push the tag; that push is the
    release, so it is Andres's. `.github/workflows/release.yml` checks the tag
    against the version and the tests run, builds, checks what the sdist and

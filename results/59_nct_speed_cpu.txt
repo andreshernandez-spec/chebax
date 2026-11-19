@@ -1,0 +1,8 @@
+jax 0.11.0 on cpu:0, float64, N = 65536; ns per element, min of 2 passes
+| op | noncentral t | wide | near normal |
+|---|---|---|---|
+| nct_logpdf | 184.6* | 192.3 | 177.6 |
+| nct_logpdf v+g | 359.5 | 372.8 | 342.3 |
+| two-1F1 form (jax) | 4436.9 | 7143.2 | 4229.1 |
+| two-1F1 form (jax) v+g | 13426.2 | 34163.8 | 13254.7 |
+| scipy nct.logpdf | 372.3 | raises | 347.7 |

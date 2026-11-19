@@ -42,8 +42,10 @@ builds each bound on first access from its own table, and the adapters read
 domains when they validate, not when they are imported. Code that several
 families share must not import any family's tables: a family whose kernel
 also runs on another family's tables keeps it in `<family>_kernel.py`, as
-stdtr runs betainc's kernel on its own slices. `tests/test_lazy_imports.py`
-records which tables each public module loads.
+stdtr runs betainc's kernel on its own slices. A family built on another
+family's table reads it through that family's module, as `nct_logpdf` reads
+hh's through `hh.t_parts`. `tests/test_lazy_imports.py` records which tables
+each public module loads.
 
 `domains.py` reads its bounds from table modules only, so runtime modules and
 adapters import it at module level without a cycle, and since each entry is

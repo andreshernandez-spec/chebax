@@ -61,6 +61,8 @@ EXPECTED = {
     "chebax._src.recipes.hh": {"hh_table"},
     "chebax._src.recipes.hyp1f1": {"hyp1f1_table"},
     "chebax._src.recipes.hyp1f1_array": {"hyp1f1_array_table"},
+    # hh's table holds the noncentral t's two-variable part
+    "chebax._src.recipes.nct": {"nct_table", "hh_table"},
     # the betainc kernel without betainc's tensor (betainc_kernel.py)
     "chebax._src.recipes.stdtr": {"stdtr_table"},
     "chebax._src.recipes.tweedie": {"tweedie_table"},

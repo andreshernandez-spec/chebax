@@ -229,31 +229,40 @@ def _locate(high, p, sg):
     )
 
 
+def t_parts(n, x, grad):
+    """(T, dT/dnu, dT/dz) at finite nu = n >= 0.1 and z = x, the slopes None
+    without grad: the table's part of ln Hh, bounded (|T| < 0.8)."""
+    high = n > _t.NU1
+    p = jnp.where(high, _t.NU1 / n, jnp.log(n))
+    q = jnp.hypot(x, 2.0 * jnp.sqrt(n + 1.0))
+    sg = x / q
+    cell, yp, ys, sc = _locate(high, p, sg)
+    tab = _arrays(p.dtype.name)[0]
+    f, fp, fs = _patch_parts(tab, cell, yp, ys, grad)
+    if not grad:
+        return f, None, None
+    # as three results XLA keeps the gathered coefficients for the reverse pass
+    pack = _packed if tab[0].size * tab.dtype.itemsize >= _PACK_BYTES else _unpacked
+    f, fp, fs = pack(f, fp, fs)
+    t_p = fp * sc[..., 0] * jnp.where(high, -p / n, 1.0 / n)
+    t_s = fs * sc[..., 1]
+    return f, t_p - t_s * (2.0 * sg / (q * q)), t_s * (1.0 - sg * sg) / q
+
+
 def _parts(nu, z, grad):
     """(ln Hh, d/dnu, d/dz), the slopes None without grad. Lanes with nu or z
     nonfinite read nu = 1, z = 0."""
     ok = jnp.isfinite(nu) & jnp.isfinite(z)
     n = jnp.where(ok, nu, 1.0)
     x = jnp.where(ok, z, 0.0)
-    high = n > _t.NU1
-    p = jnp.where(high, _t.NU1 / n, jnp.log(n))
-    q = jnp.hypot(x, 2.0 * jnp.sqrt(n + 1.0))
-    sg = x / q
     _, v, lv, r, f_hi, f_lo = _first(n, x)
-    cell, yp, ys, sc = _locate(high, p, sg)
-    tab = _arrays(p.dtype.name)[0]
-    f, fp, fs = _patch_parts(tab, cell, yp, ys, grad)
+    f, t_nu, t_z = t_parts(n, x, grad)
     val = f_hi + (f_lo + f)
     if not grad:
         return val, None, None
-    # as three results XLA keeps the gathered coefficients for the reverse pass
-    pack = _packed if tab[0].size * tab.dtype.itemsize >= _PACK_BYTES else _unpacked
-    f, fp, fs = pack(f, fp, fs)
-    t_p = fp * sc[..., 0] * jnp.where(high, -p / n, 1.0 / n)
-    t_s = fs * sc[..., 1]
     rr = 1.0 / (r * r)
-    d_nu = -lv - 0.5 / (v * r) - rr + t_p - t_s * (2.0 * sg / (q * q))
-    d_z = -v * (1.0 + rr) + t_s * (1.0 - sg * sg) / q
+    d_nu = -lv - 0.5 / (v * r) - rr + t_nu
+    d_z = -v * (1.0 + rr) + t_z
     return val, d_nu, d_z
 
 

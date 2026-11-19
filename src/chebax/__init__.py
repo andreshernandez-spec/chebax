@@ -107,6 +107,7 @@ _LAZY = {
     ),
     "chebax._src.recipes.hyp1f1_array": ("hyp1f1_array", "log_hyp1f1_array"),
     "chebax._src.recipes.hh": ("hh", "log_hh"),
+    "chebax._src.recipes.nct": ("nct_logpdf",),
     "chebax._src.recipes.skewnorm": ("log_skewnorm_cdf", "log_skewnorm_sf"),
     "chebax._src.recipes.marcum": ("log_marcum_p1", "log_marcum_q1"),
     "chebax._src.recipes.stdtr": ("log_stdtr", "log_stdtr_sf", "stdtr", "stdtrit"),
@@ -196,6 +197,7 @@ __all__ = [
     "log_stdtr_sf",
     "log_wright_bessel0",
     "matern",
+    "nct_logpdf",
     "ndtri_exp",
     "pergroup",
     "PiecewiseCheb",
@@ -344,6 +346,7 @@ if TYPE_CHECKING:
     )
     from chebax._src.recipes.hyp1f1_array import hyp1f1_array, log_hyp1f1_array
     from chebax._src.recipes.hh import hh, log_hh
+    from chebax._src.recipes.nct import nct_logpdf
     from chebax._src.recipes.skewnorm import log_skewnorm_cdf, log_skewnorm_sf
     from chebax._src.recipes.marcum import log_marcum_p1, log_marcum_q1
     from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf, stdtr, stdtrit

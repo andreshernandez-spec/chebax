@@ -85,8 +85,8 @@ python -m chebax._src.recipes.besseli_gen         # regenerate the besseli log-t
 python -m chebax._src.recipes.bessely_gen         # regenerate the bessely tables
 python -m chebax._src.recipes.erf_gen             # regenerate the dawsn/erfcx tables
 python -m chebax._src.recipes.betainc_gen         # regenerate the betainc tensor (~5 min)
-python -m chebax._src.recipes.betainc_array_gen   # regenerate the per-element cells (~18 min on
-                                                  #  six cores; CI regen-checks one column; full
+python -m chebax._src.recipes.betainc_array_gen   # regenerate the per-element cells (~35 min on
+                                                  #  eight cores; CI regen-checks one column; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)
 python -m chebax._src.recipes.betainc_wide_gen    # regenerate the wide panels (~25 min;
                                                   #  CI regen-checks only the small HILO
@@ -131,7 +131,7 @@ compilation, and the laptop GPU compiles the table-heavy programs 3-6x slower
    so is the full regeneration CI skips, `CHEBAX_FULL_REGEN=1 python -m pytest
    -m slow tests/test_betainc.py tests/test_hyp1f1.py tests/test_gammainc_array.py
    tests/test_betainc_array.py tests/test_hyp1f1_array.py tests/test_hh.py`
-   (~110 min).
+   (~120 min).
 3. `git tag -a vX.Y.Z <merge commit>` and push the tag; that push is the
    release, so it is Andres's. `.github/workflows/release.yml` checks the tag
    against the version and the tests run, builds, checks what the sdist and

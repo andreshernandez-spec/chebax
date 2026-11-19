@@ -1,8 +1,9 @@
 """Per-element betainc: I_x(a, b) and ln I_x(a, b) with a and b per element
-in [0.1, 100] (nan outside), differentiable in a, b and x. Each element reads
-one cell of betainc_array_gen's table in one orientation, (p, q, t) = (a, b,
-x) up to s = S_SPLIT of (a, b)'s column (x_s = (a + 1)/(a + b + 2) or past it
-where I(x_s) is small), else (b, a, 1 - x) with I = 1 - I_t(p, q):
+in [10^-2.125, 100] (0.0075 to 100; nan outside), differentiable in a, b and
+x. Each element reads one cell of betainc_array_gen's table in one
+orientation, (p, q, t) = (a, b, x) up to s = S_SPLIT of (a, b)'s column (x_s
+= (a + 1)/(a + b + 2) or past it where I(x_s) is small), else (b, a, 1 - x)
+with I = 1 - I_t(p, q):
 
     ln I_t(p, q) = -(p phi(u) + q phi(v)) + T(ln p, ln q, s)
 
@@ -16,8 +17,11 @@ exact products of half-width parts, 1 - x and 1 - x_s from exact sums, s
 near 1 from 1 - s, and the patch sum nested smallest-first. Each of these
 was 1e-15 or more in ln I before.
 
-Endpoints as in betainc_scalar (I = 0 at x <= 0, 1 at x >= 1, the endpoint
-density as the x-slope there). One table read per element whichever the
+Where b = 1 (I = x^a) or a = 1 (I = 1 - (1 - x)^b), as a count model's rows
+at 0 give, the value and the slopes in x and the other shape are closed
+forms, for any positive other shape; the slope in the unit shape is the
+table's (nan outside the box). Endpoints as in betainc_scalar (I = 0 at x <=
+0, 1 at x >= 1, the endpoint density as the x-slope there). One table read per element whichever the
 orientation; float32 reads the leading NKEEP32 coefficients of each cell, and
 XLA flushes subnormal float32 x to 0. float32 also turns orientation at
 S_SPLIT32 (I ~ 0.5), not S_SPLIT. Measured accuracy and speed:
@@ -40,7 +44,6 @@ from chebax._src.recipes._common import (
     edge_slope,
     locate_zones,
     log1p,
-    nan_outside,
 )
 from jax.custom_derivatives import SymbolicZero
 
@@ -56,25 +59,26 @@ _PACK_BYTES = 512
 def _table(dtype):
     """(table, kept count, nesting, degrees) in the compute dtype: nesting
     lists, for each i, each j with its (column, k) pairs, every level in
-    descending order."""
+    descending order. Each row is stored in that order, so a lane reads its
+    row front to back (as the Numba port does)."""
     dt = np.dtype(dtype)
     n = _t.TABLE.shape[1] if dt == np.float64 else _t.NKEEP32
-    tab = np.ascontiguousarray(_t.TABLE[:, :n], dt)
-    nest = defaultdict(lambda: defaultdict(list))
+    groups = defaultdict(lambda: defaultdict(list))
     for m, (i, j, k) in enumerate(_t.IDX[:n]):
-        nest[i][j].append((m, k))
-    nest = tuple(
-        (
-            i,
-            tuple(
-                (j, tuple(sorted(nest[i][j], key=lambda mk: -mk[1])))
-                for j in sorted(nest[i], reverse=True)
-            ),
-        )
-        for i in sorted(nest, reverse=True)
-    )
+        groups[i][j].append((m, k))
+    order, nest = [], []
+    for i in sorted(groups, reverse=True):
+        rows = []
+        for j in sorted(groups[i], reverse=True):
+            terms = sorted(groups[i][j], key=lambda mk: -mk[1])
+            rows.append(
+                (j, tuple((len(order) + c, k) for c, (_, k) in enumerate(terms)))
+            )
+            order += [m for m, _ in terms]
+        nest.append((i, tuple(rows)))
+    tab = np.ascontiguousarray(_t.TABLE[:, :n][:, order], dt)
     deg = tuple(1 + max(v[a] for v in _t.IDX[:n]) for a in range(3))
-    return tab, n, nest, deg
+    return tab, n, tuple(nest), deg
 
 
 @functools.lru_cache(maxsize=2)
@@ -191,13 +195,40 @@ def _one_minus_xs(p, q):
     return rh, (res + nl - rh * ml) / mh
 
 
+@functools.lru_cache(maxsize=2)
+def _edges(dtype):
+    """Each interval's lower edge, as the generator's float64 _LO + i _W, in
+    two parts in the compute dtype: in float32 one part was off by up to
+    2.2e-7 at ln a ~ -3, which moved z by up to 1e-6 and float32's ln I by
+    up to 3.9e-7."""
+    e = _LO + np.arange(_t.NAB) * _W
+    hi = e.astype(dtype)
+    return hi, (e - hi.astype(np.float64)).astype(dtype)
+
+
 def _col(la, lb):
     """Column of (ln p, ln q), and its local coordinates in [-1, 1]."""
-    fa = jnp.clip(jnp.floor((la - _LO) / _W), 0.0, _t.NAB - 1.0)
-    fb = jnp.clip(jnp.floor((lb - _LO) / _W), 0.0, _t.NAB - 1.0)
-    za = 2.0 * (la - (_LO + fa * _W)) / _W - 1.0
-    zb = 2.0 * (lb - (_LO + fb * _W)) / _W - 1.0
-    return fa.astype(jnp.int32) * _t.NAB + fb.astype(jnp.int32), za, zb
+    fa = jnp.clip(jnp.floor((la - _LO) / _W), 0.0, _t.NAB - 1.0).astype(jnp.int32)
+    fb = jnp.clip(jnp.floor((lb - _LO) / _W), 0.0, _t.NAB - 1.0).astype(jnp.int32)
+    hi, lo = (jnp.asarray(v) for v in _edges(tv_dtype(la)))
+    za = 2.0 * ((la - hi[fa]) - lo[fa]) / _W - 1.0
+    zb = 2.0 * ((lb - hi[fb]) - lo[fb]) / _W - 1.0
+    return fa * _t.NAB + fb, za, zb
+
+
+def _inner(x):
+    """x, with 1/4 where x is not in (0, 1) (those lanes are set by _finish)."""
+    return jnp.where((x > 0.0) & (x < 1.0), x, 0.25)
+
+
+def _one_minus(x):
+    """(y, ey, ln(1 - x)) with y + ey = 1 - x exactly (Fast2Sum, |1| >= |x|).
+    The barrier stops XLA folding (1 - x) - 1 into -x, which zeroed ey under
+    jit (d 2e-14 off). ln(1 - x) from the exact parts: XLA's float64 log1p is
+    off on (-0.63, -0.25) before jax 0.12, and log(y) misses ey."""
+    y = jax.lax.optimization_barrier(1.0 - x)
+    ey = -x - (y - 1.0)
+    return y, ey, jnp.where(x < 0.25, log1p(-x), jnp.log(y) + ey / y)
 
 
 def _lane(a, b, x):
@@ -206,15 +237,8 @@ def _lane(a, b, x):
     1 - x_s as rh + rl and ln(1 - x_s), the column and its coordinates. The
     lower orientation runs to s = S_SPLIT of (a, b)'s column. Invalid lanes
     get x = 1/4. float32 lanes turn at S_SPLIT32 instead."""
-    inside = (x > 0.0) & (x < 1.0)
-    xi = jnp.where(inside, x, 0.25)
-    # 1 - x = y + ey exactly (Fast2Sum, |1| >= |x|); the barrier stops XLA
-    # folding (1 - x) - 1 into -x, which zeroed ey under jit (d 2e-14 off)
-    y = jax.lax.optimization_barrier(1.0 - xi)
-    ey = -xi - (y - 1.0)
-    # ln(1 - x): XLA's float64 log1p is off on (-0.63, -0.25) before jax 0.12,
-    # and log(y) misses ey; from the exact parts instead
-    l1x = jnp.where(xi < 0.25, log1p(-xi), jnp.log(y) + ey / y)
+    xi = _inner(x)
+    y, ey, l1x = _one_minus(xi)
     lx = jnp.log(xi)
     # ln(1 - x_s) to ~an ulp in both orientations: T moves up to ~7 per unit of
     # s next to the seam at large p, q, so plain rounding (5 ulps) was 2e-15
@@ -317,12 +341,75 @@ def _finish(a, b, x, v, lo, hi):
     return jnp.where(jnp.isnan(x) | jnp.isnan(a) | jnp.isnan(b), jnp.nan, v)
 
 
+def _boxed(a, b):
+    """a and b with nan where either is outside the table's box."""
+    box = (a >= _t.ALO) & (a <= _t.AHI) & (b >= _t.ALO) & (b <= _t.AHI)
+    return jnp.where(box, a, jnp.nan), jnp.where(box, b, jnp.nan)
+
+
+def _unit(a, b, x, log):
+    """Closed forms where a shape is 1, for any positive finite other shape:
+    I = x^a at b = 1 and I = 1 - (1 - x)^b at a = 1 (b = 1 first where both
+    are). (b1, a1, value, slope in the other shape, slope in x), as I or as
+    ln I. The slope in the unit shape is not elementary; it stays the table's."""
+    ok = lambda v: (v > 0.0) & (v < jnp.inf)
+    b1 = (b == 1.0) & ok(a)
+    a1 = (a == 1.0) & ok(b) & ~b1
+    xi = _inner(x)
+    lx = jnp.log(xi)
+    l1 = _one_minus(xi)[2]
+    w, lw = jnp.where(b1, a, b), jnp.where(b1, lx, l1)  # I = 1 - (1 - x)^b
+    z = w * lw
+    if not log:
+        val = jnp.where(b1, jnp.exp(z), -jnp.expm1(z))
+        # b1: I ln x; a1: -(1 - x)^b ln(1 - x)
+        dw = jnp.where(b1, val, -jnp.exp(z)) * lw
+        dx = w * jnp.exp(z - lw)  # a x^(a - 1) or b (1 - x)^(b - 1)
+        return b1, a1, val, dw, dx
+    # ln(1 - e^z): log1p(-e^z) below -ln 2, else ln(-z) + ln((1 - e^z)/(-z)),
+    # with ln(-z) from the logs of its factors so a tiny w ln(1 - x) cannot
+    # underflow
+    near = z > -math.log(2.0)
+    zn = jnp.where(near, z, -1.0)
+    ratio = jnp.where(zn > -1e-10, 1.0 + 0.5 * zn, jnp.expm1(zn) / zn)
+    up = jnp.where(
+        near,
+        jnp.log(w) + jnp.log(-jnp.where(near, lw, -1.0)) + jnp.log(ratio),
+        log1p(-jnp.exp(jnp.where(near, -1.0, z))),
+    )
+    val = jnp.where(b1, z, up)
+    dw = jnp.where(b1, lx, -l1 * jnp.exp(z - up))
+    dx = jnp.where(b1, a / xi, b * jnp.exp(z - l1 - up))
+    return b1, a1, val, dw, dx
+
+
+def _with_unit(a, b, x, parts, log, lo, hi):
+    """parts (from the table on a, b inside the box, nan elsewhere) with the
+    closed forms of _unit put in on its lanes."""
+    b1, a1, uv, uw, ux = _unit(a, b, x, log)
+    on = b1 | a1
+    val, da, db, dx = parts
+    val = jnp.where(on, _finish(a, b, x, uv, lo, hi), val)
+    if da is None:
+        return val, None, None, None
+    z = (0.0, 0.0)
+    uw, ux = _finish(a, b, x, uw, *z), _finish(a, b, x, ux, *z)
+    return (
+        val,
+        jnp.where(b1, uw, da),
+        jnp.where(a1, uw, db),
+        jnp.where(on, ux, dx),
+    )
+
+
 def _cdf_parts(a, b, x, need):
+    a0, b0 = a, b
+    a, b = _boxed(a, b)
     lnit, dp, dq, gt, lower, t, t1, lt = _parts(a, b, x, need)
     e = jnp.exp(lnit)
     val = _finish(a, b, x, jnp.where(lower, e, -jnp.expm1(lnit)), 0.0, 1.0)
     if not (need[0] or need[1]):
-        return val, None, None, None
+        return _with_unit(a0, b0, x, (val, None, None, None), False, 0.0, 1.0)
     sgn = jnp.where(lower, e, -e)
     da = sgn * jnp.where(lower, dp, dq)
     db = sgn * jnp.where(lower, dq, dp)
@@ -330,20 +417,23 @@ def _cdf_parts(a, b, x, need):
     # e times p/t is 0 * inf where I_t underflows and t is tiny
     dens = jnp.exp(lnit + jnp.log(jnp.maximum(gt, 0.0)) - lt)
     z = (0.0, 0.0)
-    return (
+    parts = (
         val,
         _finish(a, b, x, da, *z),
         _finish(a, b, x, db, *z),
         _finish(a, b, x, dens, *z),
     )
+    return _with_unit(a0, b0, x, parts, False, 0.0, 1.0)
 
 
 def _log_parts(a, b, x, need):
+    a0, b0 = a, b
+    a, b = _boxed(a, b)
     lnit, dp, dq, gt, lower, t, t1, lt = _parts(a, b, x, need)
     up = jnp.log(-jnp.expm1(lnit))  # ln(1 - I_t)
     val = _finish(a, b, x, jnp.where(lower, lnit, up), -jnp.inf, 0.0)
     if not (need[0] or need[1]):
-        return val, None, None, None
+        return _with_unit(a0, b0, x, (val, None, None, None), True, -jnp.inf, 0.0)
     e = jnp.exp(lnit)
     r = -e / -jnp.expm1(lnit)  # d ln(1 - I_t)/d ln I_t
     f = jnp.where(lower, 1.0, r)
@@ -352,12 +442,13 @@ def _log_parts(a, b, x, need):
     # d ln I/dx: gt/t below; above, the density over 1 - I_t
     dlx = jnp.where(lower, gt / t, -r * gt / t)
     z = (0.0, 0.0)
-    return (
+    parts = (
         val,
         _finish(a, b, x, da, *z),
         _finish(a, b, x, db, *z),
         _finish(a, b, x, dlx, *z),
     )
+    return _with_unit(a0, b0, x, parts, True, -jnp.inf, 0.0)
 
 
 def _rule(parts_fn):
@@ -397,23 +488,24 @@ def _edge_density(a, b, x):
 
 
 def _args(a, b, x):
-    a, b, x = jnp.broadcast_arrays(canon_float(a), canon_float(b), canon_float(x))
-    return nan_outside(a, _t.ALO, _t.AHI), nan_outside(b, _t.ALO, _t.AHI), x
+    # out of the box is nan inside the rules, which keep the unit lanes
+    return jnp.broadcast_arrays(canon_float(a), canon_float(b), canon_float(x))
 
 
 def betainc_array(a, b, x):
-    """I_x(a, b) with a and b per element in [0.1, 100] (nan outside, with nan
-    derivatives), broadcast with x; differentiable in all three. Absolute
-    error 6.7e-16 in float64 (tests/test_betainc_array.py), 2.3e-7 in float32
-    (experiments/55); for the upper tail to relative accuracy use
-    betainc_array(b, a, 1 - x)."""
+    """I_x(a, b) with a and b per element in [0.0075, 100] (nan outside, with
+    nan derivatives), and any positive a where b = 1 or b where a = 1 (closed
+    forms; the slope in the unit shape still needs the other in the box),
+    broadcast with x; differentiable in all three. Absolute error 3.3e-16 in
+    float64 (tests/test_betainc_array.py), 2.7e-7 in float32 (experiments/55);
+    for the upper tail to relative accuracy use betainc_array(b, a, 1 - x)."""
     a, b, x = _args(a, b, x)
     return _cdf(a, b, x) + edge_slope(_edge_density(a, b, x), x)
 
 
 def log_betainc_array(a, b, x):
-    """ln I_x(a, b) as betainc_array, no underflow floor: 7.2e-16 in float64
-    and 4.1e-7 in float32 relative to max(1, |ln I|) (tests/test_betainc_array.py,
+    """ln I_x(a, b) as betainc_array, no underflow floor: 4.4e-16 in float64
+    and 4.5e-7 in float32 relative to max(1, |ln I|) (tests/test_betainc_array.py,
     experiments/55). On the reflected side, where I >= ~0.45, it is
     log1p(-I_t); for the upper tail use log_betainc_array(b, a, 1 - x)."""
     a, b, x = _args(a, b, x)

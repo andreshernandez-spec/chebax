@@ -17,7 +17,7 @@ with mu the remainder of Stirling's lnGamma. T holds every (p, q)-only term
 (no lgamma or psi per element) and is O(1) where I is not small; written as
 a ln x + b ln(1 - x) - ln a - ln B + L, those terms cancel to O(1) from size
 a + b. s moves the branch point of I at t = 1 (exponent q) to s = inf: 9-33
-s-coefficients across the box against 63+ in t.
+s-coefficients across [0.1, 100]^2 against 63+ in t.
 
 Along ln p and ln q the coefficients of T decay like rho = 14.5/w per degree
 on intervals of width w, the same everywhere: a singularity at distance ~3.6
@@ -29,9 +29,8 @@ at most TOL. One ordering of that set by the largest |coefficient| over all
 cells is shared by every cell: float64 keeps its shortest prefix whose
 dropped coefficients sum to at most TOL on every cell, float32 the shortest
 within TOL32. That sum is a loose bound: float32's error stays its own
-arithmetic (~3 ulps) down to 65 coefficients and passes 5e-7 at 60; TOL32
-keeps 73, the fastest float32 value_and_grad on the GPU of those under 5e-7
-(experiments/55).
+arithmetic (4.5e-7 in ln I) down to 73 coefficients and passes 5e-7 at 65,
+so TOL32 keeps 73 (experiments/55).
 
 A lane stays in the lower orientation up to s = S_SPLIT of its column rather
 than x_s (s = 1): where I(x_s) is small (q below ~3), the reflected side's
@@ -43,11 +42,15 @@ I_SPLIT32 over a 9 x 9 sample, within [1, S_SPLIT]: at large p, q the
 quarter steps put lanes in the lower orientation up to I ~ 0.95, where T
 cancels a first term of O(1) and float32 lost ~6 ulps (experiments/55).
 Any split in [1, S_SPLIT] is covered: past x_s the reflected s = ln x/ln x_s
-is below 1. Each fit uses NODES^3 Chebyshev nodes, values and DCTs in
+is below 1. Below b ~ 0.02 the s with I = I_SPLIT needs 1 - x under 2^-53,
+which no float64 x reaches (and where 40 digits round t to 1), so S_SPLIT is
+at most s_reach, the largest s a float64 x below 1 gives in the column; those
+columns stay in the lower orientation to the end and take 7-15 s cells.
+Each fit uses NODES^3 Chebyshev nodes, values and DCTs in
 mpmath, columns in a process pool (the output does not depend on its size).
 Regenerate with:
 
-    python -m chebax._src.recipes.betainc_array_gen      # ~18 min on six cores
+    python -m chebax._src.recipes.betainc_array_gen      # ~35 min on eight cores
 
 CI rebuilds one column (column_cells); the whole module is compared with
 CHEBAX_FULL_REGEN=1, before releases.
@@ -66,8 +69,10 @@ from chebax._src.recipes._gen_common import (
     write_table_module,
 )
 
-ALO, AHI = 0.1, 100.0
-NAB = 16  # cells per log axis
+# the cell width of [0.1, 100] in 16, six more cells down (NegBin
+# dispersions reach a few hundredths)
+ALO, AHI = 10.0**-2.125, 100.0
+NAB = 22  # cells per log axis
 NODES = 16  # per cell and direction
 DMAX = 14  # total degree of the candidate set
 TOL = 2e-16
@@ -161,7 +166,15 @@ def split_s(mp, ia, ib):
             )
     if worst <= 1:
         return 1.0
-    return math.ceil(float(worst) * 1.1 * 4) / 4
+    return min(math.ceil(float(worst) * 1.1 * 4) / 4, s_reach(ia, ib))
+
+
+def s_reach(ia, ib):
+    """The largest s a float64 x below 1 reaches in column (ia, ib), up to a
+    quarter: 1 - x >= 2^-53, at the column's smallest x_s."""
+    p, q = math.exp(_lnab_box(ia)[0]), math.exp(_lnab_box(ib)[1])
+    ls = math.log1p(-(p + 1) / (p + q + 2))
+    return math.ceil(53 * math.log(2) / -ls * 4) / 4
 
 
 def split_s32(ia, ib, top):

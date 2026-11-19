@@ -1,11 +1,12 @@
 """betainc_array in float32: accuracy against the orientation split and the
 number of coefficients read (NKEEP32), and speed against NKEEP32.
 
-Points: 48,947 float32-rounded (a, b, x), a and b log-uniform on [0.1,
-100]^2, x from the bulk (Beta draws), within 1e-3 of x_s, the lower tail
-(x_s 10^-U(1, 30)), the upper tail (1 - x = (1 - x_s) 10^-U(1, 7)) and the
-band past x_s where small-b lanes stay in the lower orientation; x in
-float32's normal range. Metrics as tests/test_betainc_array.py: I absolute,
+Points: float32-rounded (a, b, x), a and b log-uniform on the box [ALO,
+100]^2 (ALO = 10^-2.125), x from the bulk (Beta draws), within 1e-3 of x_s,
+the lower tail (x_s 10^-U(1, 30)), the upper tail (1 - x = (1 - x_s)
+10^-U(1, 7)), the band past x_s where small-b lanes stay in the lower
+orientation, and b below 0.1 to float32's last x below 1; x in float32's
+normal range. Metrics as tests/test_betainc_array.py: I absolute,
 ln I relative to max(1, |ln I|) where I > 1e-30.
 
 The reference for all points is float64 betainc_array on the same float32
@@ -72,8 +73,9 @@ def setting(n, split):
 
 def points(n=40000, seed=11):
     rng = np.random.default_rng(seed)
-    a = np.exp(rng.uniform(np.log(0.1), np.log(100.0), n))
-    b = np.exp(rng.uniform(np.log(0.1), np.log(100.0), n))
+    lo = np.log(T.ALO)
+    a = np.exp(rng.uniform(lo, np.log(100.0), n))
+    b = np.exp(rng.uniform(lo, np.log(100.0), n))
     xs = (a + 1.0) / (a + b + 2.0)
     kind = rng.integers(0, 4, n)
     x = np.select(
@@ -86,11 +88,18 @@ def points(n=40000, seed=11):
         1.0 - (1.0 - xs) * 10.0 ** -rng.uniform(1.0, 7.0, n),
     )
     k = n // 4
-    a2 = np.exp(rng.uniform(np.log(0.1), np.log(100.0), k))
-    b2 = np.exp(rng.uniform(np.log(0.1), np.log(3.0), k))
+    a2 = np.exp(rng.uniform(lo, np.log(100.0), k))
+    b2 = np.exp(rng.uniform(lo, np.log(3.0), k))
     xs2 = (a2 + 1.0) / (a2 + b2 + 2.0)
     x2 = -np.expm1(rng.uniform(0.8, 7.0, k) * np.log1p(-xs2))
-    a, b, x = (np.concatenate(v).astype(F32) for v in ((a, a2), (b, b2), (x, x2)))
+    k3 = n // 8
+    a3 = np.exp(rng.uniform(lo, np.log(100.0), k3))
+    b3 = np.exp(rng.uniform(lo, np.log(0.1), k3))
+    ls3 = np.log1p(-(a3 + 1.0) / (a3 + b3 + 2.0))
+    x3 = -np.expm1(rng.uniform(0.8, 24 * np.log(2.0) / -ls3) * ls3)
+    a, b, x = (
+        np.concatenate(v).astype(F32) for v in ((a, a2, a3), (b, b2, b3), (x, x2, x3))
+    )
     keep = (x >= np.finfo(F32).tiny) & (x < 1.0)
     return a[keep], b[keep], x[keep]
 
@@ -192,7 +201,7 @@ def speed(dev):
     n = 1 << (20 if dev == "gpu" else 16)
     rng = np.random.default_rng(1)
     regs = {}
-    for name, lo, hi in (("box", 0.1, 100.0), ("[5, 30]", 5.0, 30.0)):
+    for name, lo, hi in (("box", T.ALO, 100.0), ("[5, 30]", 5.0, 30.0)):
         a = np.exp(rng.uniform(np.log(lo), np.log(hi), n))
         b = np.exp(rng.uniform(np.log(lo), np.log(hi), n))
         x = np.clip(rng.beta(a, b), 1e-30, 1 - 1e-7)

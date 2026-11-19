@@ -2542,3 +2542,71 @@ Speed (experiments/58, ns per element over three regimes):
 
 On one CPU core in float32 the value alone measured slower than
 value_and_grad in both passes; not investigated.
+
+## 64. betainc_array: a or b at 1 in closed form, box down to 0.0075 (2026-11-19)
+
+A NegativeBinomial count model calls betainc per row with b = y + 1, or
+a = y + 1 for the upper tail (betainc(y + 1, n, 1 - p)), and in survey
+counts most rows are y = 0: those read a full table cell for x^a or 1 - (1
+- x)^b. Dispersions n below 0.1, which very overdispersed counts reach,
+were outside the box and returned nan.
+
+Unit shapes. Where b = 1, I = x^a; where a = 1, I = 1 - (1 - x)^b. The value
+and the slopes in x and in the other shape are closed forms for any positive
+other shape, inside the box or not. The slope in the unit shape (dI/db at
+b = 1) needs the integral of ln t against the density, which is not
+elementary, so it stays the table's and is nan outside the box. ln I at a =
+1 is ln(1 - e^z), z = b ln(1 - x): log1p(-e^z) below -ln 2, else ln b +
+ln(-ln(1 - x)) + ln((1 - e^z)/(-z)), so a tiny b ln(1 - x) cannot underflow.
+Against mpmath, other shape from 1e-4 to 5e3: I 8.6e-17, ln I 2.6e-16,
+slopes 6.8e-14 relative (the rounding of a ln x before the exp). Under jit
+both paths run for every element and a select picks one, so jax gets no
+faster there; a scalar port can branch.
+
+Box. The cell width stays (ln 1000)/16 with six more intervals below 0.1:
+ALO = 10^-2.125 (0.0075), NAB = 22. Small a costs nothing (S_SPLIT = 1, one
+cell per column). Small b does: I(x_s) is small there, so the lower
+orientation runs far past x_s, and below b ~ 0.02 the s where I reaches
+I_SPLIT needs 1 - x under 2^-53. No float64 x gets there, and at 40 digits
+t rounds to 1, where mpmath's 2F1 returned nan. S_SPLIT is now at most
+s_reach, the largest s a float64 x below 1 gives in the column; those
+columns take 7-15 s cells, up to s = 50. 2617 cells (1236 before), 660
+coefficients in float64 (656) and 73 in float32, 13.8 MB of float64 and 41
+MB of source, 34 minutes on eight cores.
+
+float32 edges. The cell edges lo + i w near ln a = -3 round by up to 2.2e-7
+in float32, which moved z by up to 1e-6 and, through T's slope along ln q
+in the small-b columns, ln I by up to 3.9e-7: 5.9e-7 on 16 of 52,274
+points. Each edge is now held in two float32 parts (the generator's float64
+edge and its remainder) and the lane subtracts both: 4.5e-7, none over
+5e-7 (experiments/55). float64 is bit-identical, its remainder being 0.
+
+Row order. The table's columns follow IDX, the order of the largest
+coefficient over all cells, while the nested sum reads them by (i, j, k);
+the new cells changed IDX, and on the GPU a lane jumping around its 5 kB
+row cost float64 value_and_grad more than the 4 extra coefficients do. Each
+row is now stored in read order when the table loads (the Numba port
+already did), which changes no result.
+
+Accuracy (tests/test_betainc_array.py, larger of jax 0.11 and 0.5.3):
+float64 ln I 4.4e-16 and I 3.3e-16 on the test's 2,750 points (on the
+previous box's points 6.1e-16 and 4.4e-16 on jax 0.11, against 7.2e-16 and
+6.7e-16 before); slopes 7.5e-14; float32 I 1.6e-7 and ln I 2.6e-7 there,
+2.7e-7 and 4.5e-7 on experiments/55's 52,274 points.
+
+Speed (experiments/54 and 55, ns per element across the regimes; the
+previous table in brackets):
+
+| | GPU f64 | GPU f32 | one CPU core f64 |
+|---|---|---|---|
+| betainc_array | 21.5-24.5 (21-30) | 1.6-1.8 (1.7-1.8) | 1056-1187 (1021-1080) |
+| betainc_array value_and_grad | 55.6-67.0 (45-68) | 1.5-1.6 (1.7-1.9) | 10,236-11,429 (9,648-10,644) |
+| jax.scipy betainc (value) | 299-300 | 25 | 2637-2725 |
+
+The closed forms run on every element under jit, which float32 on one CPU
+core shows most: 168 and 328 ns for the value and value_and_grad against
+145 and 275 (experiments/55). The GPU's float64 value_and_grad went from
+45-47 to 56 ns on each sub-range of [0.1, 100] and from 68 to 67 over the
+box; the same program reading slightly fewer or more coefficients compiles
+faster or slower without a trend, so it is XLA's code generation, left as
+is.

@@ -2395,3 +2395,79 @@ its three partials) come out of one fusion with the 656 gathers (5 MiB of
 temps), but stacked behind the barrier the loop evaluates them per
 component; unstacked, a tuple barrier, or the slopes from a second read of
 the negated table were slower (16-20 us).
+
+## 62. hyp1f1_array: a and b per element (2026-11-18)
+
+hyp1f1's tables contract an (x, a, b) tensor once per call, so a and b per
+element cost a contraction per element: value_and_grad through vmap takes
+33 us per element on the GPU and ~1 ms on one CPU core. The noncentral Student-t, the one 1F1 distribution asked
+for in PyMC, has a = nu/2 + 1 or (nu + 1)/2 per observation. `hyp1f1_array`
+and `log_hyp1f1_array` take a and b per element on hyp1f1's box, [0.1, 10],
+nan outside, x >= 0, differentiable in all three (`hyp1f1_array_gen.py`,
+`hyp1f1_array.py`); `hyp1f1` and `log_hyp1f1` pick them when a or b holds
+more than one value.
+
+Form. Each (ln a, ln b) base column splits at a seam X_S, a power of two per
+column (8 to 32). Below it ln M = log1p((a/b) x R) with L = ln R tabulated,
+R = 2F2(a + 1, 1; b + 1, 2; x): R(a, b, 0) = 1 and every term is positive,
+so nothing cancels. Above it ln M = x - (a - b) ln t + U, t = X_S/x, with U
+holding lnGamma(b) - lnGamma(a) + (a - b) ln X_S and DLMF 13.7.1's
+log-remainder, so no lgamma per element. Where b > a, x and U cancel next to
+the seam (ln M ~ 6 from ~30 at a = 0.1, b = 10), so each cell's constant
+coefficient is stored as hi + lo and x + hi is formed first (in float32 the
+low part is what rounding the float64 constant dropped). ln M tabulated
+directly took 1.6-2.9x ln R's cells where b > a; raw a and b axes were no
+better than logs at large values.
+
+Table. A uniform grid in (ln a, ln b) does not work: at small a and large b
+the b-direction needs degree 15 or more near x ~ b on cells of width 0.77,
+0.58 and 0.42, at x = 2.8, 6.0 and 9.9. So each of 4 x 4 base columns starts as one box and each cell is
+halved along the direction holding most of its coefficients outside the
+total-degree-14 simplex, until those sum to at most TOL w, w the smallest
+over the cell of max(1, |ln M|) (the test's metric), times min(16, (1 +
+q)/q) for ln R, q = M - 1 (d ln M = q/(1 + q) dL). An element finds its cell
+in its column's k-d tree, 11 compares at most; on a synthetic table a
+20-level descent cost less than a uniform grid lookup. 2,292 cells (2,034
+below the seam), about half of them in the columns with b > 3.16, built in 26
+minutes on seven cores; 37.6 MB of source, imported in 3.4 s and 1.7 GB the
+first time, 0.2 s and 130 MB from the .pyc. The cells share one ordering of
+the simplex: float64 reads 679 coefficients (TOL = 3e-16), float32 73 (TOL32
+= 4e-7).
+
+Total degree 12 or 10 would read 455 or 286 coefficients, and a synthetic
+read on the GPU in float64 gives value_and_grad 28 or 18 ns against 44 at
+14, but the first column needed 109 or 453 cells against 38 at 14. Cutting
+the prefix of this table instead fails at the cells' corners, where every
+T_k is +-1 and the dropped coefficients add up: 600 kept was 4.4e-16 on
+5,000 random points and 1.3e-15 at the corners, 550 5.1e-16 and 5.3e-15; in
+float32 60 kept was 2.8e-7 and 9.1e-7. At the corners the dropped-sum bound
+is nearly reached, so both cuts stay where the bound puts them.
+
+Accuracy (experiments/57, 4,000 points per regime and all 18,000 corners,
+larger of jax 0.11 and 0.5.3): float64 ln M 3.3e-16 on random points and
+6.0e-16 at the corners; float32 2.9e-7 and 3.9e-7. hyp1f1_scalar is 3.7e-13
+on the same points, jax's hyp1f1 1.2e-15 (3.9e-7 in float32) below the seam
+and nan or inf past it. Slopes relative to max(1, |slope|): d/da 1.4e-15,
+d/db 2.0e-15, d/dx 7.1e-15 (tests/test_hyp1f1_array.py), where
+hyp1f1_scalar's d/da and d/db reach 1.4e-10.
+
+Speed (experiments/56, ns per element over four regimes):
+
+| | GPU f64 | GPU f32 | one CPU core f64 | one CPU core f32 |
+|---|---|---|---|---|
+| hyp1f1_array | 17.9-37.9 | 2.3-2.4 | 820-893 | 133-136 |
+| hyp1f1_array value_and_grad | 49.7-94.4 | 4.5-4.7 | 3,373-3,563 | 152-158 |
+| jax.scipy hyp1f1 | 115-193 | 15.1-42.7 | 1,436-2,400 | 208-537 |
+| jax.scipy hyp1f1 value_and_grad | 604-2,472 | 38-125 | 5,349-20,368 | 1,158-5,202 |
+| vmap(hyp1f1_scalar) value_and_grad | 32,700-33,700 | | 0.99e6-1.06e6 | |
+
+The regime with x on [0, X_S] spread over the whole box is the slowest on
+the GPU in float64 (2x the others); the noncentral t's (b = 3/2, a from nu
+up to 18) is the fastest.
+
+The noncentral t density is elementary times Hh_nu(-y), y = mu t/sqrt(nu +
+t^2), Hh_nu(z) = (1/nu!) int_0^inf u^nu e^(-(u + z)^2/2) du, one function of
+two variables with a positive integrand on both sides of y = 0. The textbook
+form, two 1F1 terms, cancels for t of the opposite sign to mu, which scipy's
+nct.pdf shows (1.8e-9 off at t = -4, nu = 12, mu = 3); hyp1f1_array keeps
+that form's terms to 6e-16 but cannot remove the cancellation.

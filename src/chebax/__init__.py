@@ -106,6 +106,7 @@ _LAZY = {
         "log_hyp1f1_scalar",
     ),
     "chebax._src.recipes.hyp1f1_array": ("hyp1f1_array", "log_hyp1f1_array"),
+    "chebax._src.recipes.hh": ("hh", "log_hh"),
     "chebax._src.recipes.skewnorm": ("log_skewnorm_cdf", "log_skewnorm_sf"),
     "chebax._src.recipes.marcum": ("log_marcum_p1", "log_marcum_q1"),
     "chebax._src.recipes.stdtr": ("log_stdtr", "log_stdtr_sf", "stdtr", "stdtrit"),
@@ -166,6 +167,7 @@ __all__ = [
     "gammaincinv_array",
     "gammaincinv_scalar",
     "gammaln",
+    "hh",
     "hyp1f1",
     "hyp1f1_array",
     "hyp1f1_frozen",
@@ -182,6 +184,7 @@ __all__ = [
     "log_gammaincc",
     "log_gammaincc_array",
     "log_gammaincc_scalar",
+    "log_hh",
     "log_hyp1f1",
     "log_hyp1f1_array",
     "log_hyp1f1_scalar",
@@ -340,6 +343,7 @@ if TYPE_CHECKING:
         log_hyp1f1_scalar,
     )
     from chebax._src.recipes.hyp1f1_array import hyp1f1_array, log_hyp1f1_array
+    from chebax._src.recipes.hh import hh, log_hh
     from chebax._src.recipes.skewnorm import log_skewnorm_cdf, log_skewnorm_sf
     from chebax._src.recipes.marcum import log_marcum_p1, log_marcum_q1
     from chebax._src.recipes.stdtr import log_stdtr, log_stdtr_sf, stdtr, stdtrit

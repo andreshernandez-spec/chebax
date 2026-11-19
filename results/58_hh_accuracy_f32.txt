@@ -1,0 +1,9 @@
+jax 0.11.0, float32, N = 4000 per regime (corners: all); worst |ln Hh - ref| / max(1, |ref|)
+| regime | log_hh | (nu, z) at worst | two-term 1F1 (jax) | scipy pbdv |
+|---|---|---|---|---|
+| nu 0.1-10, z in [-10, 10] | 1.65e-07 | (0.1326, -0.3895) | 9.3e-01 (16% nonfinite) |  |
+| nu 0.1-10, sigma uniform | 1.73e-07 | (0.1642, -0.4274) | 9.3e-01 (8% nonfinite) |  |
+| nu 10-1e4, sigma uniform | 5.87e-08 | (602.9, 57.15) | 9.5e-01 (84% nonfinite) |  |
+| ln Hh near 0, nu 1-1e5 | 1.00e-07 | (5399, -1986) | 6.8e-06 (71% nonfinite) |  |
+| noncentral t | 6.02e-08 | (1.034, -20.57) | 9.6e-01 (79% nonfinite) |  |
+| patch corners | 2.00e-07 | (0.1241, -0.5842) | 9.2e-01 (2% nonfinite) |  |

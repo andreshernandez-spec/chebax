@@ -1,0 +1,9 @@
+jax 0.11.0 on cpu:0, float64, N = 65536; ns per element, min of 2 passes
+| op | noncentral t | box | small nu |
+|---|---|---|---|
+| hh | 175.1 | 186.3 | 175.2 |
+| hh v+g | 488.8 | 531.8 | 543.8 |
+| log_hh | 169.8 | 179.6 | 175.3 |
+| log_hh v+g | 487.9 | 504.3 | 473.0 |
+| two-term 1F1 (jax) | 3763.7 | 5487.8 | 3336.9 |
+| two-term 1F1 (jax) v+g | 13190.1 | 26361.1 | 10560.1 |

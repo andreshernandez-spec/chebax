@@ -1,0 +1,7 @@
+jax 0.11.0 on cuda:0, float64, N = 1048576; ns per element, min of 2 passes
+| op | noncentral t | wide | near normal |
+|---|---|---|---|
+| nct_logpdf | 6.0 | 6.1 | 5.9 |
+| nct_logpdf v+g | 9.9 | 9.9 | 9.6 |
+| two-1F1 form (jax) | 260.6 | 383.7 | 262.4 |
+| two-1F1 form (jax) v+g | 982.6 | 2878.9 | 1000.8 |

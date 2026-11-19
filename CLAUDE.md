@@ -110,6 +110,7 @@ python -m chebax._src.recipes.hyp1f1_array_gen    # regenerate the per-element c
 python -m chebax._src.recipes.hh_gen              # regenerate the Hh patches (~16 min on six
                                                   #  cores; CI regen-checks one base box; full
                                                   #  check behind CHEBAX_FULL_REGEN=1)
+python -m chebax._src.recipes.nct_gen             # regenerate the noncentral t's B(nu) table (<1 s)
 python -m chebax._src.recipes.stdtr_gen           # regenerate the stdtr slice tables (~4 min)
 python -m chebax._src.recipes.vonmises_gen        # regenerate the von Mises table (~5 min)
 python -m chebax._src.recipes.besselj_gen         # regenerate the baked nu-table

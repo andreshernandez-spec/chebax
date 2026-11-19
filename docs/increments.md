@@ -2610,3 +2610,76 @@ core shows most: 168 and 328 ns for the value and value_and_grad against
 box; the same program reading slightly fewer or more coefficients compiles
 faster or slower without a trend, so it is XLA's code generation, left as
 is.
+
+## 65. nct_logpdf: the noncentral Student t log-density (2026-11-19)
+
+Entries 62 and 63 were for this. `nct_logpdf(nu, mu, x)` takes nu >= 0.1
+(nan below, hh's box), mu and x real, all per element, differentiable in all
+three (`nct_gen.py`, `nct.py`). nu = inf gives the normal density about mu.
+
+Form. With s = sqrt(V/nu), f(x) = K int_0^inf s^nu exp(-nu s^2/2 - (x s -
+mu)^2/2) ds, and the exponent's saddle s* solves P s^2 - x mu s - nu = 0, P
+= nu + x^2. Writing the integral as Gamma(nu + 1) Hh_nu(-y) times elementary
+factors, y = mu x/sqrt(P), and ln Hh as hh's saddle-point form plus its table
+T, the large terms combine:
+
+    ln f = -ln(2 pi)/2 - r^2/2 + nu h(delta) + ln(2 nu/G2)/2 + B(nu) + T(nu, -y)
+
+with delta = s* - 1, r = x s* - mu, h(delta) = ln(1 + delta) - delta -
+delta^2/2, G2 = nu/s*^2 + P and B(nu) = R(nu) - R(nu/2), R Binet's lnGamma
+remainder. -r^2/2 and nu h are both <= 0 and the rest is bounded, so nothing
+cancels (checked against mpmath to 1e-38 before any float code). The
+textbook form, two 1F1 terms, cancels where x and mu differ in sign (scipy's
+nct.logpdf is 1.2e-9 off there); central t plus ln Hh(-y) - ln Hh(0) has no
+such cancellation but adds -x^2/2 - mu^2/2 + mu x near the mode, losing mu^2
+eps at large mu. delta and r come from forms without a difference of like
+terms, delta = -2x(x - mu)/(2P + E1) and r = (x - mu)(2 nu + E1)/(2P + E1),
+E1 = sqrt(D) - x mu >= 0 (as 4 nu P/(sqrt(D) + x mu) where x mu > 0); r^2/2
+dominates ln f in the tails, so r uses whichever of three equal forms rounds
+least: (x - mu)(1 - 2x^2/(2P + E1)) near the normal limit, x s* - mu (two
+terms of one sign) where x and mu differ in sign, the quotient otherwise
+(worst r^2/2 error over five regimes 6.8e-16 relative to max(1, r^2/2),
+against 9.0e-16 for the quotient alone). h is a series in u = delta/(2 + delta) on [-1/2, 1], -delta u -
+delta^2/2 + 2u^3 sum_k u^(2k)/(2k + 3), and the plain form outside. x, mu and
+sqrt(nu) are first scaled by one power of two, so nothing overflows; s*^2
+still underflows at x = -mu = 1e100 (s* ~ 1e-200), so nu/s*^2 and ln(2nu/G2)
+are formed without it. Past |x| or |mu| ~ 2^511 sqrt(nu) (2^63 in float32)
+the scaled nu underflows and the result is nan.
+
+Slopes. By the envelope theorem the saddle part's are r, -r s* and h in mu,
+x and nu; the G2 term's come through ds*/dtheta = -F_theta/sqrt(D), F the
+quadratic, written through k = (nu/s*^2)/G2 in [0, 1] so they survive s*^2
+underflowing; T's are hh's (`hh.t_parts`, factored out of hh's own slopes).
+
+Tables. T is hh's table, read as it is: its truncation bound per patch,
+absolute, is under 1.6e-18 for half the patches and 2.0e-16 for 99%, and
+3.7e-16 at most in zone H near z = 0, where ln f is O(1) but |ln Hh| ~ (nu/2)
+ln nu; the largest, 2.1e-15, sit at large positive z, where |ln f| is as
+large. B is 4 panels of 20 terms in ln nu on [0.1, 64] (each needs 16-19 for
+1e-17) and Stirling's series above, 6 terms; float32 keeps 8 per panel. It
+generates in 0.2 s, so CI regenerates it whole.
+
+Accuracy (experiments/59, 4,000 points per regime, the same on jax 0.11 and
+0.5.3): float64 ln f 3.9e-16 to 7.5e-16 relative to max(1, |ln f|), float32
+1.6e-7 to 3.7e-7. The two-1F1 form with jax.scipy's hyp1f1 is 1.8e-11 and
+2.1e-9 in the first two regimes (nu <= 100, |mu| <= 10), and in the other
+four off by 0.4 to 0.9 where finite and nonfinite on 21-87% of the points;
+scipy's nct.logpdf is 9.3e-15 to 7.9e-4 where finite and nonfinite on 36% of
+the wide box.
+Slopes relative to max(1, |slope|): d/dnu 2.9e-15, d/dmu 1.9e-15, d/dx
+4.7e-16 (tests/test_nct.py).
+
+Speed (experiments/59, ns per element over three regimes):
+
+| | GPU f64 | GPU f32 | one CPU core f64 | one CPU core f32 |
+|---|---|---|---|---|
+| nct_logpdf | 5.9-6.1 | 0.7-0.8 | 178-192 | 107-109 |
+| nct_logpdf value_and_grad | 9.6-9.9 | 1.1 | 342-373 | 73-78 |
+| two-1F1 form (jax.scipy) | 261-384 | 19-60 | 4,229-7,143 | 371-1,053 |
+| two-1F1 form value_and_grad | 983-2,879 | 60-154 | 13,255-34,164 | 2,142-6,220 |
+| scipy.stats.nct.logpdf | | | 348-372 (raises in one) | |
+
+No double-double is needed, unlike hh's own first part, so the value is
+faster than hh's (7.5 ns on the GPU in float64). On one CPU core in float32
+the value alone again measured slower than value_and_grad, as with hh; not
+investigated.

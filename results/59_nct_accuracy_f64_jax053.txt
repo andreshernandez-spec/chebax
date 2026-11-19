@@ -1,0 +1,9 @@
+jax 0.5.3, float64, N = 4000 per regime; worst |ln f - ref| / max(1, |ref|)
+| regime | nct_logpdf | (nu, mu, x) at worst | two-1F1 form (jax) | scipy nct.logpdf |
+|---|---|---|---|---|
+| nu 1-100, |mu| <= 10, x within 5 of mu | 5.08e-16 | (83.26, -4.343, 0.03242) | 1.8e-11 (0% nonfinite) | 1.2e-12 (0% nonfinite) |
+| nu 0.1-1, |mu| <= 5, |x| <= 100 | 3.85e-16 | (0.2588, -4.363, 34.2) | 2.1e-09 (0% nonfinite) | 5.7e-10 (0% nonfinite) |
+| nu 100-1e6, x within 5 of mu | 4.49e-16 | (1.041e+05, 6.916, 2.234) | 6.9e-01 (87% nonfinite) | 5.1e-11 (0% nonfinite) |
+| |mu| 10-50, nu 1-1e3, x/mu 0.8-1.3 | 4.65e-16 | (294.1, -29.93, -24.78) | 4.2e-01 (46% nonfinite) | 9.3e-15 (0% nonfinite) |
+| x opposite to mu, nu 1-100 | 5.47e-16 | (34.84, 8.313, -2.038) | 7.7e-01 (21% nonfinite) | 1.2e-09 (0% nonfinite) |
+| wide: nu 0.1-1e4, |mu| <= 50, |x| <= 200 | 7.54e-16 | (254.3, 48.05, 105.6) | 9.3e-01 (68% nonfinite) | 7.9e-04 (36% nonfinite) |

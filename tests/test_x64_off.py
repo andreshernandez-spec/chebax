@@ -68,6 +68,8 @@ CASES = {
     "log_skewnorm_sf": ("chebax.log_skewnorm_sf(-2.0, -0.5)", -0.89575000947333306),
     "log_marcum_p1": ("chebax.log_marcum_p1(3.0, 1.5)", -3.1995644952378135),
     "log_marcum_q1": ("chebax.log_marcum_q1(2.0, 4.0)", -3.3774365709244947),
+    "log_hh": ("chebax.log_hh(3.0, 1.5)", -4.5883289403471545),
+    "nct_logpdf": ("chebax.nct_logpdf(10.0, 1.5, 2.0)", -1.1564344759150922),
     "lambertw": ("chebax.lambertw(3.0, 0)", 1.04990889496404),
     "spherical_jn": ("chebax.spherical_jn_frozen(2)(4.0)", 0.27628368577135016),
     "gammainc_at_inf": ("chebax.gammainc_scalar(2.0, jnp.inf)", 1.0),

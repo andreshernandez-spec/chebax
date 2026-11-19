@@ -156,7 +156,7 @@ def _parts(nu, mu, x, grad):
     # r = (x - mu)(2n + E1)/den = (x - mu)(1 - 2a^2/den) = x s* - mu, whichever
     # rounds least: the second where 2a^2/den is small (near the normal limit),
     # the third where x and mu differ in sign (two terms of one sign);
-    # increments 64 has the rounding measured.
+    # increments 65 has the rounding measured.
     f = 2.0 * a * a / den
     r = big_s * jnp.where(
         f <= 0.25,

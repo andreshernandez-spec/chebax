@@ -2,11 +2,12 @@
 
 Measures ns per element of chebax.betainc_array (value; value_and_grad of
 the sum in a, b and x) and log_betainc_array, with a and b drawn per element
-in four regimes (log-uniform on [0.1, 1], [1, 10], [10, 100] and the whole
-box [0.1, 100]) and x ~ Beta(a, b). Compared with jax.scipy.special.betainc
-(value only: jax has no a or b gradient, jax#38610) and with vmap of
-chebax.betainc_scalar, which is what a per-element caller had before
-(smaller N, it is ~1000x slower).
+in five regimes (log-uniform on [ALO, 0.1], [0.1, 1], [1, 10], [10, 100] and
+the whole box [ALO, 100], ALO = 10^-2.125) and x ~ Beta(a, b). Compared with
+jax.scipy.special.betainc (value only: jax has no a or b gradient,
+jax#38610) and with vmap of chebax.betainc_scalar, which is what a
+per-element caller had before (smaller N, it is ~1000x slower; its box is
+[0.1, 100], so only those regimes).
 
 Two passes per cell, minimum kept; cells whose passes differ by more than
 1.25x are marked *. CPU runs on one core (run under taskset -c N, XLA's
@@ -39,15 +40,17 @@ import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 
 import chebax  # noqa: E402
+from chebax._src.recipes.betainc_array_table import ALO  # noqa: E402
 
 DT = jnp.float32 if f32 else jnp.float64
 N = 1 << (20 if dev == "gpu" else 16)
 N_SCALAR = 1 << 8
 REGIMES = {
-    "a, b in [0.1, 1]": (0.1, 1.0),
+    "a, b in [ALO, 0.1]": (ALO, 0.1),
+    "[0.1, 1]": (0.1, 1.0),
     "[1, 10]": (1.0, 10.0),
     "[10, 100]": (10.0, 100.0),
-    "box": (0.1, 100.0),
+    "box": (ALO, 100.0),
 }
 
 
@@ -100,6 +103,8 @@ for p in range(2):
         full = inputs(lo, hi, N, 1)
         small = tuple(v[:N_SCALAR] for v in full)
         for name, f in ops.items():
+            if "betainc_scalar" in name and lo < 0.1:
+                continue
             args = small if "vmap" in name else full
             res.setdefault((name, r), []).append(
                 timeit(f, *args, reps=5 if "vmap" in name else 15)
@@ -107,7 +112,10 @@ for p in range(2):
 for name in ops:
     cells = []
     for r in REGIMES:
-        v = res[(name, r)]
+        v = res.get((name, r))
+        if v is None:
+            cells.append("-")
+            continue
         flag = "*" if max(v) / min(v) > 1.25 else ""
         cells.append(f"{min(v):.1f}{flag}")
     print(f"| {name} | " + " | ".join(cells) + " |")

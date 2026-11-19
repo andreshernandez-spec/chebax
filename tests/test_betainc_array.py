@@ -1,22 +1,25 @@
 """Per-element betainc: betainc_array and log_betainc_array, a and b per
-element in [0.1, 100], x in [0, 1].
+element in [10^-2.125, 100] (0.0075 to 100), x in [0, 1].
 
-References are mpmath at 40 dps on 2,500 points: a, b log-uniform over the
+References are mpmath at 40 dps on 2,750 points: a, b log-uniform over the
 box, x from the bulk (Beta draws), within 1e-3 of x_s = (a+1)/(a+b+2), the
 lower tail (x down to 1e-40 x_s) and the upper tail (1 - x down to 1e-15
-(1 - x_s)); and 500 with b <= 3 in the band past x_s where those lanes stay
-in the lower orientation (up to s = 7). ln I uses |ln I - ref| / max(1,
-|ref|); I is absolute (the CDF contract).
+(1 - x_s)); 500 with b <= 3 in the band past x_s where those lanes stay in
+the lower orientation (up to s = 7); and 250 with b < 0.1 to 1 - x = 2^-52.
+ln I uses |ln I - ref| / max(1, |ref|); I is absolute (the CDF contract).
 
 Measured worst, the larger of jax 0.11 and 0.5.3 (CI's floor): float64
-ln I 7.2e-16, I 6.7e-16, bars 3e-15. float32 on the float32-rounded points
-with x in its normal range: I 1.5e-7, ln I 2.5e-7 (where I > 1e-30), bars
-6e-7 and 1e-6. On 48,947 float32 points experiments/55 has I 2.3e-7 and
-ln I 4.1e-7, ~3 float32 ulps, all float32 arithmetic (the target is 5).
+ln I 4.4e-16, I 3.3e-16, bars 3e-15. float32 on the float32-rounded points
+with x in its normal range: I 1.6e-7, ln I 2.6e-7 (where I > 1e-30), bars
+6e-7 and 1e-6. On 52,274 float32 points experiments/55 has I 2.7e-7 and
+ln I 4.5e-7, all float32 arithmetic (the target is 5e-7).
 
 dI/da, dI/db against mp.diff of the smaller side and dI/dx against the Beta
-density, relative, on 76 points: 2.6e-14; bar 4e-13, 4x the 1.0e-13 that
+density, relative, on 84 points: 7.5e-14; bar 4e-13, 4x the 1.0e-13 that
 3,000 probe points reached near the seam at large a, b.
+
+At a = 1 or b = 1 (closed forms, any positive other shape): I 8.6e-17, ln I
+2.6e-16, slopes 6.8e-14 relative; bars 4e-16, 1.2e-15 and 3e-13.
 """
 
 import os
@@ -40,11 +43,13 @@ mp.mp.dps = 40
 
 def _points(n=2000, seed=11):
     """a, b log-uniform over the box with x from the bulk, next to x_s, both
-    tails; and the band past x_s where small-b lanes stay in the lower
-    orientation (x = 1 - (1 - x_s)^s, s up to 7)."""
+    tails; the band past x_s where small-b lanes stay in the lower
+    orientation (x = 1 - (1 - x_s)^s, s up to 7); and b below 0.1, whose
+    columns stay lower to the last float64 x (s to 1 - x = 2^-52)."""
     rng = np.random.default_rng(seed)
-    a = np.exp(rng.uniform(np.log(0.1), np.log(100.0), n))
-    b = np.exp(rng.uniform(np.log(0.1), np.log(100.0), n))
+    lo = np.log(t.ALO)
+    a = np.exp(rng.uniform(lo, np.log(100.0), n))
+    b = np.exp(rng.uniform(lo, np.log(100.0), n))
     xs = (a + 1.0) / (a + b + 2.0)
     kind = rng.integers(0, 4, n)
     x = np.select(
@@ -57,14 +62,19 @@ def _points(n=2000, seed=11):
         1.0 - (1.0 - xs) * 10.0 ** -rng.uniform(1.0, 15.0, n),
     )
     m = n // 4
-    a2 = np.exp(rng.uniform(np.log(0.1), np.log(100.0), m))
-    b2 = np.exp(rng.uniform(np.log(0.1), np.log(3.0), m))
+    a2 = np.exp(rng.uniform(lo, np.log(100.0), m))
+    b2 = np.exp(rng.uniform(lo, np.log(3.0), m))
     xs2 = (a2 + 1.0) / (a2 + b2 + 2.0)
     x2 = -np.expm1(rng.uniform(0.8, 7.0, m) * np.log1p(-xs2))
+    m3 = n // 8
+    a3 = np.exp(rng.uniform(lo, np.log(100.0), m3))
+    b3 = np.exp(rng.uniform(lo, np.log(0.1), m3))
+    ls3 = np.log1p(-(a3 + 1.0) / (a3 + b3 + 2.0))
+    x3 = -np.expm1(rng.uniform(0.8, 52 * np.log(2.0) / -ls3) * ls3)
     return (
-        np.concatenate([a, a2]),
-        np.concatenate([b, b2]),
-        np.clip(np.concatenate([x, x2]), 1e-300, np.nextafter(1.0, 0.0)),
+        np.concatenate([a, a2, a3]),
+        np.concatenate([b, b2, b3]),
+        np.clip(np.concatenate([x, x2, x3]), 1e-300, np.nextafter(1.0, 0.0)),
     )
 
 
@@ -189,7 +199,7 @@ def test_both_modes_agree(refs):
 
 
 def test_endpoints_and_out_of_box():
-    a = jnp.array([0.5, 2.0, 2.0, 0.05, 150.0, 2.0])
+    a = jnp.array([0.5, 2.0, 2.0, 0.005, 150.0, 2.0])
     b = jnp.array([3.0, 0.5, 2.0, 2.0, 2.0, jnp.nan])
     x = jnp.array([0.0, 1.0, jnp.nan, 0.3, 0.3, 0.3])
     np.testing.assert_array_equal(
@@ -201,6 +211,48 @@ def test_endpoints_and_out_of_box():
     )
     g = jax.grad(lambda a: chebax.betainc_array(a, 2.0, 0.3))(150.0)
     assert np.isnan(g)
+
+
+def test_unit_shapes_any_other_shape():
+    """b = 1 (I = x^a) and a = 1 (I = 1 - (1 - x)^b) are closed forms for any
+    positive other shape, with the slopes in it and in x; the unit shape's own
+    slope is the table's (nan outside the box)."""
+    w, x = np.meshgrid(
+        [1e-4, 3e-3, 0.4, 7.0, 400.0, 5e3], [1e-200, 0.01, 0.3, 0.7, 0.999, 1 - 1e-12]
+    )
+    w, x = w.ravel(), x.ravel()
+    one = np.ones_like(w)
+    for unit_b in (True, False):
+        a, b = (w, one) if unit_b else (one, w)
+        grads = {}
+        for f in (chebax.betainc_array, chebax.log_betainc_array):
+            g = jax.vmap(jax.value_and_grad(f, (1 - unit_b, 2)))
+            v, (gw, gx) = g(jnp.asarray(a), jnp.asarray(b), jnp.asarray(x))
+            grads[f] = np.asarray(v), np.asarray(gw), np.asarray(gx)
+        worst = np.zeros(4)
+        for k in range(w.size):
+            W, X = mp.mpf(w[k]), mp.mpf(x[k])
+            if unit_b:
+                i, dw, dx = X**W, X**W * mp.log(X), W * X ** (W - 1)
+            else:
+                l1 = mp.log1p(-X)
+                i, dw, dx = (
+                    -mp.expm1(W * l1),
+                    -mp.exp(W * l1) * l1,
+                    W * mp.exp((W - 1) * l1),
+                )
+            v, gw, gx = (c[k] for c in grads[chebax.betainc_array])
+            lv, lgw, lgx = (c[k] for c in grads[chebax.log_betainc_array])
+            worst[0] = max(worst[0], abs(v - i))
+            worst[1] = max(worst[1], abs(lv - mp.log(i)) / max(1, abs(mp.log(i))))
+            for got, ref in ((gw, dw), (gx, dx), (lgw, dw / i), (lgx, dx / i)):
+                if 1e-280 < abs(ref) < 1e280:
+                    worst[2] = max(worst[2], abs(got - ref) / abs(ref))
+        assert worst[0] <= 4e-16 and worst[1] <= 1.2e-15 and worst[2] <= 3e-13, worst
+    ga = jax.grad(chebax.betainc_array, 0)
+    ref = mp.diff(lambda u: mp.betainc(u, 2.5, 0, 0.3, regularized=True), 1)
+    assert abs(float(ga(1.0, 2.5, 0.3)) - ref) <= 1e-14 * abs(ref)
+    assert np.isnan(ga(1.0, 1e-4, 0.3))
 
 
 def test_endpoint_slopes_are_the_density():
@@ -224,9 +276,10 @@ def test_broadcast_and_jit():
 
 @pytest.mark.slow
 def test_column_regenerates_exact():
-    """One column of the table, rebuilt (the whole module takes ~25 min on
-    six cores and is compared only with CHEBAX_FULL_REGEN=1)."""
-    ia, ib = 9, 3
+    """One column of the table, rebuilt: b below 0.1, where s stops at
+    s_reach (the whole module takes ~35 min on eight cores and is compared only
+    with CHEBAX_FULL_REGEN=1)."""
+    ia, ib = 6, 0
     cuts, cells = betainc_array_gen.column_cells(ia, ib)
     col = ia * t.NAB + ib
     assert t.NS[col] == len(cuts) - 1
@@ -241,7 +294,7 @@ def test_column_regenerates_exact():
 @pytest.mark.slow
 @pytest.mark.skipif(
     not os.environ.get("CHEBAX_FULL_REGEN"),
-    reason="~25 min on six cores; set CHEBAX_FULL_REGEN=1 (pre-release)",
+    reason="~35 min on eight cores; set CHEBAX_FULL_REGEN=1 (pre-release)",
 )
 def test_table_regenerates_bit_for_bit(tmp_path):
     betainc_array_gen.main(out_dir=tmp_path)

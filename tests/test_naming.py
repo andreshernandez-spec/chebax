@@ -2,8 +2,8 @@
 
 name(params, x) takes any parameter shape: one value runs name_scalar,
 an array runs name_array where the family has a per-element path
-(gammainc and its inverses) and raises naming chebax.pergroup where it
-does not.
+(gammainc and its inverses, hyp1f1) and raises naming chebax.pergroup where
+it does not.
 name_frozen(params) is the cached callable. The checks here are that the
 plain name and the path it picks give the same numbers, and that the 0.4
 spellings (the *_fn names, the one-argument factory calls) still work
@@ -88,13 +88,25 @@ def test_an_array_runs_the_array_path(name):
     np.testing.assert_array_equal(np.asarray(g), np.asarray(ga))
 
 
+@pytest.mark.parametrize("name", ["hyp1f1", "log_hyp1f1"])
+def test_an_array_runs_the_array_path_two_params(name):
+    f, arr = getattr(chebax, name), getattr(chebax, name + "_array")
+    b = A / 5.0
+    np.testing.assert_array_equal(np.asarray(f(1.5, b, X)), np.asarray(arr(1.5, b, X)))
+    np.testing.assert_array_equal(np.asarray(f(b, 2.5, X)), np.asarray(arr(b, 2.5, X)))
+    np.testing.assert_array_equal(
+        np.asarray(f(jnp.asarray([[1.5]]), jnp.asarray([2.5]), X)),
+        np.asarray(getattr(chebax, name + "_scalar")(1.5, 2.5, X)),
+    )
+
+
 @pytest.mark.parametrize(
     "name,call",
     [
         ("besselk", lambda f: f(A, X)),
         ("besseli", lambda f: f(A, X)),
         ("betainc", lambda f: f(A, 3.0, X / 61.0)),
-        ("hyp1f1", lambda f: f(1.5, A, X)),
+        ("hyp1f1_scalar", lambda f: f(1.5, A, X)),
         ("gammainc_scalar", lambda f: f(A, X)),
         ("gammaincinv_scalar", lambda f: f(A, X / 61.0)),
         ("gammainccinv_scalar", lambda f: f(A, X / 61.0)),
@@ -104,7 +116,7 @@ def test_an_array_runs_the_array_path(name):
         "besselk",
         "besseli",
         "betainc",
-        "hyp1f1",
+        "hyp1f1_scalar",
         "gammainc_scalar",
         "gammaincinv_scalar",
         "gammainccinv_scalar",

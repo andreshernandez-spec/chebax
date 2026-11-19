@@ -2522,3 +2522,20 @@ float64 ln I 4.4e-16 and I 3.3e-16 on the test's 2,750 points (on the
 previous box's points 6.1e-16 and 4.4e-16 on jax 0.11, against 7.2e-16 and
 6.7e-16 before); slopes 7.5e-14; float32 I 1.6e-7 and ln I 2.6e-7 there,
 2.7e-7 and 4.5e-7 on experiments/55's 52,274 points.
+
+Speed (experiments/54 and 55, ns per element across the regimes; the
+previous table in brackets):
+
+| | GPU f64 | GPU f32 | one CPU core f64 |
+|---|---|---|---|
+| betainc_array | 21.5-24.5 (21-30) | 1.6-1.8 (1.7-1.8) | 1056-1187 (1021-1080) |
+| betainc_array value_and_grad | 55.6-67.0 (45-68) | 1.5-1.6 (1.7-1.9) | 10,236-11,429 (9,648-10,644) |
+| jax.scipy betainc (value) | 299-300 | 25 | 2637-2725 |
+
+The closed forms run on every element under jit, which float32 on one CPU
+core shows most: 168 and 328 ns for the value and value_and_grad against
+145 and 275 (experiments/55). The GPU's float64 value_and_grad went from
+45-47 to 56 ns on each sub-range of [0.1, 100] and from 68 to 67 over the
+box; the same program reading slightly fewer or more coefficients compiles
+faster or slower without a trend, so it is XLA's code generation, left as
+is.

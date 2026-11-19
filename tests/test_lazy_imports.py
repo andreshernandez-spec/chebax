@@ -58,6 +58,7 @@ EXPECTED = {
     # first called (test_gammainc_paths_load_only_their_tables)
     "chebax._src.recipes.gammainc": set(),
     "chebax._src.recipes.gammaincinv": set(),
+    "chebax._src.recipes.hh": {"hh_table"},
     "chebax._src.recipes.hyp1f1": {"hyp1f1_table"},
     "chebax._src.recipes.hyp1f1_array": {"hyp1f1_array_table"},
     # the betainc kernel without betainc's tensor (betainc_kernel.py)

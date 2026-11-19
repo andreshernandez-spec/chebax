@@ -1,0 +1,9 @@
+jax 0.11.0 on cuda:0, float64, N = 1048576; ns per element, min of 2 passes
+| op | noncentral t | box | small nu |
+|---|---|---|---|
+| hh | 7.5 | 7.6 | 7.5 |
+| hh v+g | 9.5 | 9.7 | 9.8 |
+| log_hh | 7.4 | 7.4 | 7.4 |
+| log_hh v+g | 9.9 | 10.0 | 10.0 |
+| two-term 1F1 (jax) | 267.3 | 421.5 | 251.5 |
+| two-term 1F1 (jax) v+g | 1278.1 | 2963.3 | 991.0 |

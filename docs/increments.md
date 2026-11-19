@@ -2471,3 +2471,74 @@ two variables with a positive integrand on both sides of y = 0. The textbook
 form, two 1F1 terms, cancels for t of the opposite sign to mu, which scipy's
 nct.pdf shows (1.8e-9 off at t = -4, nu = 12, mu = 3); hyp1f1_array keeps
 that form's terms to 6e-16 but cannot remove the cancellation.
+
+## 63. hh and log_hh: the Hermite function Hh_nu(z) (2026-11-18)
+
+The noncentral Student-t density is elementary factors times Hh_nu(-y), y =
+mu t/sqrt(nu + t^2), with Hh_nu(z) = (1/nu!) int_0^inf u^nu e^(-(u + z)^2/2)
+du = e^(-z^2/4) D_{-nu-1}(z). The textbook form writes Hh as two 1F1 terms,
+which cancel for t opposite to mu (scipy's nct.pdf is 1.8e-9 off at t = -4,
+nu = 12, mu = 3); the integral has a positive integrand on both sides. `hh`
+and `log_hh` take nu >= 0.1 (nan below) and real z, both per element,
+differentiable in both (`hh_gen.py`, `hh.py`).
+
+Form. The integrand's saddle point with Stirling's lnGamma folded in,
+
+    ln Hh = nu (1 - ln v) - v^2/2 - ln(v R)/2 + T,  R = sqrt(z^2 + 4 nu),
+    v = (z + R)/2 (= 2 nu/(R - z) below z = 0),
+
+has the exact limits on both sides, so T is bounded: -0.75 at nu = 0.1, z =
+0, and ~g(sigma)/nu for large nu (-1/(6 nu) at z = 0). The slopes of the
+first part are closed forms, -v (1 + 1/R^2) in z and -ln v - 1/(2 v R) -
+1/R^2 in nu. The table holds T in sigma = z/sqrt(z^2 + 4(nu + 1)), all of z
+in [-1, 1], and in ln nu on [0.1, 10] or tau = 10/nu on [0, 1], so nu reaches
+infinity. With sigma's scale 4 nu instead of 4(nu + 1), z in [1.3, 14] was
+squeezed into [0.9, 0.999] at nu = 0.1, where T still has O(1) structure in
+z (1-D degrees summed over eight sigma intervals: 206 against 152).
+
+The first part has to be formed in double-double. Where ln Hh is near 0 at
+large nu (|z| ~ nu/e, where |z|^nu ~ Gamma(nu + 1)), nu and nu ln v cancel
+and the rounding of v and ln v comes back times nu: in plain float64 the
+error there was 1.9e-15 at nu = 10, 1.6e-14 at 100 and 1.9e-13 at 1e3. So R,
+v, nu ln v, v^2 and ln(v R) are carried as double-doubles: products from
+exact half-width parts (betainc_array's split by bits, which XLA's fma
+contraction cannot undo), and a double-double log from ln(j/64) tabulated in
+double-double and a series for ln(1 + r), |r| <= 1/90, to 1e-20. Along that
+band the error is then 2.2e-16 or less from nu = 2 to 1e7. Past |z| = 2^400
+(2^50 in float32) the plain formula takes over; |ln Hh| is at least ~nu ln|z|
+there.
+
+Table. Each zone's base boxes (4 x 4 in (ln nu, sigma), 1 x 4 in (tau, sigma))
+are halved along one axis at a time until the coefficients outside each
+patch's 8 x 8 block sum to at most 3e-16 max(1, |ln Hh|) and bound the
+slopes' error (|T_k'| <= k^2, times each coordinate's slope) to 2e-14
+max(1, |slope|). Without the second bound d/dnu was 4.6e-12 off at a patch
+corner at nu = 0.13: the value's tolerance (|ln Hh| ~ 13 there) times ~k^2/nu.
+With it there are 4,782 patches against 1,890, 8.2 MB of source, built in 16
+minutes on six cores. An element finds its patch by at most 11 compares in
+its base box's k-d tree; float32 reads the leading 4 x 4 block. References
+are mpmath's pcfd up to nu = 150 and, above, a quadrature in the saddle's
+scaled variable, equal to pcfd to 1e-38 on nu in [20, 150].
+
+Accuracy (experiments/58, 4,000 points per regime and all 19,000 patch
+corners, the same on jax 0.11 and 0.5.3): float64 ln Hh 4.4e-16 or less on
+random points, 5.0e-16 at the corners; float32 1.7e-7 and 2.0e-7. The
+two-term form with jax.scipy's hyp1f1 is off by 0.6 to 1.0 in ln Hh where
+finite (5.8e-14 in the ln Hh ~ 0 band) and nonfinite on 1-67% of the points;
+scipy's pbdv is 9.7e-11 to 3.4e-3 where finite and nonfinite on 57-58% of
+the points with nu above 10.
+Slopes relative to max(1, |slope|): d/dnu 3.3e-15 and d/dz 6.1e-15 on the
+test's points, 5.3e-14 and 2.5e-14 at every patch corner below nu = 1
+(tests/test_hh.py).
+
+Speed (experiments/58, ns per element over three regimes):
+
+| | GPU f64 | GPU f32 | one CPU core f64 | one CPU core f32 |
+|---|---|---|---|---|
+| hh | 7.5-7.6 | 0.8 | 175-186 | 113-118 |
+| hh value_and_grad | 9.5-9.8 | 1.1-1.2 | 489-544 | 64-67 |
+| two-term 1F1 (jax.scipy) | 252-422 | 34-66 | 3,337-5,488 | 468-894 |
+| two-term 1F1 value_and_grad | 991-2,963 | 78-165 | 10,560-26,361 | 1,936-5,191 |
+
+On one CPU core in float32 the value alone measured slower than
+value_and_grad in both passes; not investigated.
